@@ -322,19 +322,58 @@ body,
   padding: 0;
 }
 
+.sheet-node-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 4px;
+}
+
+.sheet-node-row.active {
+  background-color: var(--accent);
+}
+
 .sheet-node {
   display: block;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
   border: none;
   background: none;
   padding: 4px 6px;
   border-radius: 4px;
   color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.sheet-node.active {
-  background-color: var(--accent);
+.sheet-node-row.active .sheet-node {
+  color: var(--bg-alt);
+}
+
+.sheet-node-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: 4px;
+  padding: 2px;
+  border: none;
+  background: none;
+  color: var(--fg-dark);
+  opacity: 0;
+}
+
+.sheet-node-row:hover .sheet-node-close {
+  opacity: 0.8;
+}
+
+.sheet-node-close:hover {
+  opacity: 1 !important;
+}
+
+.sheet-node-row.active .sheet-node-close {
   color: var(--bg-alt);
 }
 
@@ -354,21 +393,54 @@ body,
 }
 
 .file-tab {
-  appearance: none !important;
-  -webkit-appearance: none !important;
-  border: none !important;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   border-radius: 8px 8px 0 0;
-  background-color: var(--active) !important;
-  color: var(--fg-dark) !important;
+  background-color: var(--active);
+  color: var(--fg-dark);
   opacity: 0.6;
-  padding: 6px 10px;
+  padding: 6px 6px 6px 10px;
 }
 
 .file-tab.active {
-  background-color: var(--bg) !important;
-  color: var(--fg) !important;
+  background-color: var(--bg);
+  color: var(--fg);
   font-weight: 600;
   opacity: 1;
+}
+
+.file-tab-label {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  border: none !important;
+  background: none !important;
+  color: inherit !important;
+  font-weight: inherit;
+  padding: 0;
+}
+
+.file-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  border: none !important;
+  background: none !important;
+  color: inherit !important;
+  padding: 2px;
+  border-radius: 4px;
+  opacity: 0;
+}
+
+.file-tab:hover .file-tab-close {
+  opacity: 0.7;
+}
+
+.file-tab-close:hover {
+  opacity: 1 !important;
+  background-color: rgba(0, 0, 0, 0.15) !important;
 }
 
 .center {
@@ -704,4 +776,72 @@ button {
 button:disabled {
   color: var(--disabled);
   cursor: not-allowed;
+}
+
+.fuzzy-finder-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  background-color: rgba(0, 0, 0, 0.4);
+  z-index: 100;
+}
+
+.fuzzy-finder {
+  display: flex;
+  flex-direction: column;
+  width: 480px;
+  max-width: 90vw;
+  max-height: 60vh;
+  background-color: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.fuzzy-finder-input {
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 14px;
+  font-size: 1.05em;
+  cursor: text;
+}
+
+.fuzzy-finder-input:focus {
+  outline: none;
+}
+
+.fuzzy-finder-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow: auto;
+}
+
+.fuzzy-finder-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fuzzy-finder-item.active {
+  background-color: var(--highlight);
+}
+
+.fuzzy-finder-empty {
+  padding: 6px 10px;
+  color: var(--fg-dark);
+  font-size: 0.9em;
 }

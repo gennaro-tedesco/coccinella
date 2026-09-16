@@ -1,10 +1,10 @@
 // Defines supported column types and the rules used to infer and compare them.
-// FEATURE: CSV data workspace
+// Inference preserves raw CSV values so users can still override ambiguous types.
 export const COLUMN_TYPES = ["string", "number", "date", "boolean", "category"];
 
 const DECIMAL_PATTERN =
   /^[+-]?(?:(?:0|[1-9]\d*)(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
-const DATE_PATTERN = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/;
+const DATE_PATTERN = /^\d{4}-\d{1,2}-\d{1,2}(?:[T\s].*)?$/;
 
 function toBoolean(value) {
   if (typeof value === "boolean") return value;
@@ -18,20 +18,7 @@ function isNumber(value) {
 
 function isDate(value) {
   const text = String(value).trim();
-  const match = text.match(DATE_PATTERN);
-  if (!match) return false;
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  return (
-    month >= 1 &&
-    month <= 12 &&
-    day >= 1 &&
-    day <= daysInMonth &&
-    !Number.isNaN(new Date(text).getTime())
-  );
+  return DATE_PATTERN.test(text) && !Number.isNaN(new Date(text).getTime());
 }
 
 function inferColumnType(values) {

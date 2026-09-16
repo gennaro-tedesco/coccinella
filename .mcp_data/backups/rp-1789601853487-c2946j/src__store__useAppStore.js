@@ -1,7 +1,4 @@
-// Owns application state for opened CSV sheets, display settings, and plots.
-// FEATURE: CSV data workspace
 import { create } from "zustand";
-import { inferColumnTypes } from "../utils/columnTypes";
 
 export const useAppStore = create((set) => ({
   mode: "data",
@@ -27,10 +24,11 @@ export const useAppStore = create((set) => ({
     set((state) => {
       const id = crypto.randomUUID();
       const columnVisibility = {};
-      const columnTypes = inferColumnTypes(columns, rows);
+      const columnTypes = {};
       const columnPrecision = {};
       for (const column of columns) {
         columnVisibility[column] = true;
+        columnTypes[column] = "string";
         columnPrecision[column] = 2;
       }
       return {

@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 import { useAppStore } from "./store/useAppStore";
 import TopBar from "./components/TopBar";
@@ -8,6 +9,8 @@ import DataTable from "./components/DataTable";
 import ColumnPanel from "./components/ColumnPanel";
 import ChartBuilder from "./components/ChartBuilder";
 import EmptyState from "./components/EmptyState";
+import FuzzyFinder from "./components/FuzzyFinder";
+import { openCsvFileAtPath } from "./utils/openFile";
 
 function App() {
   const mode = useAppStore((state) => state.mode);
@@ -15,10 +18,35 @@ function App() {
   const sheetPanelOpen = useAppStore((state) => state.sheetPanelOpen);
   const columnPanelOpen = useAppStore((state) => state.columnPanelOpen);
   const hasSheets = useAppStore((state) => state.sheetOrder.length > 0);
+  const sheets = useAppStore((state) => state.sheets);
+  const sheetOrder = useAppStore((state) => state.sheetOrder);
+  const openSheet = useAppStore((state) => state.openSheet);
+  const setActiveSheetId = useAppStore((state) => state.setActiveSheetId);
+
+  const [finder, setFinder] = useState(null);
+  const [csvFiles, setCsvFiles] = useState(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (!event.ctrlKey) return;
+      if (event.key === "p" || event.key === "P") {
+        event.preventDefault();
+        setFinder("files");
+        if (csvFiles === null) {
+          invoke("list_csv_files").then(setCsvFiles);
+        }
+      } else if (event.key === "b" || event.key === "B") {
+        event.preventDefault();
+        setFinder("sheets");
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [csvFiles]);
 
   const rightWidth = mode === "data" ? (columnPanelOpen ? "220px" : "32px") : "0px";
 
@@ -43,6 +71,30 @@ function App() {
         </div>
       ) : (
         <EmptyState />
+      )}
+      {finder === "files" && (
+        <FuzzyFinder
+          placeholder="Open file..."
+          items={csvFiles ?? []}
+          getLabel={(path) => path}
+          onSelect={(path) => {
+            setFinder(null);
+            openCsvFileAtPath(path, openSheet);
+          }}
+          onClose={() => setFinder(null)}
+        />
+      )}
+      {finder === "sheets" && (
+        <FuzzyFinder
+          placeholder="Go to sheet..."
+          items={sheetOrder.map((id) => sheets[id])}
+          getLabel={(sheet) => sheet.filename}
+          onSelect={(sheet) => {
+            setFinder(null);
+            setActiveSheetId(sheet.id);
+          }}
+          onClose={() => setFinder(null)}
+        />
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 
 function SheetPanel() {
@@ -6,6 +6,7 @@ function SheetPanel() {
   const sheets = useAppStore((state) => state.sheets);
   const activeSheetId = useAppStore((state) => state.activeSheetId);
   const setActiveSheetId = useAppStore((state) => state.setActiveSheetId);
+  const closeSheet = useAppStore((state) => state.closeSheet);
   const sheetPanelOpen = useAppStore((state) => state.sheetPanelOpen);
   const toggleSheetPanel = useAppStore((state) => state.toggleSheetPanel);
 
@@ -43,15 +44,30 @@ function SheetPanel() {
       <ul className="sheet-tree">
         {sheetOrder.map((id) => (
           <li key={id}>
-            <button
-              type="button"
+            <div
               className={
-                "sheet-node" + (id === activeSheetId ? " active" : "")
+                "sheet-node-row" + (id === activeSheetId ? " active" : "")
               }
-              onClick={() => setActiveSheetId(id)}
             >
-              {sheets[id].filename}
-            </button>
+              <button
+                type="button"
+                className="sheet-node"
+                onClick={() => setActiveSheetId(id)}
+              >
+                {sheets[id].filename}
+              </button>
+              <button
+                type="button"
+                className="sheet-node-close"
+                aria-label="Close file"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeSheet(id);
+                }}
+              >
+                <X size={12} />
+              </button>
+            </div>
             <ul className="sheet-versions" />
           </li>
         ))}
