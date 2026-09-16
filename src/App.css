@@ -22,6 +22,7 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  overflow: hidden;
   background-color: var(--bg, #25363b);
   color: var(--fg, #b0bec5);
 }
@@ -133,6 +134,7 @@ body,
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;
   background-color: var(--bg);
   color: var(--fg);
 }
@@ -265,6 +267,7 @@ body,
   background-color: var(--bg-alt);
   padding: 8px;
   overflow: auto;
+  overscroll-behavior: none;
   min-height: 0;
 }
 
@@ -379,6 +382,7 @@ body,
   flex: 1;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: none;
   background-color: var(--bg);
 }
 
@@ -630,12 +634,25 @@ body,
 }
 
 .column-row {
+  position: relative;
   padding: 2px 0;
+}
+
+.column-row-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.column-row:hover .th-settings-trigger {
+  opacity: 0.8;
 }
 
 .column-name {
   display: block;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
   border: none;
   background: none;

@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { formatBytes } from "../utils/stats";
 import ColumnStats from "./ColumnStats";
+import ColumnSettings from "./ColumnSettings";
 
 function ColumnPanel() {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
@@ -15,6 +16,22 @@ function ColumnPanel() {
   const columnPanelOpen = useAppStore((state) => state.columnPanelOpen);
   const toggleColumnPanel = useAppStore((state) => state.toggleColumnPanel);
   const [hoveredColumn, setHoveredColumn] = useState(null);
+  const [openSettingsColumn, setOpenSettingsColumn] = useState(null);
+
+  useEffect(() => {
+    if (!openSettingsColumn) return;
+    function handleOutsideClick() {
+      setOpenSettingsColumn(null);
+    }
+    document.addEventListener("click", handleOutsideClick);
+    return () => document.removeEventListener("click", handleOutsideClick);
+  }, [openSettingsColumn]);
+
+  useEffect(() => {
+    if (openSettingsColumn && hoveredColumn !== openSettingsColumn) {
+      setOpenSettingsColumn(null);
+    }
+  }, [hoveredColumn, openSettingsColumn]);
 
   if (!columnPanelOpen) {
     return (
@@ -97,16 +114,34 @@ function ColumnPanel() {
               setHoveredColumn((current) => (current === column ? null : current))
             }
           >
-            <button
-              type="button"
-              className={
-                "column-name" +
-                (sheet.columnVisibility[column] ? "" : " disabled")
-              }
-              onClick={() => toggleVisibility(column)}
-            >
-              {column}
-            </button>
+            <div className="column-row-content">
+              <button
+                type="button"
+                className={
+                  "column-name" +
+                  (sheet.columnVisibility[column] ? "" : " disabled")
+                }
+                onClick={() => toggleVisibility(column)}
+              >
+                {column}
+              </button>
+              <button
+                type="button"
+                className="th-settings-trigger"
+                aria-label={`${column} settings`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenSettingsColumn((current) =>
+                    current === column ? null : column,
+                  );
+                }}
+              >
+                <Settings size={13} />
+              </button>
+            </div>
+            {openSettingsColumn === column && (
+              <ColumnSettings sheet={sheet} column={column} />
+            )}
           </li>
         ))}
       </ul>
