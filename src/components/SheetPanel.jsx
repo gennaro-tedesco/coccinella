@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 
 function SheetPanel() {
@@ -5,10 +6,37 @@ function SheetPanel() {
   const sheets = useAppStore((state) => state.sheets);
   const activeSheetId = useAppStore((state) => state.activeSheetId);
   const setActiveSheetId = useAppStore((state) => state.setActiveSheetId);
+  const sheetPanelOpen = useAppStore((state) => state.sheetPanelOpen);
+  const toggleSheetPanel = useAppStore((state) => state.toggleSheetPanel);
+
+  if (!sheetPanelOpen) {
+    return (
+      <div className="sheet-panel collapsed">
+        <button
+          type="button"
+          className="panel-toggle"
+          aria-label="Open sheets panel"
+          onClick={toggleSheetPanel}
+        >
+          <ChevronRight size={16} />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="sheet-panel">
-      <div className="panel-title">Sheets</div>
+      <div className="panel-header">
+        <div className="panel-title">Sheets</div>
+        <button
+          type="button"
+          className="panel-toggle"
+          aria-label="Close sheets panel"
+          onClick={toggleSheetPanel}
+        >
+          <ChevronLeft size={16} />
+        </button>
+      </div>
       {sheetOrder.length === 0 && (
         <div className="panel-empty">No files open</div>
       )}

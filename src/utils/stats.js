@@ -17,6 +17,11 @@ function computeMode(values) {
   return best;
 }
 
+function toBoolean(value) {
+  if (typeof value === "boolean") return value;
+  return String(value).trim().toLowerCase() === "true";
+}
+
 function mostAndLeastFrequent(values) {
   const counts = frequencyMap(values);
   let most = null;
@@ -77,7 +82,17 @@ export function computeColumnStats(type, rawValues) {
     return { type: "category", most, least };
   }
 
-  return { type: "mode", mode: computeMode(values) };
+  if (type === "boolean") {
+    const bools = values.map(toBoolean);
+    const trueCount = bools.filter(Boolean).length;
+    return {
+      type: "boolean",
+      trueCount,
+      falseCount: bools.length - trueCount,
+    };
+  }
+
+  return null;
 }
 
 export function formatBytes(bytes) {

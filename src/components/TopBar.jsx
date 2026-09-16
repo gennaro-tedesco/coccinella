@@ -1,9 +1,7 @@
 import { useState } from "react";
 import { Menu, ChevronRight } from "lucide-react";
-import { open } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store/useAppStore";
-import { parseCsv } from "../utils/csv";
+import { openCsvFile } from "../utils/openFile";
 import { THEMES, THEME_ORDER } from "../utils/themes";
 
 function TopBar() {
@@ -17,17 +15,7 @@ function TopBar() {
 
   async function handleOpen() {
     setMenuOpen(false);
-    const path = await open({
-      multiple: false,
-      filters: [{ name: "CSV", extensions: ["csv"] }],
-    });
-    if (!path) return;
-
-    const text = await invoke("read_csv_file", { path });
-    const { columns, rows } = parseCsv(text);
-    const filename = path.split(/[\\/]/).pop();
-    const sizeBytes = new TextEncoder().encode(text).length;
-    openSheet(filename, columns, rows, sizeBytes);
+    await openCsvFile(openSheet);
   }
 
   return (

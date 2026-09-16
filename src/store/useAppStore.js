@@ -7,6 +7,14 @@ export const useAppStore = create((set) => ({
   theme: "oceanic",
   setTheme: (theme) => set({ theme }),
 
+  sheetPanelOpen: true,
+  toggleSheetPanel: () =>
+    set((state) => ({ sheetPanelOpen: !state.sheetPanelOpen })),
+
+  columnPanelOpen: true,
+  toggleColumnPanel: () =>
+    set((state) => ({ columnPanelOpen: !state.columnPanelOpen })),
+
   sheets: {},
   sheetOrder: [],
   activeSheetId: null,

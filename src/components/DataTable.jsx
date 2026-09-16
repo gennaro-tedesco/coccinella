@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -8,108 +8,80 @@ import {
 import { Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { compareByType, COLUMN_TYPES } from "../utils/columnTypes";
-import { computeColumnStats } from "../utils/stats";
+import ColumnStats from "./ColumnStats";
 
-function StatRow({ label, value }) {
-  return (
-    <div className="stat-row">
-      <span className="stat-label">{label}</span>
-      <span className="stat-value">{value}</span>
-    </div>
-  );
-}
-
-function ColumnStats({ sheet, column }) {
-  const type = sheet.columnTypes[column];
-  const precision = sheet.columnPrecision[column] ?? 2;
-  const stats = useMemo(
-    () => computeColumnStats(type, sheet.rows.map((row) => row[column])),
-    [type, sheet.rows, column],
-  );
-
-  if (!stats) return <div className="column-stats-empty">No data</div>;
-
-  if (stats.type === "number") {
-    return (
-      <div className="column-stats">
-        <StatRow label="Sum" value={stats.sum.toFixed(precision)} />
-        <StatRow label="Average" value={stats.avg.toFixed(precision)} />
-        <StatRow label="Min" value={stats.min.toFixed(precision)} />
-        <StatRow label="Max" value={stats.max.toFixed(precision)} />
-        <StatRow label="Std dev" value={stats.stdDev.toFixed(precision)} />
-        <StatRow label="Mode" value={Number(stats.mode).toFixed(precision)} />
-      </div>
-    );
-  }
-
-  if (stats.type === "date") {
-    return (
-      <div className="column-stats">
-        <StatRow label="Min" value={stats.min.toISOString()} />
-        <StatRow label="Max" value={stats.max.toISOString()} />
-      </div>
-    );
-  }
-
-  if (stats.type === "category") {
-    return (
-      <div className="column-stats">
-        <StatRow
-          label="Most"
-          value={`${stats.most[0]} (${stats.most[1]})`}
-        />
-        <StatRow label="Min" value={`${stats.least[0]} (${stats.least[1]})`} />
-      </div>
-    );
-  }
-
-  return (
-    <div className="column-stats">
-      <StatRow label="Mode" value={String(stats.mode)} />
-    </div>
-  );
-}
-
-function ColumnSettings({ sheet, column, isOpen }) {
+function TypeSelector({ sheet, column }) {
+  const [open, setOpen] = useState(false);
   const setColumnType = useAppStore((state) => state.setColumnType);
+  const type = sheet.columnTypes[column];
+
+  return (
+    <div className="type-selector">
+      <button
+        type="button"
+        className="type-selector-trigger"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+      >
+        {type}
+      </button>
+      {open && (
+        <ul
+          className="file-menu-dropdown type-selector-dropdown"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {COLUMN_TYPES.map((t) => (
+            <li key={t}>
+              <button
+                type="button"
+                className={t === type ? "active" : ""}
+                onClick={() => {
+                  setColumnType(sheet.id, column, t);
+                  setOpen(false);
+                }}
+              >
+                {t}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ColumnSettings({ sheet, column, minWidth }) {
   const setColumnPrecision = useAppStore((state) => state.setColumnPrecision);
   const type = sheet.columnTypes[column];
 
   return (
     <div
-      className={"column-settings-popover" + (isOpen ? " open" : "")}
+      className="column-settings-popover"
+      style={minWidth ? { minWidth } : undefined}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="column-settings-inner">
-        <label className="column-settings-field">
-          Type
-          <select
-            value={type}
-            onChange={(e) => setColumnType(sheet.id, column, e.target.value)}
-          >
-            {COLUMN_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </label>
-        {type === "number" && (
-          <label className="column-settings-field">
-            Significant digits
-            <input
-              type="number"
-              min={0}
-              max={10}
-              value={sheet.columnPrecision[column] ?? 2}
-              onChange={(e) =>
-                setColumnPrecision(sheet.id, column, Number(e.target.value))
-              }
-            />
-          </label>
-        )}
-        {isOpen && <ColumnStats sheet={sheet} column={column} />}
+      <div className="column-settings-row">
+        <span>Type</span>
+        <TypeSelector sheet={sheet} column={column} />
       </div>
+      {type === "number" && (
+        <label className="column-settings-row">
+          <span>Precision</span>
+          <input
+            type="number"
+            min={0}
+            max={10}
+            value={sheet.columnPrecision[column] ?? 2}
+            onChange={(e) =>
+              setColumnPrecision(sheet.id, column, Number(e.target.value))
+            }
+          />
+        </label>
+      )}
+      <div className="column-settings-separator" />
+      <ColumnStats sheet={sheet} column={column} />
     </div>
   );
 }
@@ -124,6 +96,8 @@ function DataTable() {
   );
   const setSorting = useAppStore((state) => state.setSorting);
   const [openColumn, setOpenColumn] = useState(null);
+  const [openColumnWidth, setOpenColumnWidth] = useState(null);
+  const thRefs = useRef({});
 
   useEffect(() => {
     if (!openColumn) return;
@@ -217,7 +191,13 @@ function DataTable() {
         {table.getHeaderGroups().map((headerGroup) => (
           <tr key={headerGroup.id}>
             {headerGroup.headers.map((header) => (
-              <th key={header.id} className="th-cell">
+              <th
+                key={header.id}
+                className="th-cell"
+                ref={(el) => {
+                  thRefs.current[header.id] = el;
+                }}
+              >
                 <div
                   className="th-content"
                   onClick={header.column.getToggleSortingHandler()}
@@ -237,19 +217,27 @@ function DataTable() {
                     aria-label={`${header.id} settings`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setOpenColumn((current) =>
-                        current === header.id ? null : header.id,
-                      );
+                      setOpenColumn((current) => {
+                        if (current === header.id) return null;
+                        setOpenColumnWidth(
+                          thRefs.current[header.id]?.offsetWidth ?? null,
+                        );
+                        return header.id;
+                      });
                     }}
                   >
                     <Settings size={13} />
                   </button>
                 </div>
-                <ColumnSettings
-                  sheet={sheet}
-                  column={header.id}
-                  isOpen={openColumn === header.id}
-                />
+                {openColumn === header.id && (
+                  <ColumnSettings
+                    sheet={sheet}
+                    column={header.id}
+                    minWidth={
+                      openColumnWidth ? `${openColumnWidth}px` : undefined
+                    }
+                  />
+                )}
               </th>
             ))}
           </tr>
