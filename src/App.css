@@ -51,8 +51,7 @@ body,
   color: var(--fg, #b0bec5);
 }
 
-/* Themes sourced from material.nvim (marko-cerovac/material.nvim),
-   lua/material/colors/init.lua */
+/* Themes sourced from material.nvim and ray-x/starry.nvim. */
 
 :root[data-theme="oceanic"] {
   --bg: #25363b;
@@ -152,6 +151,86 @@ body,
   --col-6: #39adb5;
   --col-7: #7c4dff;
   --col-8: #f76d47;
+}
+
+:root[data-theme="dracula"] {
+  --bg: #21222c;
+  --bg-alt: #282a36;
+  --fg: #f4f3f2;
+  --fg-dark: #6476a6;
+  --border: #5144a3;
+  --active: #363b40;
+  --highlight: #716f90;
+  --disabled: #615752;
+  --accent: #a34c81;
+  --col-1: #ff555f;
+  --col-2: #50fa7b;
+  --col-3: #f1fa87;
+  --col-4: #04d1f9;
+  --col-5: #8697b0;
+  --col-6: #8be4f1;
+  --col-7: #bd94f4;
+  --col-8: #ff79c1;
+}
+
+:root[data-theme="monokai"] {
+  --bg: #262721;
+  --bg-alt: #30312a;
+  --fg: #ced1d4;
+  --fg-dark: #75715e;
+  --border: #414245;
+  --active: #3e383a;
+  --highlight: #515b70;
+  --disabled: #4f5466;
+  --accent: #66d9ef;
+  --col-1: #e73c50;
+  --col-2: #a6e22d;
+  --col-3: #e6db74;
+  --col-4: #5594ec;
+  --col-5: #a6a7d0;
+  --col-6: #a1efe4;
+  --col-7: #ae81ff;
+  --col-8: #fd9720;
+}
+
+:root[data-theme="mariana"] {
+  --bg: #2a333c;
+  --bg-alt: #323a48;
+  --fg: #d8dee9;
+  --fg-dark: #a6acb9;
+  --border: #64738a;
+  --active: #304868;
+  --highlight: #515b70;
+  --disabled: #64738a;
+  --accent: #d8dee9;
+  --col-1: #ec5f66;
+  --col-2: #99c794;
+  --col-3: #fac761;
+  --col-4: #6699cc;
+  --col-5: #b0c4d5;
+  --col-6: #a1efe4;
+  --col-7: #c695c6;
+  --col-8: #f9ae28;
+}
+
+:root[data-theme="darkSolar"] {
+  --bg: #012731;
+  --bg-alt: #083445;
+  --fg: #abbcbb;
+  --fg-dark: #889ea9;
+  --border: #193f48;
+  --active: #374854;
+  --highlight: #2f4b80;
+  --disabled: #074051;
+  --accent: #8ebddd;
+  --col-1: #d01f26;
+  --col-2: #76ba6c;
+  --col-3: #bf8a04;
+  --col-4: #2f85da;
+  --col-5: #96e7f0;
+  --col-6: #29a194;
+  --col-7: #d13d8f;
+  --col-8: #d99e58;
 }
 
 .app {
