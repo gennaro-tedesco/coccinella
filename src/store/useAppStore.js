@@ -47,7 +47,8 @@ export const useAppStore = create((set) => ({
             columnVisibility,
             columnTypes,
             columnPrecision,
-            sorting: null,
+            selectedColumns: [],
+            sorting: [],
             versions: [],
             sizeBytes,
           },
@@ -140,6 +141,21 @@ export const useAppStore = create((set) => ({
         [sheetId]: { ...state.sheets[sheetId], sorting },
       },
     })),
+
+  toggleColumnSelection: (sheetId, column) =>
+    set((state) => {
+      const sheet = state.sheets[sheetId];
+      const selectedColumns = sheet.selectedColumns.includes(column)
+        ? sheet.selectedColumns.filter((selected) => selected !== column)
+        : [...sheet.selectedColumns, column];
+
+      return {
+        sheets: {
+          ...state.sheets,
+          [sheetId]: { ...sheet, selectedColumns },
+        },
+      };
+    }),
 
   setPlotConfig: (sheetId, config) =>
     set((state) => ({
