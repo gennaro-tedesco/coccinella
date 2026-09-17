@@ -27,17 +27,6 @@ function SheetPanel() {
 
   return (
     <div className="sheet-panel">
-      <div className="panel-header">
-        <div />
-        <button
-          type="button"
-          className="panel-toggle"
-          aria-label="Close sheets panel"
-          onClick={toggleSheetPanel}
-        >
-          <ChevronLeft size={16} />
-        </button>
-      </div>
       {sheetOrder.length === 0 && (
         <div className="panel-empty">No files open</div>
       )}
@@ -72,6 +61,17 @@ function SheetPanel() {
           </li>
         ))}
       </ul>
+      <div className="panel-header">
+        <div />
+        <button
+          type="button"
+          className="panel-toggle"
+          aria-label="Close sheets panel"
+          onClick={toggleSheetPanel}
+        >
+          <ChevronLeft size={16} />
+        </button>
+      </div>
     </div>
   );
 }

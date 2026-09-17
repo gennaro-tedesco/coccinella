@@ -80,6 +80,7 @@ function ColumnPanel() {
   if (!sheet) {
     return (
       <div className="column-panel">
+        <div className="panel-empty">No sheet selected</div>
         <div className="panel-header">
           <button
             type="button"
@@ -91,7 +92,6 @@ function ColumnPanel() {
           </button>
           <div />
         </div>
-        <div className="panel-empty">No sheet selected</div>
       </div>
     );
   }
@@ -169,17 +169,6 @@ function ColumnPanel() {
 
   return (
     <div className="column-panel">
-      <div className="panel-header">
-        <button
-          type="button"
-          className="panel-toggle"
-          aria-label="Close columns panel"
-          onClick={toggleColumnPanel}
-        >
-          <ChevronRight size={16} />
-        </button>
-        <div />
-      </div>
       <div className="sheet-summary">
         <div className="sheet-summary-stats">
           <div>
@@ -290,6 +279,17 @@ function ColumnPanel() {
           <ColumnStats sheet={sheet} column={hoveredColumn} />
         </div>
       )}
+      <div className="panel-header">
+        <button
+          type="button"
+          className="panel-toggle"
+          aria-label="Close columns panel"
+          onClick={toggleColumnPanel}
+        >
+          <ChevronRight size={16} />
+        </button>
+        <div />
+      </div>
     </div>
   );
 }

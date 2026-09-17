@@ -338,6 +338,8 @@ body,
 
 .sheet-panel,
 .column-panel {
+  display: flex;
+  flex-direction: column;
   background-color: var(--bg-alt);
   padding: 8px;
   overflow: auto;
@@ -345,17 +347,11 @@ body,
   min-height: 0;
 }
 
-.column-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
 .sheet-panel.collapsed,
 .column-panel.collapsed {
   display: flex;
   flex-direction: row;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: center;
   padding: 8px 0;
   overflow: hidden;
@@ -365,7 +361,8 @@ body,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-top: auto;
+  padding-top: 8px;
 }
 
 .panel-title {
@@ -1110,8 +1107,8 @@ button:disabled {
 
 .go-to-line {
   position: fixed;
-  top: 10px;
-  right: 10px;
+  bottom: 10px;
+  left: 10px;
   z-index: 110;
   display: flex;
   align-items: center;
@@ -1119,7 +1116,7 @@ button:disabled {
   padding: 7px 9px;
   background-color: var(--bg-alt);
   border: 1px solid var(--border);
-  border-top: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
   border-radius: 6px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
