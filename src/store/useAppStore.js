@@ -81,6 +81,28 @@ export const useAppStore = create((set) => ({
       },
     })),
 
+  moveColumn: (sheetId, sourceColumn, targetColumn, position) =>
+    set((state) => {
+      const sheet = state.sheets[sheetId];
+      if (!sheet || sourceColumn === targetColumn) return state;
+
+      const columns = sheet.columns.filter((column) => column !== sourceColumn);
+      const targetIndex = columns.indexOf(targetColumn);
+      if (targetIndex === -1) return state;
+      columns.splice(
+        targetIndex + (position === "after" ? 1 : 0),
+        0,
+        sourceColumn,
+      );
+
+      return {
+        sheets: {
+          ...state.sheets,
+          [sheetId]: { ...sheet, columns },
+        },
+      };
+    }),
+
   setSorting: (sheetId, sorting) =>
     set((state) => ({
       sheets: {

@@ -139,9 +139,11 @@ function DataTable() {
                       header.column.columnDef.header,
                       header.getContext(),
                     )}
-                    {{ asc: " ▲", desc: " ▼" }[
-                      header.column.getIsSorted()
-                    ] ?? ""}
+                    <span className="sort-indicator" aria-hidden="true">
+                      {{ asc: "▲", desc: "▼" }[
+                        header.column.getIsSorted()
+                      ] ?? ""}
+                    </span>
                   </span>
                   <button
                     type="button"

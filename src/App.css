@@ -539,6 +539,13 @@ body,
   user-select: none;
 }
 
+.sort-indicator {
+  display: inline-block;
+  width: 1em;
+  margin-left: 0.25em;
+  text-align: center;
+}
+
 .th-settings-trigger {
   display: flex;
   align-items: center;
@@ -734,6 +741,18 @@ body,
   padding: 2px 0;
 }
 
+.column-row.dragging {
+  opacity: 0.4;
+}
+
+.column-row.drag-over-before {
+  box-shadow: inset 0 2px var(--accent);
+}
+
+.column-row.drag-over-after {
+  box-shadow: inset 0 -2px var(--accent);
+}
+
 .column-row-content {
   display: flex;
   align-items: center;
@@ -758,6 +777,13 @@ body,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.column-name:active {
+  cursor: grabbing;
 }
 
 .column-name:hover {

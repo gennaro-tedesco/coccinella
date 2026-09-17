@@ -1,6 +1,6 @@
 // Renders column controls and statistics for the currently hovered column.
 // FEATURE: CSV data workspace
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { formatBytes } from "../utils/stats";
@@ -15,11 +15,17 @@ function ColumnPanel() {
   const setColumnVisibility = useAppStore(
     (state) => state.setColumnVisibility,
   );
+  const moveColumn = useAppStore((state) => state.moveColumn);
   const columnPanelOpen = useAppStore((state) => state.columnPanelOpen);
   const toggleColumnPanel = useAppStore((state) => state.toggleColumnPanel);
   const hoveredColumn = useAppStore((state) => state.hoveredColumn);
   const setHoveredColumn = useAppStore((state) => state.setHoveredColumn);
   const [openSettingsColumn, setOpenSettingsColumn] = useState(null);
+  const [draggedColumn, setDraggedColumn] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
+  const dragStateRef = useRef(null);
+  const dropTargetRef = useRef(null);
+  const ignoreClickUntilRef = useRef(0);
 
   useEffect(() => {
     if (!openSettingsColumn) return;
@@ -77,6 +83,70 @@ function ColumnPanel() {
     });
   }
 
+  function clearColumnDrag() {
+    dragStateRef.current = null;
+    dropTargetRef.current = null;
+    setDraggedColumn(null);
+    setDropTarget(null);
+  }
+
+  function handleColumnPointerMove(event) {
+    const drag = dragStateRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    if (!drag.active) {
+      const distance = Math.hypot(
+        event.clientX - drag.startX,
+        event.clientY - drag.startY,
+      );
+      if (distance < 4) return;
+      drag.active = true;
+      setOpenSettingsColumn(null);
+      setDraggedColumn(drag.column);
+    }
+
+    event.preventDefault();
+    const row = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest(".column-row");
+    const targetColumn = row?.dataset.column;
+    if (!targetColumn || targetColumn === drag.column) {
+      dropTargetRef.current = null;
+      setDropTarget(null);
+      return;
+    }
+
+    const bounds = row.getBoundingClientRect();
+    const position =
+      event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+    const nextTarget = { column: targetColumn, position };
+    dropTargetRef.current = nextTarget;
+    setDropTarget((current) =>
+      current?.column === targetColumn && current.position === position
+        ? current
+        : nextTarget,
+    );
+  }
+
+  function handleColumnPointerUp(event) {
+    const drag = dragStateRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    if (drag.active) {
+      const target = dropTargetRef.current;
+      if (target) {
+        moveColumn(
+          activeSheetId,
+          drag.column,
+          target.column,
+          target.position,
+        );
+      }
+      ignoreClickUntilRef.current = performance.now() + 100;
+    }
+    clearColumnDrag();
+  }
+
   return (
     <div className="column-panel">
       <div className="panel-header">
@@ -111,7 +181,14 @@ function ColumnPanel() {
         {sheet.columns.map((column) => (
           <li
             key={column}
-            className="column-row"
+            data-column={column}
+            className={
+              "column-row" +
+              (draggedColumn === column ? " dragging" : "") +
+              (dropTarget?.column === column
+                ? ` drag-over-${dropTarget.position}`
+                : "")
+            }
             onMouseEnter={() => setHoveredColumn(column)}
             onMouseLeave={() => setHoveredColumn(null)}
           >
@@ -122,7 +199,24 @@ function ColumnPanel() {
                   "column-name" +
                   (sheet.columnVisibility[column] ? "" : " disabled")
                 }
-                onClick={() => toggleVisibility(column)}
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  dragStateRef.current = {
+                    column,
+                    pointerId: event.pointerId,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    active: false,
+                  };
+                }}
+                onPointerMove={handleColumnPointerMove}
+                onPointerUp={handleColumnPointerUp}
+                onPointerCancel={() => clearColumnDrag()}
+                onClick={() => {
+                  if (performance.now() < ignoreClickUntilRef.current) return;
+                  toggleVisibility(column);
+                }}
               >
                 {column}
               </button>
