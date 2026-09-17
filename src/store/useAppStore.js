@@ -26,7 +26,7 @@ export const useAppStore = create((set) => ({
   previousSheetId: null,
   plotConfig: {},
 
-  openSheet: (filename, columns, rows, sizeBytes) =>
+  openSheet: (filename, columns, rows, sizeBytes, path, separator) =>
     set((state) => {
       const id = crypto.randomUUID();
       const columnVisibility = {};
@@ -42,6 +42,8 @@ export const useAppStore = create((set) => ({
           [id]: {
             id,
             filename,
+            path: path ?? null,
+            separator: separator || ",",
             rows,
             columns,
             columnVisibility,
@@ -56,6 +58,36 @@ export const useAppStore = create((set) => ({
         sheetOrder: [...state.sheetOrder, id],
         activeSheetId: id,
         previousSheetId: state.activeSheetId,
+      };
+    }),
+
+  rescanSheet: (sheetId, separator, columns, rows, sizeBytes) =>
+    set((state) => {
+      const sheet = state.sheets[sheetId];
+      if (!sheet) return state;
+      const columnVisibility = {};
+      const columnTypes = inferColumnTypes(columns, rows);
+      const columnPrecision = {};
+      for (const column of columns) {
+        columnVisibility[column] = true;
+        columnPrecision[column] = 2;
+      }
+      return {
+        sheets: {
+          ...state.sheets,
+          [sheetId]: {
+            ...sheet,
+            separator,
+            columns,
+            rows,
+            columnVisibility,
+            columnTypes,
+            columnPrecision,
+            selectedColumns: [],
+            sorting: [],
+            sizeBytes,
+          },
+        },
       };
     }),
 

@@ -12,16 +12,22 @@ import ColumnPanel from "./components/ColumnPanel";
 import ChartBuilder from "./components/ChartBuilder";
 import EmptyState from "./components/EmptyState";
 import FuzzyFinder from "./components/FuzzyFinder";
+import GoToLine from "./components/GoToLine";
 import { openCsvFile, openCsvFileAtPath } from "./utils/openFile";
+
+const GO_TO_LINE_HIGHLIGHT_MS = 2000;
 
 function App() {
   const mode = useAppStore((state) => state.mode);
   const theme = useAppStore((state) => state.theme);
   const sheetPanelOpen = useAppStore((state) => state.sheetPanelOpen);
   const columnPanelOpen = useAppStore((state) => state.columnPanelOpen);
+  const toggleSheetPanel = useAppStore((state) => state.toggleSheetPanel);
+  const toggleColumnPanel = useAppStore((state) => state.toggleColumnPanel);
   const hasSheets = useAppStore((state) => state.sheetOrder.length > 0);
   const sheets = useAppStore((state) => state.sheets);
   const sheetOrder = useAppStore((state) => state.sheetOrder);
+  const activeSheetId = useAppStore((state) => state.activeSheetId);
   const openSheet = useAppStore((state) => state.openSheet);
   const setActiveSheetId = useAppStore((state) => state.setActiveSheetId);
   const switchToPreviousSheet = useAppStore(
@@ -31,7 +37,10 @@ function App() {
   const [finder, setFinder] = useState(null);
   const [csvFiles, setCsvFiles] = useState(null);
   const [fontSize, setFontSize] = useState(14);
+  const [goToLineOpen, setGoToLineOpen] = useState(false);
   const contentRef = useRef(null);
+  const highlightedLineRef = useRef(null);
+  const highlightTimeoutRef = useRef(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -41,6 +50,17 @@ function App() {
     document.documentElement.style.fontSize = `${fontSize}px`;
     return () => document.documentElement.style.removeProperty("font-size");
   }, [fontSize]);
+
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(highlightTimeoutRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (mode !== "data") setGoToLineOpen(false);
+    contentRef.current?.style.removeProperty("padding-bottom");
+  }, [activeSheetId, mode]);
 
   useEffect(() => {
     async function openFileFinder() {
@@ -61,6 +81,33 @@ function App() {
       const isEditing =
         target instanceof HTMLElement &&
         (target.isContentEditable || target.matches("input, textarea, select"));
+
+      if (
+        !isEditing &&
+        mode === "data" &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        event.key === ":"
+      ) {
+        event.preventDefault();
+        setGoToLineOpen(true);
+        return;
+      }
+
+      if (
+        !isEditing &&
+        mode === "data" &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        event.key === "z"
+      ) {
+        event.preventDefault();
+        toggleSheetPanel();
+        toggleColumnPanel();
+        return;
+      }
 
       if (
         !isEditing &&
@@ -163,7 +210,63 @@ function App() {
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [csvFiles, mode, openSheet, switchToPreviousSheet]);
+  }, [
+    csvFiles,
+    mode,
+    openSheet,
+    switchToPreviousSheet,
+    toggleSheetPanel,
+    toggleColumnPanel,
+  ]);
+
+  function handleGoToLine(line) {
+    const content = contentRef.current;
+    const target = content?.querySelector(`[data-source-line="${line}"]`);
+    if (!content || !target) return;
+
+    window.clearTimeout(highlightTimeoutRef.current);
+    highlightedLineRef.current?.classList.remove("go-to-line-highlight");
+    highlightedLineRef.current?.style.removeProperty(
+      "--go-to-line-highlight-duration",
+    );
+
+    content.style.removeProperty("padding-bottom");
+    const baseScrollHeight = content.scrollHeight;
+    const headerHeight =
+      content.querySelector(".data-table thead")?.getBoundingClientRect()
+        .height ?? 0;
+    const targetTop =
+      line === 1
+        ? 0
+        : content.scrollTop +
+          target.getBoundingClientRect().top -
+          content.getBoundingClientRect().top -
+          headerHeight;
+    const scrollTop = Math.max(0, targetTop);
+    const maxScrollTop = Math.max(0, baseScrollHeight - content.clientHeight);
+
+    if (scrollTop > maxScrollTop) {
+      content.style.paddingBottom = `${scrollTop - maxScrollTop}px`;
+    }
+
+    content.scrollTo({ top: scrollTop, behavior: "smooth" });
+    target.style.setProperty(
+      "--go-to-line-highlight-duration",
+      `${GO_TO_LINE_HIGHLIGHT_MS}ms`,
+    );
+    // Restart the fade when navigating to the same line repeatedly.
+    void target.offsetWidth;
+    target.classList.add("go-to-line-highlight");
+    highlightedLineRef.current = target;
+    highlightTimeoutRef.current = window.setTimeout(() => {
+      target.classList.remove("go-to-line-highlight");
+      target.style.removeProperty("--go-to-line-highlight-duration");
+      if (highlightedLineRef.current === target) {
+        highlightedLineRef.current = null;
+      }
+    }, GO_TO_LINE_HIGHLIGHT_MS);
+    setGoToLineOpen(false);
+  }
 
   const rightWidth = mode === "data" ? (columnPanelOpen ? "220px" : "32px") : "0px";
 
@@ -215,6 +318,13 @@ function App() {
             setActiveSheetId(sheet.id);
           }}
           onClose={() => setFinder(null)}
+        />
+      )}
+      {goToLineOpen && mode === "data" && activeSheetId && (
+        <GoToLine
+          maxLine={sheets[activeSheetId].rows.length + 1}
+          onGoToLine={handleGoToLine}
+          onClose={() => setGoToLineOpen(false)}
         />
       )}
     </div>

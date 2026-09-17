@@ -138,7 +138,7 @@ function DataTable() {
 
   return (
     <table className="data-table">
-      <thead>
+      <thead data-source-line="1">
         {table.getHeaderGroups().map((headerGroup) => (
           <tr key={headerGroup.id}>
             {headerGroup.headers.map((header) => {
@@ -223,7 +223,7 @@ function DataTable() {
       </thead>
       <tbody>
         {table.getRowModel().rows.map((row) => (
-          <tr key={row.id}>
+          <tr key={row.id} data-source-line={row.index + 2}>
             {row.getVisibleCells().map((cell) => {
               const isSelected = selectedColumns.includes(cell.column.id);
               return (

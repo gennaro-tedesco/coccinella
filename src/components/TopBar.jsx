@@ -12,6 +12,8 @@ import { THEMES, THEME_ORDER } from "../utils/themes";
 const SHORTCUTS = [
   ["Open file finder", "Ctrl+p"],
   ["Go to sheet", "Ctrl+b"],
+  ["Go to line", ":"],
+  ["Toggle side panels", "z"],
   ["Previous sheet", "Ctrl+^"],
   ["Scroll left", "h"],
   ["Scroll down", "j"],
@@ -21,6 +23,7 @@ const SHORTCUTS = [
   ["Half page down", "Ctrl+d"],
   ["Increase font", "Shift++ / Ctrl++"],
   ["Decrease font", "Shift+- / Ctrl+-"],
+  ["Toggle column selection", "Ctrl+click"],
 ];
 
 function TopBar() {
@@ -39,7 +42,7 @@ function TopBar() {
   }
 
   return (
-    <div className="top-bar">
+    <div className="top-bar" data-tauri-drag-region="deep">
       <div
         className="file-menu"
         onMouseLeave={() => {

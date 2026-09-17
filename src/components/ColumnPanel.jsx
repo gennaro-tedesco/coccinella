@@ -1,9 +1,10 @@
 // Renders column controls and statistics for the currently hovered column.
 // FEATURE: CSV data workspace
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Settings } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { formatBytes } from "../utils/stats";
+import { rescanCsvFile } from "../utils/openFile";
 import ColumnStats from "./ColumnStats";
 import ColumnSettings from "./ColumnSettings";
 
@@ -16,6 +17,7 @@ function ColumnPanel() {
     (state) => state.setColumnVisibility,
   );
   const moveColumn = useAppStore((state) => state.moveColumn);
+  const rescanSheet = useAppStore((state) => state.rescanSheet);
   const columnPanelOpen = useAppStore((state) => state.columnPanelOpen);
   const toggleColumnPanel = useAppStore((state) => state.toggleColumnPanel);
   const hoveredColumn = useAppStore((state) => state.hoveredColumn);
@@ -23,9 +25,27 @@ function ColumnPanel() {
   const [openSettingsColumn, setOpenSettingsColumn] = useState(null);
   const [draggedColumn, setDraggedColumn] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
+  const [separatorInput, setSeparatorInput] = useState(sheet?.separator ?? ",");
   const dragStateRef = useRef(null);
   const dropTargetRef = useRef(null);
   const ignoreClickUntilRef = useRef(0);
+
+  useEffect(() => {
+    setSeparatorInput(sheet?.separator ?? ",");
+  }, [activeSheetId, sheet?.separator]);
+
+  async function handleRescan() {
+    if (!sheet?.path || !separatorInput) return;
+    try {
+      const { columns, rows, sizeBytes } = await rescanCsvFile(
+        sheet.path,
+        separatorInput,
+      );
+      rescanSheet(activeSheetId, separatorInput, columns, rows, sizeBytes);
+    } catch (error) {
+      console.error("Failed to rescan CSV with new separator:", error);
+    }
+  }
 
   useEffect(() => {
     if (!openSettingsColumn) return;
@@ -61,7 +81,6 @@ function ColumnPanel() {
     return (
       <div className="column-panel">
         <div className="panel-header">
-          <div />
           <button
             type="button"
             className="panel-toggle"
@@ -70,6 +89,7 @@ function ColumnPanel() {
           >
             <ChevronRight size={16} />
           </button>
+          <div />
         </div>
         <div className="panel-empty">No sheet selected</div>
       </div>
@@ -150,7 +170,6 @@ function ColumnPanel() {
   return (
     <div className="column-panel">
       <div className="panel-header">
-        <div />
         <button
           type="button"
           className="panel-toggle"
@@ -159,22 +178,48 @@ function ColumnPanel() {
         >
           <ChevronRight size={16} />
         </button>
+        <div />
       </div>
       <div className="sheet-summary">
-        <div>
-          <span className="sheet-summary-value">
-            {sheet.rows.length.toLocaleString()}
-          </span>{" "}
-          rows
+        <div className="sheet-summary-stats">
+          <div>
+            <span className="sheet-summary-value">
+              {sheet.rows.length.toLocaleString()}
+            </span>{" "}
+            rows
+          </div>
+          <div>
+            <span className="sheet-summary-value">{sheet.columns.length}</span>{" "}
+            columns
+          </div>
+          <div>
+            <span className="sheet-summary-value">
+              {formatBytes(sheet.sizeBytes ?? 0)}
+            </span>
+          </div>
         </div>
-        <div>
-          <span className="sheet-summary-value">{sheet.columns.length}</span>{" "}
-          columns
-        </div>
-        <div>
-          <span className="sheet-summary-value">
-            {formatBytes(sheet.sizeBytes ?? 0)}
-          </span>
+        <div className="separator-control">
+          <input
+            type="text"
+            className="separator-input"
+            maxLength={1}
+            aria-label="CSV separator"
+            title="CSV separator"
+            value={separatorInput}
+            onChange={(event) => setSeparatorInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") handleRescan();
+            }}
+          />
+          <button
+            type="button"
+            className="type-selector-trigger"
+            aria-label="Rescan CSV with separator"
+            disabled={!sheet.path || !separatorInput}
+            onClick={handleRescan}
+          >
+            <RefreshCw size={13} />
+          </button>
         </div>
       </div>
       <ul className="column-list">
