@@ -4,6 +4,30 @@
   box-sizing: border-box;
 }
 
+* {
+  scrollbar-color: var(--border, #355058) var(--bg-alt, #1c2c30);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background-color: var(--bg-alt, #1c2c30);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--border, #355058);
+  border: 2px solid var(--bg-alt, #1c2c30);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--fg-dark, #7c9ead);
+}
+
 :root {
   font-family: "Lexend", sans-serif;
   font-size: 14px;
@@ -155,9 +179,9 @@ body,
 }
 
 .top-bar {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 6px 10px;
   background-color: var(--bg-alt);
 }
@@ -176,6 +200,8 @@ body,
 }
 
 .file-menu-trigger svg {
+  width: 1.3em;
+  height: 1.3em;
   transition: transform 180ms ease;
 }
 
@@ -240,7 +266,27 @@ body,
 .file-menu-dropdown.submenu {
   top: -4px;
   left: 100%;
-  margin: 0 0 0 2px;
+  margin: 0;
+}
+
+.file-menu-dropdown.shortcuts-submenu {
+  min-width: 250px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 6px 10px;
+  white-space: nowrap;
+  color: var(--fg-dark);
+}
+
+.shortcut-item kbd {
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 0.85em;
 }
 
 .menu-separator {
@@ -249,8 +295,24 @@ body,
   background-color: var(--border);
 }
 
+.mode-toggle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  transform: translate(-50%, -50%);
+}
+
 .mode-toggle button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 0;
+}
+
+.mode-toggle svg {
+  width: 1.2em;
+  height: 1.2em;
 }
 
 .mode-toggle button.active {
@@ -721,7 +783,7 @@ body,
   gap: 2px;
   margin-bottom: 12px;
   padding-bottom: 8px;
-  font-size: 0.85em;
+  font-size: 0.85rem;
   color: var(--fg-dark);
 }
 

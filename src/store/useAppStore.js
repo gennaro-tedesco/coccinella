@@ -23,6 +23,7 @@ export const useAppStore = create((set) => ({
   sheets: {},
   sheetOrder: [],
   activeSheetId: null,
+  previousSheetId: null,
   plotConfig: {},
 
   openSheet: (filename, columns, rows, sizeBytes) =>
@@ -53,10 +54,29 @@ export const useAppStore = create((set) => ({
         },
         sheetOrder: [...state.sheetOrder, id],
         activeSheetId: id,
+        previousSheetId: state.activeSheetId,
       };
     }),
 
-  setActiveSheetId: (id) => set({ activeSheetId: id }),
+  setActiveSheetId: (id) =>
+    set((state) => {
+      if (!state.sheets[id] || state.activeSheetId === id) return state;
+      return {
+        activeSheetId: id,
+        previousSheetId: state.activeSheetId,
+      };
+    }),
+
+  switchToPreviousSheet: () =>
+    set((state) => {
+      if (!state.previousSheetId || !state.sheets[state.previousSheetId]) {
+        return state;
+      }
+      return {
+        activeSheetId: state.previousSheetId,
+        previousSheetId: state.activeSheetId,
+      };
+    }),
 
   closeSheet: (id) =>
     set((state) => {
@@ -70,7 +90,17 @@ export const useAppStore = create((set) => ({
         const closedIndex = state.sheetOrder.indexOf(id);
         activeSheetId = sheetOrder[closedIndex] ?? sheetOrder[closedIndex - 1] ?? null;
       }
-      return { sheets, sheetOrder, plotConfig, activeSheetId };
+      let previousSheetId = state.previousSheetId;
+      if (previousSheetId === id || previousSheetId === activeSheetId) {
+        previousSheetId = null;
+      }
+      return {
+        sheets,
+        sheetOrder,
+        plotConfig,
+        activeSheetId,
+        previousSheetId,
+      };
     }),
 
   setColumnVisibility: (sheetId, columnVisibility) =>

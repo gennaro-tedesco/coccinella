@@ -1,6 +1,6 @@
 // Renders the application workspace and handles global keyboard shortcuts.
 // FEATURE: CSV data workspace
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 import { useAppStore } from "./store/useAppStore";
@@ -24,10 +24,14 @@ function App() {
   const sheetOrder = useAppStore((state) => state.sheetOrder);
   const openSheet = useAppStore((state) => state.openSheet);
   const setActiveSheetId = useAppStore((state) => state.setActiveSheetId);
+  const switchToPreviousSheet = useAppStore(
+    (state) => state.switchToPreviousSheet,
+  );
 
   const [finder, setFinder] = useState(null);
   const [csvFiles, setCsvFiles] = useState(null);
   const [fontSize, setFontSize] = useState(14);
+  const contentRef = useRef(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -53,7 +57,84 @@ function App() {
     }
 
     function handleKeyDown(event) {
+      const target = event.target;
+      const isEditing =
+        target instanceof HTMLElement &&
+        (target.isContentEditable || target.matches("input, textarea, select"));
+
       if (
+        !isEditing &&
+        event.ctrlKey &&
+        event.shiftKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        (event.key === "^" || event.code === "Digit6")
+      ) {
+        event.preventDefault();
+        if (!event.repeat) switchToPreviousSheet();
+        return;
+      }
+
+      if (
+        !isEditing &&
+        event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        (event.code === "Equal" ||
+          event.code === "Minus" ||
+          event.code === "NumpadAdd" ||
+          event.code === "NumpadSubtract")
+      ) {
+        event.preventDefault();
+        const increasing =
+          event.code === "Equal" || event.code === "NumpadAdd";
+        setFontSize((size) =>
+          increasing ? Math.min(size + 1, 24) : Math.max(size - 1, 10),
+        );
+        return;
+      }
+
+      const content = contentRef.current;
+      if (!isEditing && mode === "data" && content) {
+        if (
+          event.ctrlKey &&
+          !event.shiftKey &&
+          !event.metaKey &&
+          !event.altKey &&
+          (event.key.toLowerCase() === "u" ||
+            event.key.toLowerCase() === "d")
+        ) {
+          event.preventDefault();
+          const direction = event.key.toLowerCase() === "u" ? -1 : 1;
+          content.scrollBy({ top: direction * content.clientHeight * 0.5 });
+          return;
+        }
+
+        if (
+          !event.ctrlKey &&
+          !event.shiftKey &&
+          !event.metaKey &&
+          !event.altKey &&
+          "hjkl".includes(event.key)
+        ) {
+          event.preventDefault();
+          const rowHeight =
+            content
+              .querySelector(".data-table tbody tr")
+              ?.getBoundingClientRect().height ?? 32;
+          const movement = {
+            h: { left: -80 },
+            j: { top: rowHeight },
+            k: { top: -rowHeight },
+            l: { left: 80 },
+          };
+          content.scrollBy(movement[event.key]);
+          return;
+        }
+      }
+
+      if (
+        !isEditing &&
         event.shiftKey &&
         !event.ctrlKey &&
         !event.metaKey &&
@@ -82,7 +163,7 @@ function App() {
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [csvFiles, openSheet]);
+  }, [csvFiles, mode, openSheet, switchToPreviousSheet]);
 
   const rightWidth = mode === "data" ? (columnPanelOpen ? "220px" : "32px") : "0px";
 
@@ -99,7 +180,7 @@ function App() {
           <SheetPanel />
           <div className="center">
             <FileTabs />
-            <div className="content">
+            <div className="content" ref={contentRef}>
               {mode === "data" ? (
                 <DataTable />
               ) : (

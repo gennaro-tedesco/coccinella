@@ -1,12 +1,32 @@
 import { useState } from "react";
-import { Menu, ChevronRight } from "lucide-react";
+import {
+  Menu,
+  ChevronRight,
+  Table2,
+  ChartNoAxesCombined,
+} from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { openCsvFile } from "../utils/openFile";
 import { THEMES, THEME_ORDER } from "../utils/themes";
 
+const SHORTCUTS = [
+  ["Open file finder", "Ctrl+p"],
+  ["Go to sheet", "Ctrl+b"],
+  ["Previous sheet", "Ctrl+^"],
+  ["Scroll left", "h"],
+  ["Scroll down", "j"],
+  ["Scroll up", "k"],
+  ["Scroll right", "l"],
+  ["Half page up", "Ctrl+u"],
+  ["Half page down", "Ctrl+d"],
+  ["Increase font", "Shift++ / Ctrl++"],
+  ["Decrease font", "Shift+- / Ctrl+-"],
+];
+
 function TopBar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [themeSubmenuOpen, setThemeSubmenuOpen] = useState(false);
+  const [shortcutsSubmenuOpen, setShortcutsSubmenuOpen] = useState(false);
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
   const openSheet = useAppStore((state) => state.openSheet);
@@ -25,6 +45,7 @@ function TopBar() {
         onMouseLeave={() => {
           setMenuOpen(false);
           setThemeSubmenuOpen(false);
+          setShortcutsSubmenuOpen(false);
         }}
       >
         <button
@@ -34,9 +55,10 @@ function TopBar() {
           onClick={() => {
             setMenuOpen((open) => !open);
             setThemeSubmenuOpen(false);
+            setShortcutsSubmenuOpen(false);
           }}
         >
-          <Menu size={18} />
+          <Menu />
         </button>
         {menuOpen && (
           <ul className="file-menu-dropdown">
@@ -58,7 +80,10 @@ function TopBar() {
             <li className="menu-separator" />
             <li
               className="has-submenu"
-              onMouseEnter={() => setThemeSubmenuOpen(true)}
+              onMouseEnter={() => {
+                setThemeSubmenuOpen(true);
+                setShortcutsSubmenuOpen(false);
+              }}
               onMouseLeave={() => setThemeSubmenuOpen(false)}
             >
               <button
@@ -88,6 +113,34 @@ function TopBar() {
                 </ul>
               )}
             </li>
+            <li
+              className="has-submenu"
+              onMouseEnter={() => {
+                setShortcutsSubmenuOpen(true);
+                setThemeSubmenuOpen(false);
+              }}
+              onMouseLeave={() => setShortcutsSubmenuOpen(false)}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  setShortcutsSubmenuOpen((open) => !open)
+                }
+              >
+                <span>Shortcuts</span>
+                <ChevronRight size={14} />
+              </button>
+              {shortcutsSubmenuOpen && (
+                <ul className="file-menu-dropdown submenu shortcuts-submenu">
+                  {SHORTCUTS.map(([label, keys]) => (
+                    <li className="shortcut-item" key={label}>
+                      <span>{label}</span>
+                      <kbd>{keys}</kbd>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
           </ul>
         )}
       </div>
@@ -96,16 +149,22 @@ function TopBar() {
         <button
           type="button"
           className={mode === "data" ? "active" : ""}
+          aria-label="Data view"
+          aria-pressed={mode === "data"}
+          title="Data view"
           onClick={() => setMode("data")}
         >
-          Data
+          <Table2 />
         </button>
         <button
           type="button"
           className={mode === "plot" ? "active" : ""}
+          aria-label="Plot view"
+          aria-pressed={mode === "plot"}
+          title="Plot view"
           onClick={() => setMode("plot")}
         >
-          Plot
+          <ChartNoAxesCombined />
         </button>
       </div>
     </div>
