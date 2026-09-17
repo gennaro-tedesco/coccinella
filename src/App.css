@@ -426,6 +426,10 @@ body,
   min-height: 0;
 }
 
+.plot-margin {
+  background-color: var(--bg-alt);
+}
+
 .sheet-panel.collapsed,
 .column-panel.collapsed {
   display: flex;
@@ -763,6 +767,7 @@ body,
   display: flex;
   flex-direction: column;
   height: 100%;
+  padding-bottom: 16px;
   background-color: var(--bg);
 }
 
@@ -777,7 +782,121 @@ body,
   display: flex;
   flex-direction: column;
   gap: 4px;
+  font-size: 1em;
+}
+
+.chart-controls .plot-checkbox {
+  justify-content: flex-end;
+}
+
+.chart-controls .plot-checkbox input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+}
+
+.chart-controls .type-selector-trigger {
+  border: 1px solid var(--border);
+  min-width: 90px;
+  font-size: 1.05em;
+}
+
+.chart-controls .type-selector-dropdown {
+  left: 0;
+  right: auto;
+  font-size: 1.05em;
+}
+
+.chart-controls input[type="number"] {
+  padding: 3px 10px;
+  font-size: 1.05em;
+  width: 70px;
+}
+
+.color-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.plot-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 6px;
+  color: var(--fg-dark);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.plot-close:hover {
+  color: var(--fg);
+}
+
+.plot-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  padding: 16px;
+  flex-shrink: 0;
+}
+
+.plot-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  text-align: left;
+  color: var(--fg);
+  background-color: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.plot-tile:hover {
+  background-color: var(--active);
+  border-color: var(--accent);
+}
+
+.plot-tile-active {
+  background-color: var(--highlight);
+  border-color: var(--accent);
+}
+
+.chart-plot {
+  flex: 1;
+  min-height: 0;
+}
+
+.plot-tile-icon {
+  width: 28px;
+  height: 28px;
+  color: var(--accent);
+}
+
+.plot-tile h3 {
+  margin: 0;
+  font-size: 1em;
+  color: var(--fg);
+}
+
+.plot-tile p {
+  margin: 0;
   font-size: 0.85em;
+  color: var(--fg-dark);
 }
 
 .data-table {

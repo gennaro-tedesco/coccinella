@@ -78,7 +78,8 @@ struct SearchMatch {
 #[serde(rename_all = "camelCase")]
 struct ChartData {
     x_values: Vec<String>,
-    y_values: Vec<String>,
+    y_values: Option<Vec<String>>,
+    group_values: Option<Vec<String>>,
 }
 
 #[derive(Serialize)]
@@ -700,32 +701,33 @@ async fn get_column_stats(
 async fn get_chart_data(
     dataset_id: String,
     x_column: String,
-    y_column: String,
+    y_column: Option<String>,
+    group_column: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<ChartData, String> {
     let store = datasets(&state)?;
     let dataset = store.get(&dataset_id).ok_or("Dataset not found")?;
-    let x_index = dataset
-        .columns
-        .iter()
-        .position(|column| column == &x_column)
-        .ok_or("X column not found")?;
-    let y_index = dataset
-        .columns
-        .iter()
-        .position(|column| column == &y_column)
-        .ok_or("Y column not found")?;
+    let column_index = |name: &str| {
+        dataset
+            .columns
+            .iter()
+            .position(|column| column.as_str() == name)
+            .ok_or_else(|| format!("Column not found: {name}"))
+    };
+    let x_index = column_index(&x_column)?;
+    let y_index = y_column.as_deref().map(column_index).transpose()?;
+    let group_index = group_column.as_deref().map(column_index).transpose()?;
+    let column_values = |index: usize| {
+        dataset
+            .order
+            .iter()
+            .map(|row| dataset.rows[*row][index].clone())
+            .collect()
+    };
     Ok(ChartData {
-        x_values: dataset
-            .order
-            .iter()
-            .map(|row| dataset.rows[*row][x_index].clone())
-            .collect(),
-        y_values: dataset
-            .order
-            .iter()
-            .map(|row| dataset.rows[*row][y_index].clone())
-            .collect(),
+        x_values: column_values(x_index),
+        y_values: y_index.map(column_values),
+        group_values: group_index.map(column_values),
     })
 }
 

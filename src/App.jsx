@@ -171,7 +171,7 @@ function App() {
       const target = event.target;
       const isEditing =
         target instanceof HTMLElement &&
-        (target.isContentEditable || target.matches("input, textarea, select"));
+        (target.isContentEditable || target.matches("input, textarea"));
       if (
         isEditing ||
         mode !== "data" ||
@@ -263,7 +263,6 @@ function App() {
 
       if (
         !isEditing &&
-        mode === "data" &&
         !event.ctrlKey &&
         !event.metaKey &&
         !event.altKey &&
@@ -492,7 +491,14 @@ function App() {
     setGoToLineOpen(false);
   }
 
-  const rightWidth = mode === "data" ? (columnPanelOpen ? "220px" : "32px") : "0px";
+  const rightWidth =
+    mode === "data"
+      ? columnPanelOpen
+        ? "220px"
+        : "32px"
+      : columnPanelOpen
+        ? "32px"
+        : "0px";
 
   return (
     <div className="app">
@@ -525,7 +531,7 @@ function App() {
               )}
             </div>
           </div>
-          {mode === "data" && <ColumnPanel />}
+          {mode === "data" ? <ColumnPanel /> : <div className="plot-margin" />}
         </div>
       ) : (
         <EmptyState />
