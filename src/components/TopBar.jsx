@@ -26,13 +26,14 @@ const SHORTCUTS = [
   ["Toggle column selection", "Ctrl+click"],
 ];
 
-function TopBar() {
+function TopBar({ onOpenSearch, onOpenGoTo }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [themeSubmenuOpen, setThemeSubmenuOpen] = useState(false);
   const [shortcutsSubmenuOpen, setShortcutsSubmenuOpen] = useState(false);
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
   const openSheet = useAppStore((state) => state.openSheet);
+  const activeSheetId = useAppStore((state) => state.activeSheetId);
   const theme = useAppStore((state) => state.theme);
   const setTheme = useAppStore((state) => state.setTheme);
 
@@ -71,13 +72,29 @@ function TopBar() {
               </button>
             </li>
             <li>
-              <button type="button" disabled>
-                Browse
+              <button
+                type="button"
+                disabled={!activeSheetId}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setMode("data");
+                  onOpenSearch();
+                }}
+              >
+                Search
               </button>
             </li>
             <li>
-              <button type="button" disabled>
-                Search
+              <button
+                type="button"
+                disabled={!activeSheetId}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setMode("data");
+                  onOpenGoTo();
+                }}
+              >
+                Go to
               </button>
             </li>
             <li className="menu-separator" />

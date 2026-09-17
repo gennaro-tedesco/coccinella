@@ -496,7 +496,16 @@ function App() {
 
   return (
     <div className="app">
-      <TopBar />
+      <TopBar
+        onOpenSearch={() => {
+          setGoToLineOpen(false);
+          openSearch();
+        }}
+        onOpenGoTo={() => {
+          closeSearch();
+          setGoToLineOpen(true);
+        }}
+      />
       {hasSheets ? (
         <div
           className="main"
