@@ -37,6 +37,7 @@ struct FilterSpec {
     pattern: String,
     is_regex: bool,
     is_case_sensitive: bool,
+    columns: Vec<String>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -219,16 +220,27 @@ fn matching_rows(dataset: &Dataset, spec: &FilterSpec) -> Result<Vec<usize>, Str
     let Some(matcher) = build_matcher(spec)? else {
         return Ok(Vec::new());
     };
+    let column_indices = matching_column_indices(dataset, spec);
     Ok(dataset
         .view
         .iter()
         .copied()
         .filter(|row_index| {
-            dataset.rows[*row_index]
+            column_indices
                 .iter()
-                .any(|value| matcher.is_match(value))
+                .any(|column_index| matcher.is_match(&dataset.rows[*row_index][*column_index]))
         })
         .collect())
+}
+
+fn matching_column_indices(dataset: &Dataset, spec: &FilterSpec) -> Vec<usize> {
+    if spec.columns.is_empty() {
+        return (0..dataset.columns.len()).collect();
+    }
+    spec.columns
+        .iter()
+        .filter_map(|selected| dataset.columns.iter().position(|column| column == selected))
+        .collect()
 }
 
 fn infer_column_types(rows: &[Vec<String>], column_count: usize) -> Vec<String> {
@@ -350,10 +362,12 @@ fn apply_search(dataset: &mut Dataset) -> Result<(), String> {
     let Some(matcher) = build_matcher(spec)? else {
         return Ok(());
     };
+    let column_indices = matching_column_indices(dataset, spec);
     for (row_index, source_row) in dataset.order.iter().enumerate() {
-        for (column_index, value) in dataset.rows[*source_row].iter().enumerate() {
+        for column_index in &column_indices {
+            let value = &dataset.rows[*source_row][*column_index];
             if matcher.is_match(value) {
-                dataset.search_matches.push((row_index, column_index));
+                dataset.search_matches.push((row_index, *column_index));
             }
         }
     }
@@ -436,12 +450,14 @@ async fn create_filtered_dataset(
     pattern: String,
     is_regex: bool,
     is_case_sensitive: bool,
+    columns: Vec<String>,
     state: State<'_, AppState>,
 ) -> Result<Option<SheetMetadata>, String> {
     let filter = FilterSpec {
         pattern,
         is_regex,
         is_case_sensitive,
+        columns,
     };
     let mut store = datasets(&state)?;
     let source = store.get(&source_id).ok_or("Source dataset not found")?;
@@ -540,12 +556,14 @@ async fn search_dataset(
     pattern: String,
     is_regex: bool,
     is_case_sensitive: bool,
+    columns: Vec<String>,
     state: State<'_, AppState>,
 ) -> Result<usize, String> {
     let spec = FilterSpec {
         pattern,
         is_regex,
         is_case_sensitive,
+        columns,
     };
     let mut store = datasets(&state)?;
     let dataset = store.get_mut(&dataset_id).ok_or("Dataset not found")?;
@@ -899,6 +917,7 @@ mod tests {
                 pattern: "^Ada$".into(),
                 is_regex: true,
                 is_case_sensitive: true,
+                columns: vec!["name".into()],
             }),
             search_matches: Vec::new(),
         };
@@ -909,10 +928,22 @@ mod tests {
                 pattern: "^Ada".into(),
                 is_regex: true,
                 is_case_sensitive: true,
+                columns: Vec::new(),
             },
         )
         .expect("filter rows");
         assert_eq!(filtered, [0, 2]);
+        let restricted = matching_rows(
+            &dataset,
+            &FilterSpec {
+                pattern: "^Ada".into(),
+                is_regex: true,
+                is_case_sensitive: true,
+                columns: vec!["score".into()],
+            },
+        )
+        .expect("filter selected column");
+        assert!(restricted.is_empty());
 
         apply_sort(&mut dataset);
         apply_search(&mut dataset).expect("index search");
@@ -923,6 +954,7 @@ mod tests {
             pattern: String::new(),
             is_regex: true,
             is_case_sensitive: false,
+            columns: Vec::new(),
         });
         apply_search(&mut dataset).expect("clear search");
         assert!(dataset.search_matches.is_empty());

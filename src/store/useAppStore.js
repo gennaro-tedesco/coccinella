@@ -149,6 +149,7 @@ export const useAppStore = create((set, get) => ({
       pattern,
       isRegex,
       isCaseSensitive,
+      columns: source.selectedColumns,
     });
     if (!metadata) return;
     set((state) => {
@@ -171,7 +172,13 @@ export const useAppStore = create((set, get) => ({
         sorting: [],
         versions: [],
         children: [],
-        filterOf: { sourceId, pattern, isRegex, isCaseSensitive },
+        filterOf: {
+          sourceId,
+          pattern,
+          isRegex,
+          isCaseSensitive,
+          columns: source.selectedColumns,
+        },
         sizeBytes: metadata.sizeBytes,
         dataVersion: 0,
         contentVersion: 0,

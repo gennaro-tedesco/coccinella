@@ -110,6 +110,7 @@ function App() {
       pattern: searchQuery,
       isRegex: searchIsRegex,
       isCaseSensitive: searchIsCaseSensitive,
+      columns: activeSheet.selectedColumns,
     })
       .then((count) => {
         if (!cancelled) setSearchMatchCount(count);
@@ -123,6 +124,7 @@ function App() {
   }, [
     activeSheet?.datasetId,
     activeSheet?.dataVersion,
+    activeSheet?.selectedColumns,
     searchQuery,
     searchIsRegex,
     searchIsCaseSensitive,
