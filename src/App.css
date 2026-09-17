@@ -668,7 +668,7 @@ body,
   min-height: 0;
   overflow: auto;
   overscroll-behavior: none;
-  background-color: var(--bg);
+  background-color: var(--bg-alt);
 }
 
 .data-table-placeholder,
@@ -684,6 +684,7 @@ body,
   display: flex;
   flex-direction: column;
   height: 100%;
+  background-color: var(--bg);
 }
 
 .chart-controls {
@@ -895,11 +896,13 @@ body,
 .data-table td {
   padding: 4px 10px;
   border-bottom: 1px solid var(--border);
+  background-color: var(--bg);
 }
 
 .data-table .virtual-spacer td {
   padding: 0;
   border: none;
+  background-color: transparent;
 }
 
 .data-table td.selected {

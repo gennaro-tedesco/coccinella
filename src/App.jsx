@@ -89,7 +89,6 @@ function App() {
   useEffect(() => {
     if (mode !== "data") setGoToLineOpen(false);
     pendingGRef.current = false;
-    contentRef.current?.style.removeProperty("padding-bottom");
   }, [activeSheetId, mode]);
 
   useEffect(() => {
@@ -321,11 +320,9 @@ function App() {
 
           if (event.key === "G") {
             pendingGRef.current = false;
-            content.style.removeProperty("padding-bottom");
             content.scrollTo({ top: content.scrollHeight });
           } else if (pendingGRef.current) {
             pendingGRef.current = false;
-            content.style.removeProperty("padding-bottom");
             content.scrollTo({ top: 0 });
           } else {
             pendingGRef.current = true;
@@ -459,7 +456,6 @@ function App() {
       "--go-to-line-highlight-duration",
     );
 
-    content.style.removeProperty("padding-bottom");
     const baseScrollHeight = content.scrollHeight;
     const headerHeight =
       content.querySelector(".data-table thead")?.getBoundingClientRect()
@@ -474,11 +470,10 @@ function App() {
     const scrollTop = Math.max(0, targetTop);
     const maxScrollTop = Math.max(0, baseScrollHeight - content.clientHeight);
 
-    if (scrollTop > maxScrollTop) {
-      content.style.paddingBottom = `${scrollTop - maxScrollTop}px`;
-    }
-
-    content.scrollTo({ top: scrollTop, behavior: "smooth" });
+    content.scrollTo({
+      top: Math.min(scrollTop, maxScrollTop),
+      behavior: "smooth",
+    });
     target.style.setProperty(
       "--go-to-line-highlight-duration",
       `${GO_TO_LINE_HIGHLIGHT_MS}ms`,
