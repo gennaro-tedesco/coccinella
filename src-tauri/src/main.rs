@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    csv_visualizer_lib::run()
+    coccinella_lib::run()
 }

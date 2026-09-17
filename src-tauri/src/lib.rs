@@ -873,7 +873,7 @@ mod tests {
     #[test]
     fn parses_csv_and_infers_types() {
         let path = std::env::temp_dir().join(format!(
-            "lens-test-{}-{}.csv",
+            "coccinella-test-{}-{}.csv",
             std::process::id(),
             std::thread::current().name().unwrap_or("csv")
         ));

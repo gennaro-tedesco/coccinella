@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "csv-visualizer",
+  "productName": "coccinella",
+  "mainBinaryName": "coccinella",
   "version": "0.1.0",
-  "identifier": "com.gennarotedesco.csv-visualizer",
+  "identifier": "com.gennarotedesco.coccinella",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +13,7 @@
   "app": {
     "windows": [
       {
-        "title": "csv-visualizer",
+        "title": "coccinella",
         "width": 800,
         "height": 600,
         "titleBarStyle": "Overlay",
