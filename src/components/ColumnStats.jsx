@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { computeColumnStats } from "../utils/stats";
+import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
 
 function StatRow({ label, value }) {
   return (
@@ -13,13 +13,28 @@ function StatRow({ label, value }) {
 function ColumnStats({ sheet, column }) {
   const type = sheet.columnTypes[column];
   const precision = sheet.columnPrecision[column] ?? 2;
-  const stats = useMemo(
-    () => computeColumnStats(type, sheet.rows.map((row) => row[column])),
-    [type, sheet.rows, column],
-  );
+  const hasStats = type !== "string" && type !== "uuid";
+  const [stats, setStats] = useState(undefined);
 
-  if (type === "string") return null;
+  useEffect(() => {
+    if (!hasStats) return undefined;
+    let cancelled = false;
+    setStats(undefined);
+    invoke("get_column_stats", {
+      datasetId: sheet.datasetId,
+      column,
+      columnType: type,
+    }).then((result) => {
+      if (!cancelled) setStats(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sheet.datasetId, sheet.contentVersion, type, column, hasStats]);
 
+  if (!hasStats) return null;
+
+  if (stats === undefined) return null;
   if (!stats) return <div className="column-stats-empty">No data</div>;
 
   if (stats.type === "number") {
@@ -38,8 +53,8 @@ function ColumnStats({ sheet, column }) {
   if (stats.type === "date") {
     return (
       <div className="column-stats">
-        <StatRow label="Min" value={stats.min.toISOString()} />
-        <StatRow label="Max" value={stats.max.toISOString()} />
+        <StatRow label="Min" value={stats.min} />
+        <StatRow label="Max" value={stats.max} />
       </div>
     );
   }

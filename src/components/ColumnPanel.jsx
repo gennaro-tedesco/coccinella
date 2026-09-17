@@ -37,11 +37,12 @@ function ColumnPanel() {
   async function handleRescan() {
     if (!sheet?.path || !separatorInput) return;
     try {
-      const { columns, rows, sizeBytes } = await rescanCsvFile(
+      const metadata = await rescanCsvFile(
+        sheet.datasetId,
         sheet.path,
         separatorInput,
       );
-      rescanSheet(activeSheetId, separatorInput, columns, rows, sizeBytes);
+      rescanSheet(activeSheetId, separatorInput, metadata);
     } catch (error) {
       console.error("Failed to rescan CSV with new separator:", error);
     }
@@ -173,7 +174,7 @@ function ColumnPanel() {
         <div className="sheet-summary-stats">
           <div>
             <span className="sheet-summary-value">
-              {sheet.rows.length.toLocaleString()}
+              {sheet.rowCount.toLocaleString()}
             </span>{" "}
             rows
           </div>
@@ -274,7 +275,8 @@ function ColumnPanel() {
           </li>
         ))}
       </ul>
-      {hoveredColumn && sheet.columnTypes[hoveredColumn] !== "string" && (
+      {hoveredColumn &&
+        !["string", "uuid"].includes(sheet.columnTypes[hoveredColumn]) && (
         <div className="column-hover-stats">
           <ColumnStats sheet={sheet} column={hoveredColumn} />
         </div>

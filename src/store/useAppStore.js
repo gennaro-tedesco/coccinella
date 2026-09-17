@@ -1,10 +1,9 @@
 // Owns application state for opened CSV sheets, display settings, and plots.
 // FEATURE: CSV data workspace
+import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
-import { inferColumnTypes } from "../utils/columnTypes";
-import { buildMatcher, findMatches } from "../utils/search";
 
-export const useAppStore = create((set) => ({
+export const useAppStore = create((set, get) => ({
   mode: "data",
   setMode: (mode) => set({ mode }),
 
@@ -32,24 +31,47 @@ export const useAppStore = create((set) => ({
   searchIsRegex: true,
   searchIsCaseSensitive: false,
   searchActiveIndex: 0,
+  searchMatchCount: 0,
+  activeSearchMatch: null,
+  searchVersion: 0,
   openSearch: () =>
     set({ searchOpen: true, searchQuery: "", searchActiveIndex: 0 }),
   closeSearch: () => set({ searchOpen: false }),
   setSearchQuery: (query) =>
-    set({ searchQuery: query, searchActiveIndex: 0 }),
+    set({
+      searchQuery: query,
+      searchActiveIndex: 0,
+      searchMatchCount: 0,
+      activeSearchMatch: null,
+    }),
   setSearchIsRegex: (isRegex) =>
-    set({ searchIsRegex: isRegex, searchActiveIndex: 0 }),
+    set({
+      searchIsRegex: isRegex,
+      searchActiveIndex: 0,
+      searchMatchCount: 0,
+      activeSearchMatch: null,
+    }),
   setSearchIsCaseSensitive: (isCaseSensitive) =>
-    set({ searchIsCaseSensitive: isCaseSensitive, searchActiveIndex: 0 }),
+    set({
+      searchIsCaseSensitive: isCaseSensitive,
+      searchActiveIndex: 0,
+      searchMatchCount: 0,
+      activeSearchMatch: null,
+    }),
   setSearchActiveIndex: (index) => set({ searchActiveIndex: index }),
+  setSearchMatchCount: (searchMatchCount) =>
+    set((state) => ({
+      searchMatchCount,
+      searchVersion: state.searchVersion + 1,
+    })),
+  setActiveSearchMatch: (activeSearchMatch) => set({ activeSearchMatch }),
 
-  openSheet: (filename, columns, rows, sizeBytes, path, separator) =>
+  openSheet: (filename, metadata, path) =>
     set((state) => {
-      const id = crypto.randomUUID();
+      const id = metadata.datasetId;
       const columnVisibility = {};
-      const columnTypes = inferColumnTypes(columns, rows);
       const columnPrecision = {};
-      for (const column of columns) {
+      for (const column of metadata.columns) {
         columnVisibility[column] = true;
         columnPrecision[column] = 2;
       }
@@ -60,18 +82,22 @@ export const useAppStore = create((set) => ({
             id,
             filename,
             path: path ?? null,
-            separator: separator || ",",
-            rows,
-            columns,
+            datasetId: metadata.datasetId,
+            separator: metadata.separator,
+            rowCount: metadata.rowCount,
+            columns: metadata.columns,
+            sourceColumns: metadata.columns,
             columnVisibility,
-            columnTypes,
+            columnTypes: metadata.columnTypes,
             columnPrecision,
             selectedColumns: [],
             sorting: [],
             versions: [],
             children: [],
             filterOf: null,
-            sizeBytes,
+            sizeBytes: metadata.sizeBytes,
+            dataVersion: 0,
+            contentVersion: 0,
           },
         },
         sheetOrder: [...state.sheetOrder, id],
@@ -80,112 +106,98 @@ export const useAppStore = create((set) => ({
       };
     }),
 
-  rescanSheet: (sheetId, separator, columns, rows, sizeBytes) =>
+  rescanSheet: (sheetId, separator, metadataList) =>
     set((state) => {
       const sheet = state.sheets[sheetId];
       if (!sheet) return state;
-      const columnVisibility = {};
-      const columnTypes = inferColumnTypes(columns, rows);
-      const columnPrecision = {};
-      for (const column of columns) {
-        columnVisibility[column] = true;
-        columnPrecision[column] = 2;
-      }
-
-      const sheets = {
-        ...state.sheets,
-        [sheetId]: {
-          ...sheet,
-          separator,
-          columns,
-          rows,
-          columnVisibility,
-          columnTypes,
-          columnPrecision,
-          selectedColumns: [],
-          sorting: [],
-          sizeBytes,
-        },
-      };
-
-      for (const childId of sheet.children) {
-        const child = sheets[childId];
-        if (!child) continue;
-        const matcher = buildMatcher(
-          child.filterOf.pattern,
-          child.filterOf.isRegex,
-          child.filterOf.isCaseSensitive,
+      const sheets = { ...state.sheets };
+      for (const metadata of metadataList) {
+        const existing = sheets[metadata.datasetId];
+        if (!existing) continue;
+        const columnVisibility = Object.fromEntries(
+          metadata.columns.map((column) => [column, true]),
         );
-        const matchedRows = matcher
-          ? [
-              ...new Set(
-                findMatches(rows, columns, matcher).map((match) => match.rowIndex),
-              ),
-            ].map((rowIndex) => rows[rowIndex])
-          : [];
-        sheets[childId] = {
-          ...child,
-          columns,
-          rows: matchedRows,
+        const columnPrecision = Object.fromEntries(
+          metadata.columns.map((column) => [column, 2]),
+        );
+        sheets[metadata.datasetId] = {
+          ...existing,
+          separator,
+          rowCount: metadata.rowCount,
+          columns: metadata.columns,
+          sourceColumns: metadata.columns,
           columnVisibility,
-          columnTypes,
+          columnTypes: metadata.columnTypes,
           columnPrecision,
+          selectedColumns:
+            metadata.datasetId === sheetId ? [] : existing.selectedColumns,
+          sorting: existing.sorting,
+          sizeBytes: metadata.sizeBytes,
+          dataVersion: existing.dataVersion + 1,
+          contentVersion: existing.contentVersion + 1,
         };
       }
 
       return { sheets };
     }),
 
-  createFilteredSheet: (sourceId, pattern, isRegex, isCaseSensitive) =>
+  createFilteredSheet: async (sourceId, pattern, isRegex, isCaseSensitive) => {
+    const source = get().sheets[sourceId];
+    if (!source) return;
+    const metadata = await invoke("create_filtered_dataset", {
+      sourceId: source.datasetId,
+      pattern,
+      isRegex,
+      isCaseSensitive,
+    });
+    if (!metadata) return;
     set((state) => {
-      const source = state.sheets[sourceId];
-      const matcher = buildMatcher(pattern, isRegex, isCaseSensitive);
-      if (!source || !matcher) return state;
-
-      const matchedRowIndexes = [
-        ...new Set(
-          findMatches(source.rows, source.columns, matcher).map(
-            (match) => match.rowIndex,
-          ),
-        ),
-      ];
-      if (matchedRowIndexes.length === 0) return state;
-
-      const id = crypto.randomUUID();
+      const currentSource = state.sheets[sourceId];
+      if (!currentSource) return state;
+      const id = metadata.datasetId;
       const child = {
         id,
         filename: `${source.filename} : ${pattern}`,
         path: null,
-        separator: source.separator,
-        rows: matchedRowIndexes.map((rowIndex) => source.rows[rowIndex]),
-        columns: source.columns,
-        columnVisibility: source.columnVisibility,
-        columnTypes: source.columnTypes,
-        columnPrecision: source.columnPrecision,
+        datasetId: metadata.datasetId,
+        separator: metadata.separator,
+        rowCount: metadata.rowCount,
+        columns: metadata.columns,
+        sourceColumns: metadata.columns,
+        columnVisibility: { ...source.columnVisibility },
+        columnTypes: metadata.columnTypes,
+        columnPrecision: { ...source.columnPrecision },
         selectedColumns: [],
         sorting: [],
         versions: [],
         children: [],
         filterOf: { sourceId, pattern, isRegex, isCaseSensitive },
-        sizeBytes: 0,
+        sizeBytes: metadata.sizeBytes,
+        dataVersion: 0,
+        contentVersion: 0,
       };
 
       return {
         sheets: {
           ...state.sheets,
-          [sourceId]: { ...source, children: [...source.children, id] },
+          [sourceId]: {
+            ...currentSource,
+            children: [...currentSource.children, id],
+          },
           [id]: child,
         },
         activeSheetId: id,
         previousSheetId: state.activeSheetId,
       };
-    }),
+    });
+  },
 
   closeFilteredSheet: (id) =>
     set((state) => {
       const child = state.sheets[id];
       if (!child || !child.filterOf) return state;
       const sourceId = child.filterOf.sourceId;
+      void invoke("close_dataset", { datasetId: child.datasetId });
       const source = state.sheets[sourceId];
       const sheets = { ...state.sheets };
       delete sheets[id];
@@ -229,6 +241,9 @@ export const useAppStore = create((set) => ({
       const sheetOrder = state.sheetOrder.filter((sheetId) => sheetId !== id);
       const sheets = { ...state.sheets };
       const closedIds = [id, ...(sheets[id]?.children ?? [])];
+      if (sheets[id]) {
+        void invoke("close_dataset", { datasetId: sheets[id].datasetId });
+      }
       for (const closedId of closedIds) delete sheets[closedId];
       const plotConfig = { ...state.plotConfig };
       delete plotConfig[id];
@@ -280,13 +295,34 @@ export const useAppStore = create((set) => ({
       };
     }),
 
-  setSorting: (sheetId, sorting) =>
+  setSorting: async (sheetId, sorting) => {
+    const sheet = get().sheets[sheetId];
+    if (!sheet) return;
     set((state) => ({
       sheets: {
         ...state.sheets,
         [sheetId]: { ...state.sheets[sheetId], sorting },
       },
-    })),
+    }));
+    await invoke("sort_dataset", {
+      datasetId: sheet.datasetId,
+      sorting: sorting.map((sort) => ({
+        ...sort,
+        columnType: sheet.columnTypes[sort.id],
+      })),
+    });
+    set((state) => ({
+      sheets: state.sheets[sheetId]
+        ? {
+            ...state.sheets,
+            [sheetId]: {
+              ...state.sheets[sheetId],
+              dataVersion: state.sheets[sheetId].dataVersion + 1,
+            },
+          }
+        : state.sheets,
+    }));
+  },
 
   toggleColumnSelection: (sheetId, column) =>
     set((state) => {

@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { ChevronLeft, ChevronRight, Save, X } from "lucide-react";
-import Papa from "papaparse";
 import { useAppStore } from "../store/useAppStore";
 
 async function saveFilteredSheet(sheet) {
@@ -12,11 +11,11 @@ async function saveFilteredSheet(sheet) {
   });
   if (!path) return;
 
-  const csv = Papa.unparse(
-    { fields: sheet.columns, data: sheet.rows },
-    { delimiter: sheet.separator },
-  );
-  await invoke("write_csv_file", { path, contents: csv });
+  await invoke("save_csv_file", {
+    datasetId: sheet.datasetId,
+    path,
+    columns: sheet.columns,
+  });
 }
 
 function SheetPanel() {

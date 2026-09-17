@@ -15,7 +15,6 @@
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-opener": "^2",
     "lucide-react": "^1.46.0",
-    "papaparse": "^5.7.0",
     "plotly.js-dist-min": "^4.1.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

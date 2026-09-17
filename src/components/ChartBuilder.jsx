@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
 import Plotly from "plotly.js-dist-min";
 import createPlotlyComponent from "react-plotly.js/factory";
 import { useAppStore } from "../store/useAppStore";
@@ -16,6 +18,30 @@ function ChartBuilder({ fontSize }) {
   );
   const setPlotConfig = useAppStore((state) => state.setPlotConfig);
 
+  const config = sheet
+    ? (plotConfig ?? {
+        xColumn: sheet.columns[0] ?? "",
+        yColumn: sheet.columns[1] ?? sheet.columns[0] ?? "",
+        chartType: "scatter",
+      })
+    : null;
+  const [chartData, setChartData] = useState({ xValues: [], yValues: [] });
+
+  useEffect(() => {
+    if (!sheet || !config?.xColumn || !config.yColumn) return undefined;
+    let cancelled = false;
+    invoke("get_chart_data", {
+      datasetId: sheet.datasetId,
+      xColumn: config.xColumn,
+      yColumn: config.yColumn,
+    }).then((result) => {
+      if (!cancelled) setChartData(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sheet, config?.xColumn, config?.yColumn]);
+
   if (!sheet) {
     return (
       <div className="chart-builder-placeholder">
@@ -24,18 +50,9 @@ function ChartBuilder({ fontSize }) {
     );
   }
 
-  const config = plotConfig ?? {
-    xColumn: sheet.columns[0] ?? "",
-    yColumn: sheet.columns[1] ?? sheet.columns[0] ?? "",
-    chartType: "scatter",
-  };
-
   function updateConfig(patch) {
     setPlotConfig(activeSheetId, { ...config, ...patch });
   }
-
-  const xValues = sheet.rows.map((row) => row[config.xColumn]);
-  const yValues = sheet.rows.map((row) => row[config.yColumn]);
 
   return (
     <div className="chart-builder">
@@ -83,8 +100,8 @@ function ChartBuilder({ fontSize }) {
       <Plot
         data={[
           {
-            x: xValues,
-            y: yValues,
+            x: chartData.xValues,
+            y: chartData.yValues,
             type: config.chartType === "line" ? "scatter" : config.chartType,
             mode: config.chartType === "line" ? "lines" : "markers",
           },

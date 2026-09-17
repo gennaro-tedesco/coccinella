@@ -1,10 +1,9 @@
 // Renders the application workspace and handles global keyboard shortcuts.
 // FEATURE: CSV data workspace
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 import { useAppStore } from "./store/useAppStore";
-import { buildMatcher, findMatches } from "./utils/search";
 import TopBar from "./components/TopBar";
 import SheetPanel from "./components/SheetPanel";
 import FileTabs from "./components/FileTabs";
@@ -49,20 +48,18 @@ function App() {
   const setSearchActiveIndex = useAppStore(
     (state) => state.setSearchActiveIndex,
   );
+  const setSearchMatchCount = useAppStore(
+    (state) => state.setSearchMatchCount,
+  );
+  const setActiveSearchMatch = useAppStore(
+    (state) => state.setActiveSearchMatch,
+  );
   const createFilteredSheet = useAppStore(
     (state) => state.createFilteredSheet,
   );
 
   const activeSheet = activeSheetId ? sheets[activeSheetId] : null;
-  const searchMatchCount = useMemo(() => {
-    const matcher = buildMatcher(
-      searchQuery,
-      searchIsRegex,
-      searchIsCaseSensitive,
-    );
-    if (!matcher || !activeSheet) return 0;
-    return findMatches(activeSheet.rows, activeSheet.columns, matcher).length;
-  }, [searchQuery, searchIsRegex, searchIsCaseSensitive, activeSheet]);
+  const searchMatchCount = useAppStore((state) => state.searchMatchCount);
   const canFilterFromSearch = searchMatchCount > 0 && !activeSheet?.filterOf;
 
   const [finder, setFinder] = useState(null);
@@ -98,6 +95,62 @@ function App() {
   useEffect(() => {
     if (mode !== "data") closeSearch();
   }, [mode, closeSearch]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeSheet) {
+      setSearchMatchCount(0);
+      setActiveSearchMatch(null);
+      return undefined;
+    }
+    setSearchMatchCount(0);
+    setActiveSearchMatch(null);
+    invoke("search_dataset", {
+      datasetId: activeSheet.datasetId,
+      pattern: searchQuery,
+      isRegex: searchIsRegex,
+      isCaseSensitive: searchIsCaseSensitive,
+    })
+      .then((count) => {
+        if (!cancelled) setSearchMatchCount(count);
+      })
+      .catch(() => {
+        if (!cancelled) setSearchMatchCount(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSheet?.datasetId,
+    activeSheet?.dataVersion,
+    searchQuery,
+    searchIsRegex,
+    searchIsCaseSensitive,
+    setSearchMatchCount,
+    setActiveSearchMatch,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeSheet || searchMatchCount === 0) {
+      setActiveSearchMatch(null);
+      return undefined;
+    }
+    invoke("get_search_match", {
+      datasetId: activeSheet.datasetId,
+      index: searchActiveIndex % searchMatchCount,
+    }).then((match) => {
+      if (!cancelled) setActiveSearchMatch(match);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSheet?.datasetId,
+    searchActiveIndex,
+    searchMatchCount,
+    setActiveSearchMatch,
+  ]);
 
   useEffect(() => {
     async function openFileFinder() {
@@ -385,7 +438,18 @@ function App() {
   function handleGoToLine(line) {
     const content = contentRef.current;
     const target = content?.querySelector(`[data-source-line="${line}"]`);
-    if (!content || !target) return;
+    if (!content) return;
+    if (!target) {
+      const rowHeight =
+        content
+          .querySelector(".data-table tbody tr[data-row-index]")
+          ?.getBoundingClientRect().height ?? 29;
+      content.scrollTo({
+        top: Math.max(0, line - 2) * rowHeight,
+      });
+      setGoToLineOpen(false);
+      return;
+    }
 
     window.clearTimeout(highlightTimeoutRef.current);
     highlightedLineRef.current?.classList.remove("go-to-line-highlight");
@@ -486,7 +550,7 @@ function App() {
       )}
       {goToLineOpen && mode === "data" && activeSheetId && (
         <GoToLine
-          maxLine={sheets[activeSheetId].rows.length + 1}
+          maxLine={sheets[activeSheetId].rowCount + 1}
           onGoToLine={handleGoToLine}
           onClose={() => setGoToLineOpen(false)}
         />

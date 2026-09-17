@@ -52,6 +52,7 @@ function ColumnSettings({ sheet, column, minWidth }) {
   const setColumnPrecision = useAppStore((state) => state.setColumnPrecision);
   const type = sheet.columnTypes[column];
   const precision = sheet.columnPrecision[column] ?? 2;
+  const hasStats = type !== "string" && type !== "uuid";
 
   return (
     <div
@@ -95,8 +96,8 @@ function ColumnSettings({ sheet, column, minWidth }) {
           </div>
         </div>
       )}
-      {type !== "string" && <div className="column-settings-separator" />}
-      <ColumnStats sheet={sheet} column={column} />
+      {hasStats && <div className="column-settings-separator" />}
+      {hasStats && <ColumnStats sheet={sheet} column={column} />}
     </div>
   );
 }

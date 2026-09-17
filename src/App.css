@@ -873,6 +873,11 @@ body,
   border-bottom: 1px solid var(--border);
 }
 
+.data-table .virtual-spacer td {
+  padding: 0;
+  border: none;
+}
+
 .data-table td.selected {
   background-color: color-mix(in srgb, var(--accent) 7%, var(--bg));
 }

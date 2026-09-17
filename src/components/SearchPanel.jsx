@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useAppStore } from "../store/useAppStore";
-import { buildMatcher, findMatches } from "../utils/search";
 
 function SearchPanel() {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
@@ -11,6 +10,7 @@ function SearchPanel() {
   const isRegex = useAppStore((state) => state.searchIsRegex);
   const isCaseSensitive = useAppStore((state) => state.searchIsCaseSensitive);
   const activeIndex = useAppStore((state) => state.searchActiveIndex);
+  const matchCount = useAppStore((state) => state.searchMatchCount);
   const setQuery = useAppStore((state) => state.setSearchQuery);
   const setIsRegex = useAppStore((state) => state.setSearchIsRegex);
   const setIsCaseSensitive = useAppStore(
@@ -27,15 +27,6 @@ function SearchPanel() {
     inputRef.current?.focus();
   }, []);
 
-  const matcher = useMemo(
-    () => buildMatcher(query, isRegex, isCaseSensitive),
-    [query, isRegex, isCaseSensitive],
-  );
-  const matches = useMemo(
-    () => (sheet && matcher ? findMatches(sheet.rows, sheet.columns, matcher) : []),
-    [sheet, matcher],
-  );
-  const matchCount = matches.length;
   const clampedIndex = matchCount ? activeIndex % matchCount : 0;
 
   function step(direction) {
