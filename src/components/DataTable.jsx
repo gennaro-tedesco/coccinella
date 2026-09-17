@@ -28,6 +28,9 @@ function DataTable() {
   const setHoveredColumn = useAppStore((state) => state.setHoveredColumn);
   const searchQuery = useAppStore((state) => state.searchQuery);
   const searchIsRegex = useAppStore((state) => state.searchIsRegex);
+  const searchIsCaseSensitive = useAppStore(
+    (state) => state.searchIsCaseSensitive,
+  );
   const searchActiveIndex = useAppStore((state) => state.searchActiveIndex);
   const [openColumn, setOpenColumn] = useState(null);
   const [openColumnWidth, setOpenColumnWidth] = useState(null);
@@ -72,8 +75,8 @@ function DataTable() {
   const sorting = sheet?.sorting ?? [];
 
   const searchMatcher = useMemo(
-    () => buildMatcher(searchQuery, searchIsRegex),
-    [searchQuery, searchIsRegex],
+    () => buildMatcher(searchQuery, searchIsRegex, searchIsCaseSensitive),
+    [searchQuery, searchIsRegex, searchIsCaseSensitive],
   );
   const searchMatches = useMemo(
     () =>

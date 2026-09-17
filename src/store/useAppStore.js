@@ -30,6 +30,7 @@ export const useAppStore = create((set) => ({
   searchOpen: false,
   searchQuery: "",
   searchIsRegex: true,
+  searchIsCaseSensitive: false,
   searchActiveIndex: 0,
   openSearch: () =>
     set({ searchOpen: true, searchQuery: "", searchActiveIndex: 0 }),
@@ -38,6 +39,8 @@ export const useAppStore = create((set) => ({
     set({ searchQuery: query, searchActiveIndex: 0 }),
   setSearchIsRegex: (isRegex) =>
     set({ searchIsRegex: isRegex, searchActiveIndex: 0 }),
+  setSearchIsCaseSensitive: (isCaseSensitive) =>
+    set({ searchIsCaseSensitive: isCaseSensitive, searchActiveIndex: 0 }),
   setSearchActiveIndex: (index) => set({ searchActiveIndex: index }),
 
   openSheet: (filename, columns, rows, sizeBytes, path, separator) =>
@@ -108,7 +111,11 @@ export const useAppStore = create((set) => ({
       for (const childId of sheet.children) {
         const child = sheets[childId];
         if (!child) continue;
-        const matcher = buildMatcher(child.filterOf.pattern, child.filterOf.isRegex);
+        const matcher = buildMatcher(
+          child.filterOf.pattern,
+          child.filterOf.isRegex,
+          child.filterOf.isCaseSensitive,
+        );
         const matchedRows = matcher
           ? [
               ...new Set(
@@ -129,10 +136,10 @@ export const useAppStore = create((set) => ({
       return { sheets };
     }),
 
-  createFilteredSheet: (sourceId, pattern, isRegex) =>
+  createFilteredSheet: (sourceId, pattern, isRegex, isCaseSensitive) =>
     set((state) => {
       const source = state.sheets[sourceId];
-      const matcher = buildMatcher(pattern, isRegex);
+      const matcher = buildMatcher(pattern, isRegex, isCaseSensitive);
       if (!source || !matcher) return state;
 
       const matchedRowIndexes = [
@@ -159,7 +166,7 @@ export const useAppStore = create((set) => ({
         sorting: [],
         versions: [],
         children: [],
-        filterOf: { sourceId, pattern, isRegex },
+        filterOf: { sourceId, pattern, isRegex, isCaseSensitive },
         sizeBytes: 0,
       };
 

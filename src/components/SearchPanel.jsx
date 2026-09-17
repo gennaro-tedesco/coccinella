@@ -9,9 +9,13 @@ function SearchPanel() {
   );
   const query = useAppStore((state) => state.searchQuery);
   const isRegex = useAppStore((state) => state.searchIsRegex);
+  const isCaseSensitive = useAppStore((state) => state.searchIsCaseSensitive);
   const activeIndex = useAppStore((state) => state.searchActiveIndex);
   const setQuery = useAppStore((state) => state.setSearchQuery);
   const setIsRegex = useAppStore((state) => state.setSearchIsRegex);
+  const setIsCaseSensitive = useAppStore(
+    (state) => state.setSearchIsCaseSensitive,
+  );
   const setActiveIndex = useAppStore((state) => state.setSearchActiveIndex);
   const closeSearch = useAppStore((state) => state.closeSearch);
   const createFilteredSheet = useAppStore(
@@ -23,7 +27,10 @@ function SearchPanel() {
     inputRef.current?.focus();
   }, []);
 
-  const matcher = useMemo(() => buildMatcher(query, isRegex), [query, isRegex]);
+  const matcher = useMemo(
+    () => buildMatcher(query, isRegex, isCaseSensitive),
+    [query, isRegex, isCaseSensitive],
+  );
   const matches = useMemo(
     () => (sheet && matcher ? findMatches(sheet.rows, sheet.columns, matcher) : []),
     [sheet, matcher],
@@ -66,13 +73,21 @@ function SearchPanel() {
         autoCapitalize="off"
         spellCheck="false"
       />
-      <label className="search-panel-regex">
+      <label className="search-panel-option">
         <input
           type="checkbox"
           checked={isRegex}
           onChange={(event) => setIsRegex(event.target.checked)}
         />
         Regex
+      </label>
+      <label className="search-panel-option">
+        <input
+          type="checkbox"
+          checked={isCaseSensitive}
+          onChange={(event) => setIsCaseSensitive(event.target.checked)}
+        />
+        Case sensitive
       </label>
       <span className="search-panel-count">
         {matchCount ? `${clampedIndex + 1} / ${matchCount}` : "0 / 0"}
@@ -103,7 +118,7 @@ function SearchPanel() {
             : "Filter to matching rows"
         }
         onClick={() => {
-          createFilteredSheet(activeSheetId, query, isRegex);
+          createFilteredSheet(activeSheetId, query, isRegex, isCaseSensitive);
           closeSearch();
         }}
       >

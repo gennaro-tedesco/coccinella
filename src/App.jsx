@@ -41,6 +41,9 @@ function App() {
   const closeSearch = useAppStore((state) => state.closeSearch);
   const searchQuery = useAppStore((state) => state.searchQuery);
   const searchIsRegex = useAppStore((state) => state.searchIsRegex);
+  const searchIsCaseSensitive = useAppStore(
+    (state) => state.searchIsCaseSensitive,
+  );
   const searchActiveIndex = useAppStore((state) => state.searchActiveIndex);
   const setSearchQuery = useAppStore((state) => state.setSearchQuery);
   const setSearchActiveIndex = useAppStore(
@@ -52,10 +55,14 @@ function App() {
 
   const activeSheet = activeSheetId ? sheets[activeSheetId] : null;
   const searchMatchCount = useMemo(() => {
-    const matcher = buildMatcher(searchQuery, searchIsRegex);
+    const matcher = buildMatcher(
+      searchQuery,
+      searchIsRegex,
+      searchIsCaseSensitive,
+    );
     if (!matcher || !activeSheet) return 0;
     return findMatches(activeSheet.rows, activeSheet.columns, matcher).length;
-  }, [searchQuery, searchIsRegex, activeSheet]);
+  }, [searchQuery, searchIsRegex, searchIsCaseSensitive, activeSheet]);
   const canFilterFromSearch = searchMatchCount > 0 && !activeSheet?.filterOf;
 
   const [finder, setFinder] = useState(null);
@@ -178,7 +185,12 @@ function App() {
         canFilterFromSearch
       ) {
         event.preventDefault();
-        createFilteredSheet(activeSheetId, searchQuery, searchIsRegex);
+        createFilteredSheet(
+          activeSheetId,
+          searchQuery,
+          searchIsRegex,
+          searchIsCaseSensitive,
+        );
         closeSearch();
         return;
       }
@@ -325,6 +337,7 @@ function App() {
     searchOpen,
     searchQuery,
     searchIsRegex,
+    searchIsCaseSensitive,
     searchActiveIndex,
     setSearchQuery,
     setSearchActiveIndex,

@@ -1,8 +1,8 @@
-export function buildMatcher(pattern, isRegex) {
+export function buildMatcher(pattern, isRegex, isCaseSensitive = false) {
   if (!pattern) return null;
   const source = isRegex ? pattern : pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   try {
-    return new RegExp(source);
+    return new RegExp(source, isCaseSensitive ? "" : "i");
   } catch {
     return null;
   }
