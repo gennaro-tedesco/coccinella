@@ -1,5 +1,3 @@
-// Renders column controls and statistics for the currently hovered column.
-// FEATURE: CSV data workspace
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
@@ -17,8 +15,7 @@ function ColumnPanel() {
   );
   const columnPanelOpen = useAppStore((state) => state.columnPanelOpen);
   const toggleColumnPanel = useAppStore((state) => state.toggleColumnPanel);
-  const hoveredColumn = useAppStore((state) => state.hoveredColumn);
-  const setHoveredColumn = useAppStore((state) => state.setHoveredColumn);
+  const [hoveredColumn, setHoveredColumn] = useState(null);
   const [openSettingsColumn, setOpenSettingsColumn] = useState(null);
 
   useEffect(() => {
@@ -113,7 +110,9 @@ function ColumnPanel() {
             key={column}
             className="column-row"
             onMouseEnter={() => setHoveredColumn(column)}
-            onMouseLeave={() => setHoveredColumn(null)}
+            onMouseLeave={() =>
+              setHoveredColumn((current) => (current === column ? null : current))
+            }
           >
             <div className="column-row-content">
               <button

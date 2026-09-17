@@ -20,10 +20,16 @@ function TopBar() {
 
   return (
     <div className="top-bar">
-      <div className="file-menu">
+      <div
+        className="file-menu"
+        onMouseLeave={() => {
+          setMenuOpen(false);
+          setThemeSubmenuOpen(false);
+        }}
+      >
         <button
           type="button"
-          className="file-menu-trigger"
+          className={`file-menu-trigger${menuOpen ? " open" : ""}`}
           aria-label="Menu"
           onClick={() => {
             setMenuOpen((open) => !open);

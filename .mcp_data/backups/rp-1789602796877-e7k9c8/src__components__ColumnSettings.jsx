@@ -1,7 +1,4 @@
-// Renders per-column type, numeric precision, and summary-statistic controls.
-// FEATURE: CSV data workspace
 import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { COLUMN_TYPES } from "../utils/columnTypes";
 import ColumnStats from "./ColumnStats";
@@ -51,7 +48,6 @@ function TypeSelector({ sheet, column }) {
 function ColumnSettings({ sheet, column, minWidth }) {
   const setColumnPrecision = useAppStore((state) => state.setColumnPrecision);
   const type = sheet.columnTypes[column];
-  const precision = sheet.columnPrecision[column] ?? 2;
 
   return (
     <div
@@ -64,36 +60,18 @@ function ColumnSettings({ sheet, column, minWidth }) {
         <TypeSelector sheet={sheet} column={column} />
       </div>
       {type === "number" && (
-        <div className="column-settings-row">
+        <label className="column-settings-row">
           <span>Precision</span>
-          <div className="precision-selector">
-            <button
-              type="button"
-              className="type-selector-trigger"
-              aria-label={`Decrease ${column} precision`}
-              disabled={precision === 0}
-              onClick={() =>
-                setColumnPrecision(sheet.id, column, precision - 1)
-              }
-            >
-              <ChevronDown size={12} />
-            </button>
-            <output className="precision-value">
-              {precision}
-            </output>
-            <button
-              type="button"
-              className="type-selector-trigger"
-              aria-label={`Increase ${column} precision`}
-              disabled={precision === 10}
-              onClick={() =>
-                setColumnPrecision(sheet.id, column, precision + 1)
-              }
-            >
-              <ChevronUp size={12} />
-            </button>
-          </div>
-        </div>
+          <input
+            type="number"
+            min={0}
+            max={10}
+            value={sheet.columnPrecision[column] ?? 2}
+            onChange={(e) =>
+              setColumnPrecision(sheet.id, column, Number(e.target.value))
+            }
+          />
+        </label>
       )}
       {type !== "string" && <div className="column-settings-separator" />}
       <ColumnStats sheet={sheet} column={column} />

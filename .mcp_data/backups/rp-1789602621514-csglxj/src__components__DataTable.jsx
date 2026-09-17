@@ -125,10 +125,7 @@ function DataTable() {
                   thRefs.current[header.id] = el;
                 }}
                 onMouseEnter={() => setHoveredColumn(header.id)}
-                onMouseLeave={() => {
-                  setHoveredColumn(null);
-                  setOpenColumn(null);
-                }}
+                onMouseLeave={() => setHoveredColumn(null)}
               >
                 <div
                   className="th-content"

@@ -28,7 +28,7 @@ function SheetPanel() {
   return (
     <div className="sheet-panel">
       <div className="panel-header">
-        <div className="panel-title">Sheets</div>
+        <div />
         <button
           type="button"
           className="panel-toggle"

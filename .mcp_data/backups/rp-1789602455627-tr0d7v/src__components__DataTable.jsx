@@ -1,5 +1,3 @@
-// Renders the active CSV sheet with sorting, visibility, and column controls.
-// FEATURE: CSV data workspace
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useReactTable,
@@ -21,7 +19,6 @@ function DataTable() {
     (state) => state.setColumnVisibility,
   );
   const setSorting = useAppStore((state) => state.setSorting);
-  const setHoveredColumn = useAppStore((state) => state.setHoveredColumn);
   const [openColumn, setOpenColumn] = useState(null);
   const [openColumnWidth, setOpenColumnWidth] = useState(null);
   const thRefs = useRef({});
@@ -123,11 +120,6 @@ function DataTable() {
                 className="th-cell"
                 ref={(el) => {
                   thRefs.current[header.id] = el;
-                }}
-                onMouseEnter={() => setHoveredColumn(header.id)}
-                onMouseLeave={() => {
-                  setHoveredColumn(null);
-                  setOpenColumn(null);
                 }}
               >
                 <div

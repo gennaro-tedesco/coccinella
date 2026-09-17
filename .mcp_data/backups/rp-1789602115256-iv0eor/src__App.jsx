@@ -1,5 +1,3 @@
-// Renders the application workspace and handles global keyboard shortcuts.
-// FEATURE: CSV data workspace
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
@@ -12,7 +10,7 @@ import ColumnPanel from "./components/ColumnPanel";
 import ChartBuilder from "./components/ChartBuilder";
 import EmptyState from "./components/EmptyState";
 import FuzzyFinder from "./components/FuzzyFinder";
-import { openCsvFile, openCsvFileAtPath } from "./utils/openFile";
+import { openCsvFileAtPath } from "./utils/openFile";
 
 function App() {
   const mode = useAppStore((state) => state.mode);
@@ -33,24 +31,14 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
-    async function openFileFinder() {
-      const fzfAvailable = await invoke("fzf_available");
-      if (!fzfAvailable) {
-        await openCsvFile(openSheet);
-        return;
-      }
-
-      setFinder("files");
-      if (csvFiles === null) {
-        invoke("list_csv_files").then(setCsvFiles);
-      }
-    }
-
     function handleKeyDown(event) {
       if (!event.ctrlKey) return;
       if (event.key === "p" || event.key === "P") {
         event.preventDefault();
-        void openFileFinder();
+        setFinder("files");
+        if (csvFiles === null) {
+          invoke("list_csv_files").then(setCsvFiles);
+        }
       } else if (event.key === "b" || event.key === "B") {
         event.preventDefault();
         setFinder("sheets");
@@ -58,7 +46,7 @@ function App() {
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [csvFiles, openSheet]);
+  }, [csvFiles]);
 
   const rightWidth = mode === "data" ? (columnPanelOpen ? "220px" : "32px") : "0px";
 

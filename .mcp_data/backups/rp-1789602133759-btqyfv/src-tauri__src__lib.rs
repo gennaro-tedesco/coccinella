@@ -1,5 +1,4 @@
-// Exposes filesystem and fuzzy-search commands to the Tauri frontend.
-// FEATURE: CSV data workspace
+// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -44,16 +43,6 @@ fn list_csv_files() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-fn fzf_available() -> bool {
-    std::process::Command::new("fzf")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
-}
-
-#[tauri::command]
 fn fuzzy_filter(query: String, candidates: Vec<String>) -> Result<Vec<String>, String> {
     if query.is_empty() {
         return Ok(candidates);
@@ -88,7 +77,6 @@ pub fn run() {
             greet,
             read_csv_file,
             list_csv_files,
-            fzf_available,
             fuzzy_filter
         ])
         .run(tauri::generate_context!())

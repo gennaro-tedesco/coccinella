@@ -17,8 +17,6 @@ export const useAppStore = create((set) => ({
   columnPanelOpen: true,
   toggleColumnPanel: () =>
     set((state) => ({ columnPanelOpen: !state.columnPanelOpen })),
-  hoveredColumn: null,
-  setHoveredColumn: (column) => set({ hoveredColumn: column }),
 
   sheets: {},
   sheetOrder: [],
