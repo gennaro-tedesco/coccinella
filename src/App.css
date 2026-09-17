@@ -590,6 +590,7 @@ body,
 
 .data-table th {
   text-align: left;
+  vertical-align: top;
   font-weight: 600;
   border-bottom: 1px solid var(--border);
   padding: 0;
@@ -615,6 +616,7 @@ body,
   padding: 6px 10px;
   cursor: pointer;
   user-select: none;
+  white-space: nowrap;
 }
 
 .sort-indicator {
