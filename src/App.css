@@ -484,11 +484,35 @@ body,
   bottom: 50%;
 }
 
+.sheet-children .sheet-node-row {
+  gap: 0;
+}
+
+.sheet-children .sheet-node-row.active {
+  background: none;
+}
+
+.sheet-child-content {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+  margin-left: 4px;
+  border-radius: 4px;
+}
+
+.sheet-children .sheet-node-row.active .sheet-child-content {
+  background-color: var(--accent);
+}
+
 .sheet-tree-branch {
   position: relative;
   display: inline-block;
   width: 4ch;
   height: 1em;
+  flex: 0 0 4ch;
+  margin-left: 6px;
   vertical-align: -0.125em;
 }
 

@@ -89,37 +89,39 @@ function SheetPanel() {
                           (childId === activeSheetId ? " active" : "")
                         }
                       >
-                        <button
-                          type="button"
-                          className="sheet-node"
-                          onClick={() => setActiveSheetId(childId)}
-                        >
-                          <span className="sheet-tree-branch" aria-hidden="true" />
-                          {child.filterOf.pattern}
-                        </button>
-                        <button
-                          type="button"
-                          className="sheet-node-action"
-                          aria-label="Save filtered sheet"
-                          title="Save filtered sheet"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void saveFilteredSheet(child);
-                          }}
-                        >
-                          <Save size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          className="sheet-node-action"
-                          aria-label="Close filtered sheet"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            closeFilteredSheet(childId);
-                          }}
-                        >
-                          <X size={12} />
-                        </button>
+                        <span className="sheet-tree-branch" aria-hidden="true" />
+                        <div className="sheet-child-content">
+                          <button
+                            type="button"
+                            className="sheet-node"
+                            onClick={() => setActiveSheetId(childId)}
+                          >
+                            {child.filterOf.pattern}
+                          </button>
+                          <button
+                            type="button"
+                            className="sheet-node-action"
+                            aria-label="Save filtered sheet"
+                            title="Save filtered sheet"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void saveFilteredSheet(child);
+                            }}
+                          >
+                            <Save size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            className="sheet-node-action"
+                            aria-label="Close filtered sheet"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              closeFilteredSheet(childId);
+                            }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
                       </div>
                     </li>
                   );
