@@ -1,12 +1,15 @@
 // Renders the application workspace and handles global keyboard shortcuts.
 // FEATURE: CSV data workspace
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 import { useAppStore } from "./store/useAppStore";
+import { buildMatcher, findMatches } from "./utils/search";
 import TopBar from "./components/TopBar";
 import SheetPanel from "./components/SheetPanel";
 import FileTabs from "./components/FileTabs";
+import FilterTabs from "./components/FilterTabs";
+import SearchPanel from "./components/SearchPanel";
 import DataTable from "./components/DataTable";
 import ColumnPanel from "./components/ColumnPanel";
 import ChartBuilder from "./components/ChartBuilder";
@@ -33,6 +36,26 @@ function App() {
   const switchToPreviousSheet = useAppStore(
     (state) => state.switchToPreviousSheet,
   );
+  const searchOpen = useAppStore((state) => state.searchOpen);
+  const openSearch = useAppStore((state) => state.openSearch);
+  const closeSearch = useAppStore((state) => state.closeSearch);
+  const searchQuery = useAppStore((state) => state.searchQuery);
+  const searchIsRegex = useAppStore((state) => state.searchIsRegex);
+  const searchActiveIndex = useAppStore((state) => state.searchActiveIndex);
+  const setSearchActiveIndex = useAppStore(
+    (state) => state.setSearchActiveIndex,
+  );
+  const createFilteredSheet = useAppStore(
+    (state) => state.createFilteredSheet,
+  );
+
+  const activeSheet = activeSheetId ? sheets[activeSheetId] : null;
+  const searchMatchCount = useMemo(() => {
+    const matcher = buildMatcher(searchQuery, searchIsRegex);
+    if (!matcher || !activeSheet) return 0;
+    return findMatches(activeSheet.rows, activeSheet.columns, matcher).length;
+  }, [searchQuery, searchIsRegex, activeSheet]);
+  const canFilterFromSearch = searchMatchCount > 0 && !activeSheet?.filterOf;
 
   const [finder, setFinder] = useState(null);
   const [csvFiles, setCsvFiles] = useState(null);
@@ -63,6 +86,10 @@ function App() {
   }, [activeSheetId, mode]);
 
   useEffect(() => {
+    if (mode !== "data") closeSearch();
+  }, [mode, closeSearch]);
+
+  useEffect(() => {
     async function openFileFinder() {
       const fzfAvailable = await invoke("fzf_available");
       if (!fzfAvailable) {
@@ -91,7 +118,56 @@ function App() {
         event.key === ":"
       ) {
         event.preventDefault();
+        closeSearch();
         setGoToLineOpen(true);
+        return;
+      }
+
+      if (
+        !isEditing &&
+        mode === "data" &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        event.key === "/"
+      ) {
+        event.preventDefault();
+        setGoToLineOpen(false);
+        openSearch();
+        return;
+      }
+
+      if (
+        !isEditing &&
+        mode === "data" &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        (event.key === "n" || event.key === "N") &&
+        searchMatchCount > 0
+      ) {
+        event.preventDefault();
+        setSearchActiveIndex(
+          (searchActiveIndex +
+            (event.key === "N" ? -1 : 1) +
+            searchMatchCount) %
+            searchMatchCount,
+        );
+        return;
+      }
+
+      if (
+        !isEditing &&
+        mode === "data" &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        event.key === '"' &&
+        canFilterFromSearch
+      ) {
+        event.preventDefault();
+        createFilteredSheet(activeSheetId, searchQuery, searchIsRegex);
+        closeSearch();
         return;
       }
 
@@ -199,6 +275,20 @@ function App() {
         }
       }
 
+      if (
+        !isEditing &&
+        mode === "data" &&
+        event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        (event.key === "f" || event.key === "F")
+      ) {
+        event.preventDefault();
+        setGoToLineOpen(false);
+        openSearch();
+        return;
+      }
+
       if (!event.ctrlKey) return;
       if (event.key === "p" || event.key === "P") {
         event.preventDefault();
@@ -217,6 +307,16 @@ function App() {
     switchToPreviousSheet,
     toggleSheetPanel,
     toggleColumnPanel,
+    openSearch,
+    closeSearch,
+    activeSheetId,
+    searchQuery,
+    searchIsRegex,
+    searchActiveIndex,
+    setSearchActiveIndex,
+    searchMatchCount,
+    canFilterFromSearch,
+    createFilteredSheet,
   ]);
 
   function handleGoToLine(line) {
@@ -283,6 +383,7 @@ function App() {
           <SheetPanel />
           <div className="center">
             <FileTabs />
+            {mode === "data" && <FilterTabs />}
             <div className="content" ref={contentRef}>
               {mode === "data" ? (
                 <DataTable />
@@ -327,6 +428,7 @@ function App() {
           onClose={() => setGoToLineOpen(false)}
         />
       )}
+      {searchOpen && mode === "data" && activeSheetId && <SearchPanel />}
     </div>
   );
 }

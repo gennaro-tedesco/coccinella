@@ -2,6 +2,7 @@
 // FEATURE: CSV data workspace
 import { create } from "zustand";
 import { inferColumnTypes } from "../utils/columnTypes";
+import { buildMatcher, findMatches } from "../utils/search";
 
 export const useAppStore = create((set) => ({
   mode: "data",
@@ -25,6 +26,18 @@ export const useAppStore = create((set) => ({
   activeSheetId: null,
   previousSheetId: null,
   plotConfig: {},
+
+  searchOpen: false,
+  searchQuery: "",
+  searchIsRegex: true,
+  searchActiveIndex: 0,
+  openSearch: () => set({ searchOpen: true }),
+  closeSearch: () => set({ searchOpen: false }),
+  setSearchQuery: (query) =>
+    set({ searchQuery: query, searchActiveIndex: 0 }),
+  setSearchIsRegex: (isRegex) =>
+    set({ searchIsRegex: isRegex, searchActiveIndex: 0 }),
+  setSearchActiveIndex: (index) => set({ searchActiveIndex: index }),
 
   openSheet: (filename, columns, rows, sizeBytes, path, separator) =>
     set((state) => {
@@ -52,6 +65,8 @@ export const useAppStore = create((set) => ({
             selectedColumns: [],
             sorting: [],
             versions: [],
+            children: [],
+            filterOf: null,
             sizeBytes,
           },
         },
@@ -72,22 +87,112 @@ export const useAppStore = create((set) => ({
         columnVisibility[column] = true;
         columnPrecision[column] = 2;
       }
+
+      const sheets = {
+        ...state.sheets,
+        [sheetId]: {
+          ...sheet,
+          separator,
+          columns,
+          rows,
+          columnVisibility,
+          columnTypes,
+          columnPrecision,
+          selectedColumns: [],
+          sorting: [],
+          sizeBytes,
+        },
+      };
+
+      for (const childId of sheet.children) {
+        const child = sheets[childId];
+        if (!child) continue;
+        const matcher = buildMatcher(child.filterOf.pattern, child.filterOf.isRegex);
+        const matchedRows = matcher
+          ? [
+              ...new Set(
+                findMatches(rows, columns, matcher).map((match) => match.rowIndex),
+              ),
+            ].map((rowIndex) => rows[rowIndex])
+          : [];
+        sheets[childId] = {
+          ...child,
+          columns,
+          rows: matchedRows,
+          columnVisibility,
+          columnTypes,
+          columnPrecision,
+        };
+      }
+
+      return { sheets };
+    }),
+
+  createFilteredSheet: (sourceId, pattern, isRegex) =>
+    set((state) => {
+      const source = state.sheets[sourceId];
+      const matcher = buildMatcher(pattern, isRegex);
+      if (!source || !matcher) return state;
+
+      const matchedRowIndexes = [
+        ...new Set(
+          findMatches(source.rows, source.columns, matcher).map(
+            (match) => match.rowIndex,
+          ),
+        ),
+      ];
+      if (matchedRowIndexes.length === 0) return state;
+
+      const id = crypto.randomUUID();
+      const child = {
+        id,
+        filename: `${source.filename} : ${pattern}`,
+        path: null,
+        separator: source.separator,
+        rows: matchedRowIndexes.map((rowIndex) => source.rows[rowIndex]),
+        columns: source.columns,
+        columnVisibility: source.columnVisibility,
+        columnTypes: source.columnTypes,
+        columnPrecision: source.columnPrecision,
+        selectedColumns: [],
+        sorting: [],
+        versions: [],
+        children: [],
+        filterOf: { sourceId, pattern, isRegex },
+        sizeBytes: 0,
+      };
+
       return {
         sheets: {
           ...state.sheets,
-          [sheetId]: {
-            ...sheet,
-            separator,
-            columns,
-            rows,
-            columnVisibility,
-            columnTypes,
-            columnPrecision,
-            selectedColumns: [],
-            sorting: [],
-            sizeBytes,
-          },
+          [sourceId]: { ...source, children: [...source.children, id] },
+          [id]: child,
         },
+        activeSheetId: id,
+        previousSheetId: state.activeSheetId,
+      };
+    }),
+
+  closeFilteredSheet: (id) =>
+    set((state) => {
+      const child = state.sheets[id];
+      if (!child || !child.filterOf) return state;
+      const sourceId = child.filterOf.sourceId;
+      const source = state.sheets[sourceId];
+      const sheets = { ...state.sheets };
+      delete sheets[id];
+      if (source) {
+        sheets[sourceId] = {
+          ...source,
+          children: source.children.filter((childId) => childId !== id),
+        };
+      }
+      return {
+        sheets,
+        activeSheetId:
+          state.activeSheetId === id ? sourceId : state.activeSheetId,
+        previousSheetId:
+          state.previousSheetId === id ? null : state.previousSheetId,
       };
     }),
 
@@ -115,16 +220,17 @@ export const useAppStore = create((set) => ({
     set((state) => {
       const sheetOrder = state.sheetOrder.filter((sheetId) => sheetId !== id);
       const sheets = { ...state.sheets };
-      delete sheets[id];
+      const closedIds = [id, ...(sheets[id]?.children ?? [])];
+      for (const closedId of closedIds) delete sheets[closedId];
       const plotConfig = { ...state.plotConfig };
       delete plotConfig[id];
       let activeSheetId = state.activeSheetId;
-      if (activeSheetId === id) {
+      if (closedIds.includes(activeSheetId)) {
         const closedIndex = state.sheetOrder.indexOf(id);
         activeSheetId = sheetOrder[closedIndex] ?? sheetOrder[closedIndex - 1] ?? null;
       }
       let previousSheetId = state.previousSheetId;
-      if (previousSheetId === id || previousSheetId === activeSheetId) {
+      if (closedIds.includes(previousSheetId) || previousSheetId === activeSheetId) {
         previousSheetId = null;
       }
       return {

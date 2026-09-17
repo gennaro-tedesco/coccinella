@@ -10,6 +10,7 @@ import {
 import { Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { compareByType } from "../utils/columnTypes";
+import { buildMatcher, findMatches } from "../utils/search";
 import ColumnSettings from "./ColumnSettings";
 
 function DataTable() {
@@ -25,6 +26,9 @@ function DataTable() {
     (state) => state.toggleColumnSelection,
   );
   const setHoveredColumn = useAppStore((state) => state.setHoveredColumn);
+  const searchQuery = useAppStore((state) => state.searchQuery);
+  const searchIsRegex = useAppStore((state) => state.searchIsRegex);
+  const searchActiveIndex = useAppStore((state) => state.searchActiveIndex);
   const [openColumn, setOpenColumn] = useState(null);
   const [openColumnWidth, setOpenColumnWidth] = useState(null);
   const thRefs = useRef({});
@@ -66,6 +70,32 @@ function DataTable() {
 
   const selectedColumns = sheet?.selectedColumns ?? [];
   const sorting = sheet?.sorting ?? [];
+
+  const searchMatcher = useMemo(
+    () => buildMatcher(searchQuery, searchIsRegex),
+    [searchQuery, searchIsRegex],
+  );
+  const searchMatches = useMemo(
+    () =>
+      searchMatcher && sheet
+        ? findMatches(sheet.rows, sheet.columns, searchMatcher)
+        : [],
+    [searchMatcher, sheet],
+  );
+  const activeSearchMatch = searchMatches.length
+    ? searchMatches[searchActiveIndex % searchMatches.length]
+    : null;
+  const searchMatchKeys = useMemo(
+    () => new Set(searchMatches.map((match) => `${match.rowIndex}:${match.columnId}`)),
+    [searchMatches],
+  );
+
+  useEffect(() => {
+    if (!activeSearchMatch) return;
+    document
+      .querySelector(`[data-source-line="${activeSearchMatch.rowIndex + 2}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [activeSearchMatch]);
 
   const table = useReactTable({
     data: sheet?.rows ?? [],
@@ -226,10 +256,22 @@ function DataTable() {
           <tr key={row.id} data-source-line={row.index + 2}>
             {row.getVisibleCells().map((cell) => {
               const isSelected = selectedColumns.includes(cell.column.id);
+              const cellKey = `${row.index}:${cell.column.id}`;
+              const isMatch = searchMatchKeys.has(cellKey);
+              const isActiveMatch =
+                activeSearchMatch?.rowIndex === row.index &&
+                activeSearchMatch?.columnId === cell.column.id;
+              const className = [
+                isSelected && "selected",
+                isMatch && "search-match",
+                isActiveMatch && "search-match-active",
+              ]
+                .filter(Boolean)
+                .join(" ");
               return (
                 <td
                   key={cell.id}
-                  className={isSelected ? "selected" : undefined}
+                  className={className || undefined}
                   aria-selected={isSelected || undefined}
                 >
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}

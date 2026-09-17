@@ -7,6 +7,7 @@ function SheetPanel() {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
   const setActiveSheetId = useAppStore((state) => state.setActiveSheetId);
   const closeSheet = useAppStore((state) => state.closeSheet);
+  const closeFilteredSheet = useAppStore((state) => state.closeFilteredSheet);
   const sheetPanelOpen = useAppStore((state) => state.sheetPanelOpen);
   const toggleSheetPanel = useAppStore((state) => state.toggleSheetPanel);
 
@@ -58,6 +59,47 @@ function SheetPanel() {
               </button>
             </div>
             <ul className="sheet-versions" />
+            {sheets[id].children.length > 0 && (
+              <ul className="sheet-children">
+                {sheets[id].children.map((childId, index) => {
+                  const child = sheets[childId];
+                  if (!child) return null;
+                  const isLast = index === sheets[id].children.length - 1;
+                  return (
+                    <li key={childId}>
+                      <div
+                        className={
+                          "sheet-node-row" +
+                          (childId === activeSheetId ? " active" : "")
+                        }
+                      >
+                        <button
+                          type="button"
+                          className="sheet-node"
+                          onClick={() => setActiveSheetId(childId)}
+                        >
+                          <span className="sheet-tree-branch" aria-hidden="true">
+                            {isLast ? "└── " : "├── "}
+                          </span>
+                          {child.filterOf.pattern}
+                        </button>
+                        <button
+                          type="button"
+                          className="sheet-node-close"
+                          aria-label="Close filtered sheet"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            closeFilteredSheet(childId);
+                          }}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </li>
         ))}
       </ul>

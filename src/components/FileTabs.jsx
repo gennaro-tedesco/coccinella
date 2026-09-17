@@ -8,12 +8,17 @@ function FileTabs() {
   const setActiveSheetId = useAppStore((state) => state.setActiveSheetId);
   const closeSheet = useAppStore((state) => state.closeSheet);
 
+  const activeSheet = activeSheetId ? sheets[activeSheetId] : null;
+  const activeRootId = activeSheet?.filterOf
+    ? activeSheet.filterOf.sourceId
+    : activeSheetId;
+
   return (
     <div className="file-tabs">
       {sheetOrder.map((id) => (
         <div
           key={id}
-          className={"file-tab" + (id === activeSheetId ? " active" : "")}
+          className={"file-tab" + (id === activeRootId ? " active" : "")}
         >
           <button
             type="button"
