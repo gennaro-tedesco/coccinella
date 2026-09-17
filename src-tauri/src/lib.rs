@@ -11,6 +11,11 @@ fn read_csv_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn write_csv_file(path: String, contents: String) -> Result<(), String> {
+    std::fs::write(path, contents).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn list_csv_files() -> Result<Vec<String>, String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     let output = std::process::Command::new("fd")
@@ -87,6 +92,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             read_csv_file,
+            write_csv_file,
             list_csv_files,
             fzf_available,
             fuzzy_filter

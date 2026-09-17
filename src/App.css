@@ -424,7 +424,8 @@ body,
   color: var(--bg-alt);
 }
 
-.sheet-node-close {
+.sheet-node-close,
+.sheet-node-action {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -437,15 +438,18 @@ body,
   opacity: 0;
 }
 
-.sheet-node-row:hover .sheet-node-close {
+.sheet-node-row:hover .sheet-node-close,
+.sheet-node-row:hover .sheet-node-action {
   opacity: 0.8;
 }
 
-.sheet-node-close:hover {
+.sheet-node-close:hover,
+.sheet-node-action:hover {
   opacity: 1 !important;
 }
 
-.sheet-node-row.active .sheet-node-close {
+.sheet-node-row.active .sheet-node-close,
+.sheet-node-row.active .sheet-node-action {
   color: var(--bg-alt);
 }
 

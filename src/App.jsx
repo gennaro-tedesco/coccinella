@@ -72,6 +72,7 @@ function App() {
   const contentRef = useRef(null);
   const highlightedLineRef = useRef(null);
   const highlightTimeoutRef = useRef(null);
+  const pendingGRef = useRef(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -90,6 +91,7 @@ function App() {
 
   useEffect(() => {
     if (mode !== "data") setGoToLineOpen(false);
+    pendingGRef.current = false;
     contentRef.current?.style.removeProperty("padding-bottom");
   }, [activeSheetId, mode]);
 
@@ -116,6 +118,16 @@ function App() {
       const isEditing =
         target instanceof HTMLElement &&
         (target.isContentEditable || target.matches("input, textarea, select"));
+      if (
+        isEditing ||
+        mode !== "data" ||
+        event.key !== "g" ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey
+      ) {
+        pendingGRef.current = false;
+      }
 
       if (
         mode === "data" &&
@@ -243,6 +255,30 @@ function App() {
 
       const content = contentRef.current;
       if (!isEditing && mode === "data" && content) {
+        if (
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey &&
+          (event.key === "g" || event.key === "G")
+        ) {
+          event.preventDefault();
+          if (event.repeat) return;
+
+          if (event.key === "G") {
+            pendingGRef.current = false;
+            content.style.removeProperty("padding-bottom");
+            content.scrollTo({ top: content.scrollHeight });
+          } else if (pendingGRef.current) {
+            pendingGRef.current = false;
+            content.style.removeProperty("padding-bottom");
+            content.scrollTo({ top: 0 });
+          } else {
+            pendingGRef.current = true;
+          }
+          return;
+        }
+        pendingGRef.current = false;
+
         if (
           event.ctrlKey &&
           !event.shiftKey &&

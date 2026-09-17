@@ -1,5 +1,23 @@
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
+import { ChevronLeft, ChevronRight, Save, X } from "lucide-react";
+import Papa from "papaparse";
 import { useAppStore } from "../store/useAppStore";
+
+async function saveFilteredSheet(sheet) {
+  const filename = sheet.filename.replace(/[<>:"/\\|?*]/g, "-");
+  const path = await save({
+    defaultPath: filename.endsWith(".csv") ? filename : `${filename}.csv`,
+    filters: [{ name: "CSV", extensions: ["csv"] }],
+  });
+  if (!path) return;
+
+  const csv = Papa.unparse(
+    { fields: sheet.columns, data: sheet.rows },
+    { delimiter: sheet.separator },
+  );
+  await invoke("write_csv_file", { path, contents: csv });
+}
 
 function SheetPanel() {
   const sheetOrder = useAppStore((state) => state.sheetOrder);
@@ -82,7 +100,19 @@ function SheetPanel() {
                         </button>
                         <button
                           type="button"
-                          className="sheet-node-close"
+                          className="sheet-node-action"
+                          aria-label="Save filtered sheet"
+                          title="Save filtered sheet"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void saveFilteredSheet(child);
+                          }}
+                        >
+                          <Save size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          className="sheet-node-action"
                           aria-label="Close filtered sheet"
                           onClick={(event) => {
                             event.stopPropagation();
