@@ -6,7 +6,7 @@ const Plot = createPlotlyComponent(Plotly);
 
 const CHART_TYPES = ["scatter", "bar", "line"];
 
-function ChartBuilder() {
+function ChartBuilder({ fontSize }) {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
   const sheet = useAppStore((state) =>
     state.activeSheetId ? state.sheets[state.activeSheetId] : null,
@@ -91,6 +91,7 @@ function ChartBuilder() {
         ]}
         layout={{
           autosize: true,
+          font: { family: "Lexend, sans-serif", size: fontSize },
           xaxis: { title: config.xColumn },
           yaxis: { title: config.yColumn },
         }}

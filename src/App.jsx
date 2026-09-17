@@ -27,10 +27,16 @@ function App() {
 
   const [finder, setFinder] = useState(null);
   const [csvFiles, setCsvFiles] = useState(null);
+  const [fontSize, setFontSize] = useState(14);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${fontSize}px`;
+    return () => document.documentElement.style.removeProperty("font-size");
+  }, [fontSize]);
 
   useEffect(() => {
     async function openFileFinder() {
@@ -47,6 +53,24 @@ function App() {
     }
 
     function handleKeyDown(event) {
+      if (
+        event.shiftKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey
+      ) {
+        if (event.code === "Equal" || event.key === "+") {
+          event.preventDefault();
+          setFontSize((size) => Math.min(size + 1, 24));
+          return;
+        }
+        if (event.code === "Minus" || event.key === "_") {
+          event.preventDefault();
+          setFontSize((size) => Math.max(size - 1, 10));
+          return;
+        }
+      }
+
       if (!event.ctrlKey) return;
       if (event.key === "p" || event.key === "P") {
         event.preventDefault();
@@ -76,7 +100,11 @@ function App() {
           <div className="center">
             <FileTabs />
             <div className="content">
-              {mode === "data" ? <DataTable /> : <ChartBuilder />}
+              {mode === "data" ? (
+                <DataTable />
+              ) : (
+                <ChartBuilder fontSize={fontSize} />
+              )}
             </div>
           </div>
           {mode === "data" && <ColumnPanel />}
