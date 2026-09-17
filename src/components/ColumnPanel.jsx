@@ -1,12 +1,21 @@
 // Renders column controls and statistics for the currently hovered column.
 // FEATURE: CSV data workspace
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, RefreshCw, Settings } from "lucide-react";
+import { ChevronLeft, ChevronRight, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { formatBytes } from "../utils/stats";
 import { rescanCsvFile } from "../utils/openFile";
 import ColumnStats from "./ColumnStats";
 import ColumnSettings from "./ColumnSettings";
+
+const SEPARATORS = [
+  { value: ",", label: "," },
+  { value: ";", label: ";" },
+  { value: ".", label: "." },
+  { value: "|", label: "|" },
+  { value: " ", label: "\\s" },
+  { value: "\t", label: "\\t" },
+];
 
 function ColumnPanel() {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
@@ -26,6 +35,7 @@ function ColumnPanel() {
   const [draggedColumn, setDraggedColumn] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
   const [separatorInput, setSeparatorInput] = useState(sheet?.separator ?? ",");
+  const [separatorMenuOpen, setSeparatorMenuOpen] = useState(false);
   const dragStateRef = useRef(null);
   const dropTargetRef = useRef(null);
   const ignoreClickUntilRef = useRef(0);
@@ -34,15 +44,17 @@ function ColumnPanel() {
     setSeparatorInput(sheet?.separator ?? ",");
   }, [activeSheetId, sheet?.separator]);
 
-  async function handleRescan() {
-    if (!sheet?.path || !separatorInput) return;
+  async function handleSeparatorChange(separator) {
+    setSeparatorMenuOpen(false);
+    setSeparatorInput(separator);
+    if (!sheet?.path) return;
     try {
       const metadata = await rescanCsvFile(
         sheet.datasetId,
         sheet.path,
-        separatorInput,
+        separator,
       );
-      rescanSheet(activeSheetId, separatorInput, metadata);
+      rescanSheet(activeSheetId, separator, metadata);
     } catch (error) {
       console.error("Failed to rescan CSV with new separator:", error);
     }
@@ -188,28 +200,32 @@ function ColumnPanel() {
             </span>
           </div>
         </div>
-        <div className="separator-control">
-          <input
-            type="text"
-            className="separator-input"
-            maxLength={1}
-            aria-label="CSV separator"
-            title="CSV separator"
-            value={separatorInput}
-            onChange={(event) => setSeparatorInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") handleRescan();
-            }}
-          />
+        <div className="type-selector separator-control">
           <button
             type="button"
-            className="type-selector-trigger"
-            aria-label="Rescan CSV with separator"
-            disabled={!sheet.path || !separatorInput}
-            onClick={handleRescan}
+            className="type-selector-trigger separator-input"
+            aria-label="CSV separator"
+            title="CSV separator"
+            aria-expanded={separatorMenuOpen}
+            onClick={() => setSeparatorMenuOpen((open) => !open)}
           >
-            <RefreshCw size={13} />
+            {SEPARATORS.find(({ value }) => value === separatorInput)?.label}
           </button>
+          {separatorMenuOpen && (
+            <ul className="file-menu-dropdown type-selector-dropdown separator-dropdown">
+              {SEPARATORS.map(({ value, label }) => (
+                <li key={label}>
+                  <button
+                    type="button"
+                    className={value === separatorInput ? "active" : ""}
+                    onClick={() => handleSeparatorChange(value)}
+                  >
+                    {label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
       <ul className="column-list">
