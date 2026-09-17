@@ -46,10 +46,11 @@ function SearchPanel() {
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();
+          setQuery("");
           closeSearch();
         } else if (event.key === "Enter") {
           event.preventDefault();
-          step(event.shiftKey ? -1 : 1);
+          closeSearch();
         }
       }}
     >

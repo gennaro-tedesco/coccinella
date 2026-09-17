@@ -61,10 +61,9 @@ function SheetPanel() {
             <ul className="sheet-versions" />
             {sheets[id].children.length > 0 && (
               <ul className="sheet-children">
-                {sheets[id].children.map((childId, index) => {
+                {sheets[id].children.map((childId) => {
                   const child = sheets[childId];
                   if (!child) return null;
-                  const isLast = index === sheets[id].children.length - 1;
                   return (
                     <li key={childId}>
                       <div
@@ -78,9 +77,7 @@ function SheetPanel() {
                           className="sheet-node"
                           onClick={() => setActiveSheetId(childId)}
                         >
-                          <span className="sheet-tree-branch" aria-hidden="true">
-                            {isLast ? "└── " : "├── "}
-                          </span>
+                          <span className="sheet-tree-branch" aria-hidden="true" />
                           {child.filterOf.pattern}
                         </button>
                         <button

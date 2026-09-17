@@ -461,9 +461,40 @@ body,
   padding: 0;
 }
 
+.sheet-children > li {
+  position: relative;
+}
+
+.sheet-children > li::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  left: 11px;
+  border-left: 1px solid var(--fg-dark);
+  pointer-events: none;
+}
+
+.sheet-children > li:last-child::before {
+  bottom: 50%;
+}
+
 .sheet-tree-branch {
-  color: var(--fg-dark);
-  font-family: monospace;
+  position: relative;
+  display: inline-block;
+  width: 4ch;
+  height: 1em;
+  vertical-align: -0.125em;
+}
+
+.sheet-tree-branch::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 5px;
+  border-top: 1px solid var(--fg-dark);
 }
 
 .file-tabs {
@@ -1274,8 +1305,8 @@ button:disabled {
 .search-panel-regex input[type="checkbox"]:checked::after {
   content: "";
   position: absolute;
-  left: 4px;
-  top: 1px;
+  inset: 0;
+  margin: auto;
   width: 3px;
   height: 7px;
   border: solid var(--bg-alt);

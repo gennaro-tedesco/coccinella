@@ -31,7 +31,8 @@ export const useAppStore = create((set) => ({
   searchQuery: "",
   searchIsRegex: true,
   searchActiveIndex: 0,
-  openSearch: () => set({ searchOpen: true }),
+  openSearch: () =>
+    set({ searchOpen: true, searchQuery: "", searchActiveIndex: 0 }),
   closeSearch: () => set({ searchOpen: false }),
   setSearchQuery: (query) =>
     set({ searchQuery: query, searchActiveIndex: 0 }),

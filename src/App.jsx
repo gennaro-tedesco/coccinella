@@ -42,6 +42,7 @@ function App() {
   const searchQuery = useAppStore((state) => state.searchQuery);
   const searchIsRegex = useAppStore((state) => state.searchIsRegex);
   const searchActiveIndex = useAppStore((state) => state.searchActiveIndex);
+  const setSearchQuery = useAppStore((state) => state.setSearchQuery);
   const setSearchActiveIndex = useAppStore(
     (state) => state.setSearchActiveIndex,
   );
@@ -108,6 +109,17 @@ function App() {
       const isEditing =
         target instanceof HTMLElement &&
         (target.isContentEditable || target.matches("input, textarea, select"));
+
+      if (
+        mode === "data" &&
+        !searchOpen &&
+        searchQuery &&
+        event.key === "Escape"
+      ) {
+        event.preventDefault();
+        setSearchQuery("");
+        return;
+      }
 
       if (
         !isEditing &&
@@ -310,9 +322,11 @@ function App() {
     openSearch,
     closeSearch,
     activeSheetId,
+    searchOpen,
     searchQuery,
     searchIsRegex,
     searchActiveIndex,
+    setSearchQuery,
     setSearchActiveIndex,
     searchMatchCount,
     canFilterFromSearch,
