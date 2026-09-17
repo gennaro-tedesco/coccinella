@@ -1,7 +1,14 @@
 // Renders a window of the active Rust-owned dataset.
 // FEATURE: CSV data workspace
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   flexRender,
   getCoreRowModel,
@@ -15,7 +22,7 @@ const PAGE_SIZE = 200;
 const PAGE_STEP = 100;
 const DEFAULT_ROW_HEIGHT = 29;
 
-function DataTable() {
+function DataTable(_props, ref) {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
   const sheet = useAppStore((state) =>
     state.activeSheetId ? state.sheets[state.activeSheetId] : null,
@@ -37,6 +44,29 @@ function DataTable() {
   const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT);
   const tableRef = useRef(null);
   const thRefs = useRef({});
+  const pendingSnapRef = useRef(null);
+
+  useImperativeHandle(ref, () => ({
+    scrollToTop() {
+      if (offset === 0) {
+        tableRef.current?.parentElement?.scrollTo({ top: 0 });
+        return;
+      }
+      pendingSnapRef.current = "top";
+      setOffset(0);
+    },
+    scrollToBottom() {
+      if (!sheet) return;
+      const target = Math.max(0, sheet.rowCount - PAGE_SIZE);
+      if (offset === target) {
+        const scroller = tableRef.current?.parentElement;
+        scroller?.scrollTo({ top: scroller.scrollHeight });
+        return;
+      }
+      pendingSnapRef.current = "bottom";
+      setOffset(target);
+    },
+  }));
 
   useEffect(() => {
     if (!openColumn) return;
@@ -68,6 +98,18 @@ function DataTable() {
     return () => scroller.removeEventListener("scroll", updateOffset);
   }, [sheet, rowHeight]);
 
+  // Snaps the scroll position once the requested page (top or bottom row)
+  // has actually rendered, so scrollToTop/scrollToBottom land on real data
+  // instead of an estimated scroll offset.
+  useEffect(() => {
+    if (!pendingSnapRef.current) return;
+    const snapTo = pendingSnapRef.current;
+    pendingSnapRef.current = null;
+    const scroller = tableRef.current?.parentElement;
+    if (!scroller) return;
+    scroller.scrollTo({ top: snapTo === "top" ? 0 : scroller.scrollHeight });
+  }, [page]);
+
   useEffect(() => {
     if (!sheet) return undefined;
     let cancelled = false;
@@ -84,13 +126,19 @@ function DataTable() {
   }, [sheet?.datasetId, sheet?.dataVersion, searchVersion, offset]);
 
   useEffect(() => {
-    const measured = tableRef.current
-      ?.querySelector("tbody tr[data-row-index]")
-      ?.getBoundingClientRect().height;
-    if (measured && Math.abs(measured - rowHeight) > 0.5) {
-      setRowHeight(measured);
+    const row = tableRef.current?.querySelector("tbody tr[data-row-index]");
+    if (!row) return undefined;
+    function measure() {
+      const measured = row.getBoundingClientRect().height;
+      setRowHeight((current) =>
+        measured && Math.abs(measured - current) > 0.5 ? measured : current,
+      );
     }
-  }, [page, rowHeight]);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [page]);
 
   const columns = useMemo(
     () =>
@@ -351,4 +399,4 @@ function DataTable() {
   );
 }
 
-export default DataTable;
+export default forwardRef(DataTable);

@@ -778,7 +778,8 @@ body,
   border-bottom: 1px solid var(--border);
 }
 
-.chart-controls label {
+.chart-controls label,
+.chart-controls .chart-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -786,13 +787,13 @@ body,
 }
 
 .chart-controls .plot-checkbox {
-  justify-content: flex-end;
+  align-items: center;
 }
 
 .chart-controls .plot-checkbox input {
   width: 16px;
   height: 16px;
-  margin: 0;
+  margin: 4px 0 0;
   padding: 0;
 }
 
@@ -812,6 +813,14 @@ body,
   padding: 3px 10px;
   font-size: 1.05em;
   width: 70px;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.chart-controls input[type="number"]::-webkit-outer-spin-button,
+.chart-controls input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .color-option {

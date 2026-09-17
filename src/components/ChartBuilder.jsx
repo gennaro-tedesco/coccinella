@@ -1,6 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
-import { ScatterChart, ChartColumn, ChartBarBig, X } from "lucide-react";
+import {
+  ScatterChart,
+  ChartColumn,
+  ChartBarBig,
+  ChartBarIncreasing,
+  BoxSelect,
+  X,
+} from "lucide-react";
 import Plotly from "plotly.js-dist-min";
 import createPlotlyComponent from "react-plotly.js/factory";
 import { useAppStore } from "../store/useAppStore";
@@ -37,6 +44,52 @@ const PLOT_TYPES = [
     needsY: false,
     xTypes: CATEGORICAL_TYPES,
   },
+  {
+    id: "boxplot",
+    label: "Box plot",
+    description: "Quartiles and outliers of one column",
+    icon: BoxSelect,
+    needsY: false,
+    valueOnYAxis: true,
+    xTypes: NUMERIC_TYPES,
+  },
+  {
+    id: "barchart",
+    label: "Bar chart",
+    description: "Aggregate a number across categories",
+    icon: ChartBarIncreasing,
+    needsY: true,
+    xTypes: CATEGORICAL_TYPES,
+    yTypes: NUMERIC_TYPES,
+  },
+];
+
+const AGG_FUNCS = {
+  mean: (nums) => nums.reduce((a, b) => a + b, 0) / nums.length,
+  sum: (nums) => nums.reduce((a, b) => a + b, 0),
+  min: (nums) => Math.min(...nums),
+  max: (nums) => Math.max(...nums),
+  median: (nums) => {
+    const sorted = [...nums].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  },
+  count: (nums) => nums.length,
+};
+
+const AGG_FUNC_OPTIONS = [
+  { value: "mean", label: "Mean" },
+  { value: "sum", label: "Sum" },
+  { value: "min", label: "Min" },
+  { value: "max", label: "Max" },
+  { value: "median", label: "Median" },
+  { value: "count", label: "Count" },
+];
+
+const SCATTER_STYLE_OPTIONS = [
+  { value: "markers", label: "Markers" },
+  { value: "lines", label: "Line" },
+  { value: "lines+markers", label: "Line + markers" },
 ];
 
 function plotTypeFor(chartType) {
@@ -47,8 +100,8 @@ function FieldDropdown({ label, value, options, onChange, open, onToggle }) {
   const selected = options.find((option) => option.value === value);
 
   return (
-    <label>
-      {label}
+    <div className="chart-field">
+      <span>{label}</span>
       <div className="type-selector" onClick={(e) => e.stopPropagation()}>
         <button type="button" className="type-selector-trigger" onClick={onToggle}>
           {selected?.render ? selected.render() : (selected?.label ?? "—")}
@@ -72,7 +125,7 @@ function FieldDropdown({ label, value, options, onChange, open, onToggle }) {
           </ul>
         )}
       </div>
-    </label>
+    </div>
   );
 }
 
@@ -98,19 +151,25 @@ function buildTraces(config, chartData, palette, gapColor) {
   const colorFor = (index) => palette[(startIndex + index) % palette.length];
 
   switch (config.chartType) {
-    case "scatter":
+    case "scatter": {
       if (!yValues) return [];
+      const mode = config.style ?? "markers";
+      const sorted = mode !== "markers";
       return groupKeys.map((key, groupIndex) => {
-        const indices = groups[key];
+        const indices = sorted
+          ? [...groups[key]].sort((a, b) => Number(xValues[a]) - Number(xValues[b]))
+          : groups[key];
         return {
           x: indices.map((index) => xValues[index]),
           y: indices.map((index) => yValues[index]),
           type: "scatter",
-          mode: "markers",
+          mode,
           marker: { color: colorFor(groupIndex) },
+          line: { color: colorFor(groupIndex) },
           name: grouped ? key : undefined,
         };
       });
+    }
     case "histogram":
       return groupKeys.map((key, groupIndex) => ({
         x: groups[key].map((index) => xValues[index]),
@@ -139,6 +198,33 @@ function buildTraces(config, chartData, palette, gapColor) {
           name: grouped ? key : undefined,
         };
       });
+    case "boxplot":
+      return groupKeys.map((key, groupIndex) => ({
+        y: groups[key].map((index) => xValues[index]),
+        type: "box",
+        name: grouped ? key : config.xColumn,
+        marker: { color: colorFor(groupIndex) },
+        line: { color: colorFor(groupIndex) },
+      }));
+    case "barchart": {
+      if (!yValues) return [];
+      const agg = AGG_FUNCS[config.aggFunc] ?? AGG_FUNCS.mean;
+      return groupKeys.map((key, groupIndex) => {
+        const buckets = {};
+        groups[key].forEach((index) => {
+          const num = Number(yValues[index]);
+          if (Number.isNaN(num)) return;
+          (buckets[xValues[index]] ??= []).push(num);
+        });
+        return {
+          x: Object.keys(buckets),
+          y: Object.values(buckets).map(agg),
+          type: "bar",
+          marker: { color: colorFor(groupIndex) },
+          name: grouped ? key : undefined,
+        };
+      });
+    }
     default:
       return [];
   }
@@ -155,6 +241,23 @@ const HIST_NORM_OPTIONS = [
   { value: "density", label: "Density" },
   { value: "probability density", label: "Probability density" },
 ];
+
+function yAxisTitleFor(plotType, config) {
+  if (plotType.id === "barchart") {
+    const aggLabel = AGG_FUNC_OPTIONS.find(
+      (option) => option.value === (config.aggFunc ?? "mean"),
+    ).label;
+    return `${aggLabel} of ${config.yColumn}`;
+  }
+  if (plotType.needsY) return config.yColumn;
+  if (plotType.valueOnYAxis) return config.xColumn;
+  if (plotType.id === "histogram") {
+    return HIST_NORM_OPTIONS.find(
+      (option) => option.value === (config.histNorm ?? "count"),
+    ).label;
+  }
+  return Y_AXIS_TITLE[config.chartType];
+}
 
 function ChartBuilder({ fontSize }) {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
@@ -217,15 +320,18 @@ function ChartBuilder({ fontSize }) {
   function selectChartType(type) {
     const xOptions = columnsOfTypes(sheet, type.xTypes);
     const yOptions = type.needsY ? columnsOfTypes(sheet, type.yTypes) : [];
+    const sameTypeSet = type.xTypes === type.yTypes;
     setPlotConfig(activeSheetId, {
       chartType: type.id,
       xColumn: xOptions[0] ?? "",
-      yColumn: yOptions[1] ?? yOptions[0] ?? "",
+      yColumn: sameTypeSet ? (yOptions[1] ?? yOptions[0] ?? "") : (yOptions[0] ?? ""),
       groupColumn: "",
       binCount: "",
       histNorm: "count",
       cumulative: false,
       colorIndex: 0,
+      aggFunc: "mean",
+      style: "markers",
     });
   }
 
@@ -341,14 +447,36 @@ function ChartBuilder({ fontSize }) {
                   }
                 />
                 <label className="plot-checkbox">
+                  Cumulative
                   <input
                     type="checkbox"
                     checked={Boolean(config.cumulative)}
                     onChange={(e) => updateConfig({ cumulative: e.target.checked })}
                   />
-                  Cumulative
                 </label>
               </>
+            )}
+            {plotType.id === "barchart" && (
+              <FieldDropdown
+                label="Aggregate"
+                value={config.aggFunc ?? "mean"}
+                options={AGG_FUNC_OPTIONS}
+                onChange={(value) => updateConfig({ aggFunc: value })}
+                open={openField === "aggFunc"}
+                onToggle={() =>
+                  setOpenField(openField === "aggFunc" ? null : "aggFunc")
+                }
+              />
+            )}
+            {plotType.id === "scatter" && (
+              <FieldDropdown
+                label="Style"
+                value={config.style ?? "markers"}
+                options={SCATTER_STYLE_OPTIONS}
+                onChange={(value) => updateConfig({ style: value })}
+                open={openField === "style"}
+                onToggle={() => setOpenField(openField === "style" ? null : "style")}
+              />
             )}
             <button
               type="button"
@@ -361,7 +489,7 @@ function ChartBuilder({ fontSize }) {
           </div>
           <div className="chart-plot">
             <Plot
-              key={`${config.chartType}-${config.xColumn}-${config.yColumn}-${config.groupColumn}-${config.binCount}-${config.histNorm}-${config.cumulative}-${config.colorIndex}`}
+              key={`${config.chartType}-${config.xColumn}-${config.yColumn}-${config.groupColumn}-${config.binCount}-${config.histNorm}-${config.cumulative}-${config.colorIndex}-${config.aggFunc}-${config.style}`}
               data={traces}
               layout={{
                 autosize: true,
@@ -371,20 +499,16 @@ function ChartBuilder({ fontSize }) {
                 barmode: "group",
                 showlegend: grouped,
                 xaxis: {
-                  title: config.xColumn,
+                  title: plotType.valueOnYAxis
+                    ? (config.groupColumn ?? "")
+                    : config.xColumn,
                   autorange: true,
                   showgrid: false,
                   linecolor: theme.border,
                   zerolinecolor: theme.border,
                 },
                 yaxis: {
-                  title: plotType.needsY
-                    ? config.yColumn
-                    : plotType.id === "histogram"
-                      ? HIST_NORM_OPTIONS.find(
-                          (option) => option.value === (config.histNorm ?? "count"),
-                        ).label
-                      : Y_AXIS_TITLE[config.chartType],
+                  title: yAxisTitleFor(plotType, config),
                   autorange: true,
                   showgrid: false,
                   linecolor: theme.border,

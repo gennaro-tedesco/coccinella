@@ -67,6 +67,7 @@ function App() {
   const [fontSize, setFontSize] = useState(14);
   const [goToLineOpen, setGoToLineOpen] = useState(false);
   const contentRef = useRef(null);
+  const dataTableRef = useRef(null);
   const highlightedLineRef = useRef(null);
   const highlightTimeoutRef = useRef(null);
   const pendingGRef = useRef(false);
@@ -319,10 +320,10 @@ function App() {
 
           if (event.key === "G") {
             pendingGRef.current = false;
-            content.scrollTo({ top: content.scrollHeight });
+            dataTableRef.current?.scrollToBottom();
           } else if (pendingGRef.current) {
             pendingGRef.current = false;
-            content.scrollTo({ top: 0 });
+            dataTableRef.current?.scrollToTop();
           } else {
             pendingGRef.current = true;
           }
@@ -525,7 +526,7 @@ function App() {
             {mode === "data" && <FilterTabs />}
             <div className="content" ref={contentRef}>
               {mode === "data" ? (
-                <DataTable />
+                <DataTable ref={dataTableRef} />
               ) : (
                 <ChartBuilder fontSize={fontSize} />
               )}
