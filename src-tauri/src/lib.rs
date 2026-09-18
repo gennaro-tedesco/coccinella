@@ -1,6 +1,6 @@
 // Owns CSV data and exposes paged operations to the Tauri frontend.
 // FEATURE: CSV data workspace
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -23,6 +23,7 @@ const MAX_INDEXED_FILES: &str = "10000";
 const CATEGORY_MAX_DISTINCT_VALUES: usize = 20;
 const CATEGORY_MAX_DISTINCT_RATIO: usize = 2;
 const VARIANCE_POWER: i32 = 2;
+const GENERATION_STEP: u64 = 1;
 
 type DatasetHandle = Arc<Mutex<Dataset>>;
 type DatasetStore = HashMap<String, DatasetHandle>;
@@ -110,8 +111,8 @@ struct AppState {
 struct Dataset {
     columns: Vec<String>,
     rows: Arc<PackedRows>,
-    view: Vec<RowIndex>,
-    order: Vec<RowIndex>,
+    view: Arc<Vec<RowIndex>>,
+    order: Arc<Vec<RowIndex>>,
     column_types: Vec<String>,
     separator: u8,
     size_bytes: u64,
@@ -120,6 +121,8 @@ struct Dataset {
     sorting: Vec<SortSpec>,
     search: Option<FilterSpec>,
     search_matches: Vec<(RowIndex, ColumnIndex)>,
+    sort_generation: u64,
+    search_generation: u64,
     source_path: Option<PathBuf>,
 }
 
@@ -218,6 +221,35 @@ enum ColumnStats {
 enum Matcher {
     Regex(Regex),
     Plain(String, bool),
+}
+
+enum SortKeys {
+    Number(Vec<Option<f64>>),
+    Date(Vec<Option<NaiveDate>>),
+    Uuid(Vec<Option<[u8; 16]>>),
+    Boolean(Vec<bool>),
+    Text(Vec<String>),
+}
+
+impl SortKeys {
+    fn compare(&self, a: usize, b: usize) -> Ordering {
+        match self {
+            Self::Number(values) => match (values[a], values[b]) {
+                (Some(a), Some(b)) => a.partial_cmp(&b).unwrap_or(Ordering::Equal),
+                (None, Some(_)) => Ordering::Less,
+                (Some(_), None) => Ordering::Greater,
+                (None, None) => Ordering::Equal,
+            },
+            Self::Date(values) => compare_optional(&values[a], &values[b]),
+            Self::Uuid(values) => compare_optional(&values[a], &values[b]),
+            Self::Boolean(values) => values[a].cmp(&values[b]),
+            Self::Text(values) => values[a].cmp(&values[b]),
+        }
+    }
+}
+
+fn compare_optional<T: Ord>(a: &Option<T>, b: &Option<T>) -> Ordering {
+    a.cmp(b)
 }
 
 impl Matcher {
@@ -329,10 +361,11 @@ fn read_dataset(path: &str, separator: u8) -> Result<Dataset, String> {
         .map(|index| RowIndex::try_from(index).expect("row limit fits in u32"))
         .collect::<Vec<_>>();
     rows.shrink_to_fit();
+    let view = Arc::new(view);
     Ok(Dataset {
         columns,
         rows: Arc::new(rows),
-        order: view.clone(),
+        order: Arc::clone(&view),
         view,
         column_types,
         separator,
@@ -342,8 +375,16 @@ fn read_dataset(path: &str, separator: u8) -> Result<Dataset, String> {
         sorting: Vec::new(),
         search: None,
         search_matches: Vec::new(),
+        sort_generation: 0,
+        search_generation: 0,
         source_path: Some(std::fs::canonicalize(path).map_err(|error| error.to_string())?),
     })
+}
+
+async fn read_dataset_blocking(path: String, separator: u8) -> Result<Dataset, String> {
+    tauri::async_runtime::spawn_blocking(move || read_dataset(&path, separator))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 fn metadata(id: &str, dataset: &Dataset) -> SheetMetadata {
@@ -388,16 +429,28 @@ fn matching_rows(dataset: &Dataset, spec: &FilterSpec) -> Result<Vec<RowIndex>, 
         return Ok(Vec::new());
     };
     let column_indices = matching_column_indices(dataset, spec);
-    Ok(dataset
-        .view
-        .iter()
+    Ok(collect_matching_rows(
+        &dataset.rows,
+        &dataset.view,
+        &matcher,
+        &column_indices,
+    ))
+}
+
+fn collect_matching_rows(
+    rows: &PackedRows,
+    view: &[RowIndex],
+    matcher: &Matcher,
+    column_indices: &[usize],
+) -> Vec<RowIndex> {
+    view.iter()
         .copied()
         .filter(|row_index| {
-            column_indices.iter().any(|column_index| {
-                matcher.is_match(dataset.rows.cell(*row_index as usize, *column_index))
-            })
+            column_indices
+                .iter()
+                .any(|column_index| matcher.is_match(rows.cell(*row_index as usize, *column_index)))
         })
-        .collect())
+        .collect()
 }
 
 fn matching_column_indices(dataset: &Dataset, spec: &FilterSpec) -> Vec<usize> {
@@ -459,35 +512,28 @@ fn is_number(value: &str) -> bool {
 }
 
 fn parse_date(value: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()
+    NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .ok()
+        .or_else(|| {
+            DateTime::parse_from_rfc3339(value)
+                .ok()
+                .map(|date_time| date_time.date_naive())
+        })
+        .or_else(|| {
+            DateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f%:z")
+                .ok()
+                .map(|date_time| date_time.date_naive())
+        })
+        .or_else(|| {
+            ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"]
+                .iter()
+                .find_map(|format| NaiveDateTime::parse_from_str(value, format).ok())
+                .map(|date_time| date_time.date())
+        })
 }
 
-fn compare_values(a: &str, b: &str, column_type: &str) -> Ordering {
-    match column_type {
-        "number" => a
-            .parse::<f64>()
-            .unwrap_or(f64::NAN)
-            .partial_cmp(&b.parse::<f64>().unwrap_or(f64::NAN))
-            .unwrap_or(Ordering::Equal),
-        "date" => parse_date(a).cmp(&parse_date(b)),
-        "uuid" => match (Uuid::parse_str(a), Uuid::parse_str(b)) {
-            (Ok(a), Ok(b)) => a.as_bytes().cmp(b.as_bytes()),
-            _ => a.cmp(b),
-        },
-        "boolean" => a
-            .eq_ignore_ascii_case("true")
-            .cmp(&b.eq_ignore_ascii_case("true")),
-        _ => a.to_lowercase().cmp(&b.to_lowercase()),
-    }
-}
-
-fn apply_sort(dataset: &mut Dataset) {
-    dataset.order = dataset.view.clone();
-    if dataset.sorting.is_empty() {
-        return;
-    }
-    let columns = dataset
-        .sorting
+fn sort_columns(dataset: &Dataset, sorting: &[SortSpec]) -> Vec<(usize, SortSpec)> {
+    sorting
         .iter()
         .filter_map(|sort| {
             dataset
@@ -496,15 +542,45 @@ fn apply_sort(dataset: &mut Dataset) {
                 .position(|column| column == &sort.id)
                 .map(|index| (index, sort.clone()))
         })
+        .collect()
+}
+
+fn sort_rows(rows: &PackedRows, view: &[RowIndex], columns: &[(usize, SortSpec)]) -> Vec<RowIndex> {
+    if columns.is_empty() {
+        return view.to_vec();
+    }
+    let keys = columns
+        .iter()
+        .map(|(column_index, sort)| {
+            let values = || {
+                view.iter()
+                    .map(|row| rows.cell(*row as usize, *column_index))
+            };
+            match sort.column_type.as_str() {
+                "number" => SortKeys::Number(
+                    values()
+                        .map(|value| value.parse::<f64>().ok().filter(|value| value.is_finite()))
+                        .collect(),
+                ),
+                "date" => SortKeys::Date(values().map(parse_date).collect()),
+                "uuid" => SortKeys::Uuid(
+                    values()
+                        .map(|value| Uuid::parse_str(value).ok().map(|uuid| *uuid.as_bytes()))
+                        .collect(),
+                ),
+                "boolean" => SortKeys::Boolean(
+                    values()
+                        .map(|value| value.eq_ignore_ascii_case("true"))
+                        .collect(),
+                ),
+                _ => SortKeys::Text(values().map(str::to_lowercase).collect()),
+            }
+        })
         .collect::<Vec<_>>();
-    let rows = Arc::clone(&dataset.rows);
-    dataset.order.sort_by(|a, b| {
-        for (column_index, sort) in &columns {
-            let ordering = compare_values(
-                rows.cell(*a as usize, *column_index),
-                rows.cell(*b as usize, *column_index),
-                &sort.column_type,
-            );
+    let mut positions = (0..view.len()).collect::<Vec<_>>();
+    positions.sort_unstable_by(|a, b| {
+        for (keys, (_, sort)) in keys.iter().zip(columns) {
+            let ordering = keys.compare(*a, *b);
             if ordering != Ordering::Equal {
                 return if sort.desc {
                     ordering.reverse()
@@ -513,31 +589,69 @@ fn apply_sort(dataset: &mut Dataset) {
                 };
             }
         }
-        a.cmp(b)
+        view[*a].cmp(&view[*b])
     });
+    positions.into_iter().map(|index| view[index]).collect()
 }
 
-fn apply_search(dataset: &mut Dataset) -> Result<(), String> {
-    dataset.search_matches.clear();
-    let Some(spec) = &dataset.search else {
-        return Ok(());
-    };
-    let Some(matcher) = build_matcher(spec)? else {
-        return Ok(());
-    };
-    let column_indices = matching_column_indices(dataset, spec);
-    for (row_index, source_row) in dataset.order.iter().enumerate() {
-        for column_index in &column_indices {
-            let value = dataset.rows.cell(*source_row as usize, *column_index);
+async fn sort_rows_blocking(
+    rows: Arc<PackedRows>,
+    view: Arc<Vec<RowIndex>>,
+    columns: Vec<(usize, SortSpec)>,
+) -> Result<Vec<RowIndex>, String> {
+    tauri::async_runtime::spawn_blocking(move || sort_rows(&rows, &view, &columns))
+        .await
+        .map_err(|error| error.to_string())
+}
+
+fn collect_search_matches(
+    rows: &PackedRows,
+    order: &[RowIndex],
+    matcher: &Matcher,
+    column_indices: &[usize],
+) -> Vec<(RowIndex, ColumnIndex)> {
+    let mut matches = Vec::new();
+    for (row_index, source_row) in order.iter().enumerate() {
+        for column_index in column_indices {
+            let value = rows.cell(*source_row as usize, *column_index);
             if matcher.is_match(value) {
-                dataset.search_matches.push((
+                matches.push((
                     RowIndex::try_from(row_index).expect("row limit fits in u32"),
                     ColumnIndex::try_from(*column_index).expect("column limit fits in u32"),
                 ));
             }
         }
     }
-    Ok(())
+    matches
+}
+
+fn commit_sort(
+    dataset: &mut Dataset,
+    generation: u64,
+    sorting: Vec<SortSpec>,
+    order: Vec<RowIndex>,
+) -> bool {
+    if dataset.sort_generation != generation {
+        return false;
+    }
+    dataset.sorting = sorting;
+    dataset.order = Arc::new(order);
+    dataset.search_generation = dataset.search_generation.wrapping_add(GENERATION_STEP);
+    dataset.search_matches.clear();
+    true
+}
+
+fn commit_search(
+    dataset: &mut Dataset,
+    generation: u64,
+    order: &Arc<Vec<RowIndex>>,
+    matches: Vec<(RowIndex, ColumnIndex)>,
+) -> bool {
+    if dataset.search_generation != generation || !Arc::ptr_eq(&dataset.order, order) {
+        return false;
+    }
+    dataset.search_matches = matches;
+    true
 }
 
 #[tauri::command]
@@ -547,12 +661,15 @@ async fn open_csv_dialog(
     state: State<'_, AppState>,
 ) -> Result<Option<OpenedSheet>, String> {
     let separator = separator_byte(&separator)?;
-    let Some(file) = app
-        .dialog()
-        .file()
-        .add_filter("CSV", &["csv"])
-        .blocking_pick_file()
-    else {
+    let file = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .add_filter("CSV", &["csv"])
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    let Some(file) = file else {
         return Ok(None);
     };
     let path = file.into_path().map_err(|error| error.to_string())?;
@@ -562,7 +679,8 @@ async fn open_csv_dialog(
         .and_then(|name| name.to_str())
         .ok_or("Selected CSV has no valid filename")?
         .to_owned();
-    let metadata = insert_dataset(read_dataset(&path_string, separator)?, &state)?;
+    let dataset = read_dataset_blocking(path_string.clone(), separator).await?;
+    let metadata = insert_dataset(dataset, &state)?;
     Ok(Some(OpenedSheet {
         filename,
         path: path_string,
@@ -589,7 +707,8 @@ async fn load_indexed_csv_file(
         .and_then(|name| name.to_str())
         .ok_or("Indexed CSV has no valid filename")?
         .to_owned();
-    let metadata = insert_dataset(read_dataset(&path_string, separator)?, &state)?;
+    let dataset = read_dataset_blocking(path_string.clone(), separator).await?;
+    let metadata = insert_dataset(dataset, &state)?;
     Ok(OpenedSheet {
         filename,
         path: path_string,
@@ -609,7 +728,7 @@ async fn rescan_csv_file(
         .source_path
         .clone()
         .ok_or("Dataset has no source path")?;
-    let mut root = read_dataset(&path.to_string_lossy(), separator)?;
+    let mut root = read_dataset_blocking(path.to_string_lossy().into_owned(), separator).await?;
     let candidates = {
         let store = datasets(&state)?;
         store
@@ -621,19 +740,28 @@ async fn rescan_csv_file(
     for (id, handle) in candidates {
         let child = lock_dataset(&handle)?;
         if child.source_id.as_deref() == Some(&dataset_id) {
-            children.push((id, child.filter.clone(), child.sorting.clone()));
+            children.push((
+                id,
+                Arc::clone(&handle),
+                child.filter.clone(),
+                child.sorting.clone(),
+            ));
         }
     }
     root.sorting = lock_dataset(&root_handle)?.sorting.clone();
-    apply_sort(&mut root);
-    let mut replacements = vec![(dataset_id.clone(), root.clone())];
-    for (child_id, filter, sorting) in children {
+    let columns = sort_columns(&root, &root.sorting);
+    root.order = Arc::new(
+        sort_rows_blocking(Arc::clone(&root.rows), Arc::clone(&root.view), columns).await?,
+    );
+    let mut replacements = vec![(dataset_id.clone(), Arc::clone(&root_handle), root.clone())];
+    for (child_id, handle, filter, sorting) in children {
         let filter = filter.ok_or("Filtered dataset is missing its filter")?;
         let view = matching_rows(&root, &filter)?;
+        let view = Arc::new(view);
         let mut child = Dataset {
             columns: root.columns.clone(),
             rows: Arc::clone(&root.rows),
-            order: view.clone(),
+            order: Arc::clone(&view),
             view,
             column_types: root.column_types.clone(),
             separator: root.separator,
@@ -643,18 +771,29 @@ async fn rescan_csv_file(
             sorting,
             search: None,
             search_matches: Vec::new(),
+            sort_generation: 0,
+            search_generation: 0,
             source_path: None,
         };
-        apply_sort(&mut child);
-        replacements.push((child_id, child));
+        let columns = sort_columns(&child, &child.sorting);
+        child.order = Arc::new(
+            sort_rows_blocking(Arc::clone(&child.rows), Arc::clone(&child.view), columns).await?,
+        );
+        replacements.push((child_id, handle, child));
     }
     let metadata_list = replacements
         .iter()
-        .map(|(id, dataset)| metadata(id, dataset))
+        .map(|(id, _, dataset)| metadata(id, dataset))
         .collect();
-    let mut store = datasets(&state)?;
-    for (id, replacement) in replacements {
-        store.insert(id, Arc::new(Mutex::new(replacement)));
+    for (_, handle, replacement) in replacements {
+        let mut existing = lock_dataset(&handle)?;
+        let sort_generation = existing.sort_generation.wrapping_add(GENERATION_STEP);
+        let search_generation = existing.search_generation.wrapping_add(GENERATION_STEP);
+        *existing = Dataset {
+            sort_generation,
+            search_generation,
+            ..replacement
+        };
     }
     Ok(metadata_list)
 }
@@ -674,9 +813,27 @@ async fn create_filtered_dataset(
         is_case_sensitive,
         columns,
     };
+    let Some(matcher) = build_matcher(&filter)? else {
+        return Ok(None);
+    };
     let source_handle = dataset(&state, &source_id)?;
-    let source = lock_dataset(&source_handle)?;
-    let view = matching_rows(&source, &filter)?;
+    let (rows, source_view, column_indices, source_columns, column_types, separator) = {
+        let source = lock_dataset(&source_handle)?;
+        (
+            Arc::clone(&source.rows),
+            Arc::clone(&source.view),
+            matching_column_indices(&source, &filter),
+            source.columns.clone(),
+            source.column_types.clone(),
+            source.separator,
+        )
+    };
+    let rows_for_filter = Arc::clone(&rows);
+    let view = tauri::async_runtime::spawn_blocking(move || {
+        collect_matching_rows(&rows_for_filter, &source_view, &matcher, &column_indices)
+    })
+    .await
+    .map_err(|error| error.to_string())?;
     if view.is_empty() {
         return Ok(None);
     }
@@ -684,23 +841,25 @@ async fn create_filtered_dataset(
         .next_dataset_id
         .fetch_add(1, AtomicOrdering::Relaxed)
         .to_string();
+    let view = Arc::new(view);
     let dataset = Dataset {
-        columns: source.columns.clone(),
-        rows: Arc::clone(&source.rows),
-        order: view.clone(),
+        columns: source_columns,
+        rows,
+        order: Arc::clone(&view),
         view,
-        column_types: source.column_types.clone(),
-        separator: source.separator,
+        column_types,
+        separator,
         size_bytes: 0,
         source_id: Some(source_id),
         filter: Some(filter),
         sorting: Vec::new(),
         search: None,
         search_matches: Vec::new(),
+        sort_generation: 0,
+        search_generation: 0,
         source_path: None,
     };
     let result = metadata(&id, &dataset);
-    drop(source);
     datasets(&state)?.insert(id, Arc::new(Mutex::new(dataset)));
     Ok(Some(result))
 }
@@ -769,12 +928,30 @@ async fn sort_dataset(
     dataset_id: String,
     sorting: Vec<SortSpec>,
     state: State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<bool, String> {
+    let handle = dataset(&state, &dataset_id)?;
+    let (generation, rows, view, columns) = {
+        let mut dataset = lock_dataset(&handle)?;
+        dataset.sort_generation = dataset.sort_generation.wrapping_add(GENERATION_STEP);
+        (
+            dataset.sort_generation,
+            Arc::clone(&dataset.rows),
+            Arc::clone(&dataset.view),
+            sort_columns(&dataset, &sorting),
+        )
+    };
+    let order = sort_rows_blocking(rows, view, columns).await?;
+    let mut dataset = lock_dataset(&handle)?;
+    Ok(commit_sort(&mut dataset, generation, sorting, order))
+}
+
+#[tauri::command]
+async fn invalidate_search(dataset_id: String, state: State<'_, AppState>) -> Result<(), String> {
     let handle = dataset(&state, &dataset_id)?;
     let mut dataset = lock_dataset(&handle)?;
-    dataset.sorting = sorting;
-    apply_sort(&mut dataset);
-    apply_search(&mut dataset)?;
+    dataset.search_generation = dataset.search_generation.wrapping_add(GENERATION_STEP);
+    dataset.search = None;
+    dataset.search_matches.clear();
     Ok(())
 }
 
@@ -793,10 +970,33 @@ async fn search_dataset(
         is_case_sensitive,
         columns,
     };
+    let matcher = build_matcher(&spec)?;
     let handle = dataset(&state, &dataset_id)?;
+    let (generation, rows, order, column_indices) = {
+        let mut dataset = lock_dataset(&handle)?;
+        dataset.search_generation = dataset.search_generation.wrapping_add(GENERATION_STEP);
+        dataset.search = Some(spec.clone());
+        dataset.search_matches.clear();
+        (
+            dataset.search_generation,
+            Arc::clone(&dataset.rows),
+            Arc::clone(&dataset.order),
+            matching_column_indices(&dataset, &spec),
+        )
+    };
+    let matches = if let Some(matcher) = matcher {
+        let rows = Arc::clone(&rows);
+        let order = Arc::clone(&order);
+        tauri::async_runtime::spawn_blocking(move || {
+            collect_search_matches(&rows, &order, &matcher, &column_indices)
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    } else {
+        Vec::new()
+    };
     let mut dataset = lock_dataset(&handle)?;
-    dataset.search = Some(spec);
-    apply_search(&mut dataset)?;
+    commit_search(&mut dataset, generation, &order, matches);
     Ok(dataset.search_matches.len())
 }
 
@@ -825,16 +1025,22 @@ async fn get_column_stats(
     state: State<'_, AppState>,
 ) -> Result<Option<ColumnStats>, String> {
     let handle = dataset(&state, &dataset_id)?;
-    let dataset = lock_dataset(&handle)?.clone();
-    let column_index = dataset
-        .columns
+    let (rows, view, column_index) = {
+        let dataset = lock_dataset(&handle)?;
+        let column_index = dataset
+            .columns
+            .iter()
+            .position(|name| name == &column)
+            .ok_or("Column not found")?;
+        (
+            Arc::clone(&dataset.rows),
+            Arc::clone(&dataset.view),
+            column_index,
+        )
+    };
+    let values = view
         .iter()
-        .position(|name| name == &column)
-        .ok_or("Column not found")?;
-    let values = dataset
-        .view
-        .iter()
-        .map(|row_index| dataset.rows.cell(*row_index as usize, column_index))
+        .map(|row_index| rows.cell(*row_index as usize, column_index))
         .filter(|value| !value.is_empty())
         .collect::<Vec<_>>();
     if values.is_empty() {
@@ -933,28 +1139,33 @@ async fn get_chart_data(
     state: State<'_, AppState>,
 ) -> Result<ChartData, String> {
     let handle = dataset(&state, &dataset_id)?;
-    let dataset = lock_dataset(&handle)?.clone();
-    if dataset.order.len() > MAX_CHART_POINTS {
-        return Err(format!(
-            "Chart data has {} rows; the limit is {MAX_CHART_POINTS}",
-            dataset.order.len()
-        ));
-    }
-    let column_index = |name: &str| {
-        dataset
-            .columns
-            .iter()
-            .position(|column| column.as_str() == name)
-            .ok_or_else(|| format!("Column not found: {name}"))
+    let (rows, order, x_index, y_index, group_index) = {
+        let dataset = lock_dataset(&handle)?;
+        if dataset.order.len() > MAX_CHART_POINTS {
+            return Err(format!(
+                "Chart data has {} rows; the limit is {MAX_CHART_POINTS}",
+                dataset.order.len()
+            ));
+        }
+        let column_index = |name: &str| {
+            dataset
+                .columns
+                .iter()
+                .position(|column| column.as_str() == name)
+                .ok_or_else(|| format!("Column not found: {name}"))
+        };
+        (
+            Arc::clone(&dataset.rows),
+            Arc::clone(&dataset.order),
+            column_index(&x_column)?,
+            y_column.as_deref().map(column_index).transpose()?,
+            group_column.as_deref().map(column_index).transpose()?,
+        )
     };
-    let x_index = column_index(&x_column)?;
-    let y_index = y_column.as_deref().map(column_index).transpose()?;
-    let group_index = group_column.as_deref().map(column_index).transpose()?;
     let column_values = |index: usize| {
-        dataset
-            .order
+        order
             .iter()
-            .map(|row| dataset.rows.cell(*row as usize, index).to_owned())
+            .map(|row| rows.cell(*row as usize, index).to_owned())
             .collect()
     };
     Ok(ChartData {
@@ -972,43 +1183,54 @@ async fn save_csv_file_dialog(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
-    let Some(file) = app
-        .dialog()
-        .file()
-        .add_filter("CSV", &["csv"])
-        .set_file_name(default_name)
-        .blocking_save_file()
-    else {
+    let file = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .add_filter("CSV", &["csv"])
+            .set_file_name(default_name)
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    let Some(file) = file else {
         return Ok(false);
     };
     let path = file.into_path().map_err(|error| error.to_string())?;
     let path = path.to_string_lossy().into_owned();
     validate_csv_path(&path)?;
     let handle = dataset(&state, &dataset_id)?;
-    let dataset = lock_dataset(&handle)?.clone();
+    let (rows, order, separator, column_indices) = {
+        let dataset = lock_dataset(&handle)?;
+        let column_indices = columns
+            .iter()
+            .map(|column| {
+                dataset
+                    .columns
+                    .iter()
+                    .position(|candidate| candidate == column)
+                    .ok_or_else(|| format!("Column not found: {column}"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        (
+            Arc::clone(&dataset.rows),
+            Arc::clone(&dataset.order),
+            dataset.separator,
+            column_indices,
+        )
+    };
     let mut writer = csv::WriterBuilder::new()
-        .delimiter(dataset.separator)
+        .delimiter(separator)
         .from_path(path)
         .map_err(|error| error.to_string())?;
-    let column_indices = columns
-        .iter()
-        .map(|column| {
-            dataset
-                .columns
-                .iter()
-                .position(|candidate| candidate == column)
-                .ok_or_else(|| format!("Column not found: {column}"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     writer
         .write_record(&columns)
         .map_err(|error| error.to_string())?;
-    for row_index in &dataset.order {
+    for row_index in order.iter() {
         writer
             .write_record(
                 column_indices
                     .iter()
-                    .map(|column_index| dataset.rows.cell(*row_index as usize, *column_index)),
+                    .map(|column_index| rows.cell(*row_index as usize, *column_index)),
             )
             .map_err(|error| error.to_string())?;
     }
@@ -1117,6 +1339,7 @@ pub fn run() {
             close_dataset,
             get_rows,
             sort_dataset,
+            invalidate_search,
             search_dataset,
             get_search_match,
             get_column_stats,
@@ -1203,9 +1426,17 @@ mod tests {
     }
 
     #[test]
-    fn rejects_dates_with_trailing_content() {
+    fn parses_dates_and_iso_datetimes_strictly() {
         assert!(parse_date("2026-09-17").is_some());
+        assert!(parse_date("2026-09-17T10:30:00").is_some());
+        assert!(parse_date("2026-09-17 10:30:00.123").is_some());
+        assert!(parse_date("2026-09-17T10:30:00Z").is_some());
+        assert!(parse_date("2026-09-17T10:30:00+02:00").is_some());
         assert!(parse_date("2026-09-17 garbage").is_none());
+        assert!(parse_date("2026-09-17T25:30:00").is_none());
+
+        let rows = packed_rows(&[&["2026-09-17T10:30:00"], &["2026-09-18T11:45:00Z"]]);
+        assert_eq!(infer_column_types(&rows, 1), ["date"]);
     }
 
     #[test]
@@ -1241,6 +1472,36 @@ mod tests {
     }
 
     #[test]
+    fn sorts_precomputed_typed_keys_with_deterministic_ties() {
+        let rows = packed_rows(&[
+            &["2026-09-18T10:00:00Z", "bob"],
+            &["2026-09-18", "Ada"],
+            &["2026-09-17 12:00:00", "zoe"],
+        ]);
+        let view = [0, 1, 2];
+        let columns = [
+            (
+                0,
+                SortSpec {
+                    id: "date".into(),
+                    desc: false,
+                    column_type: "date".into(),
+                },
+            ),
+            (
+                1,
+                SortSpec {
+                    id: "name".into(),
+                    desc: false,
+                    column_type: "string".into(),
+                },
+            ),
+        ];
+
+        assert_eq!(sort_rows(&rows, &view, &columns), [2, 1, 0]);
+    }
+
+    #[test]
     fn filters_sorts_and_indexes_search_matches() {
         let mut dataset = Dataset {
             columns: vec!["name".into(), "score".into()],
@@ -1249,8 +1510,8 @@ mod tests {
                 &["Bob", "20"],
                 &["Adam", "15"],
             ])),
-            view: vec![0, 1, 2],
-            order: vec![0, 1, 2],
+            view: Arc::new(vec![0, 1, 2]),
+            order: Arc::new(vec![0, 1, 2]),
             column_types: vec!["string".into(), "number".into()],
             separator: b',',
             size_bytes: 0,
@@ -1268,6 +1529,8 @@ mod tests {
                 columns: vec!["name".into()],
             }),
             search_matches: Vec::new(),
+            sort_generation: 0,
+            search_generation: 0,
             source_path: None,
         };
 
@@ -1294,9 +1557,16 @@ mod tests {
         .expect("filter selected column");
         assert!(restricted.is_empty());
 
-        apply_sort(&mut dataset);
-        apply_search(&mut dataset).expect("index search");
-        assert_eq!(dataset.order, [1, 2, 0]);
+        let columns = sort_columns(&dataset, &dataset.sorting);
+        dataset.order = Arc::new(sort_rows(&dataset.rows, &dataset.view, &columns));
+        let search = dataset.search.as_ref().expect("search specification");
+        let matcher = build_matcher(search)
+            .expect("build matcher")
+            .expect("non-empty matcher");
+        let column_indices = matching_column_indices(&dataset, search);
+        dataset.search_matches =
+            collect_search_matches(&dataset.rows, &dataset.order, &matcher, &column_indices);
+        assert_eq!(dataset.order.as_slice(), [1, 2, 0]);
         assert_eq!(dataset.search_matches, [(2, 0)]);
 
         dataset.search = Some(FilterSpec {
@@ -1305,7 +1575,36 @@ mod tests {
             is_case_sensitive: false,
             columns: Vec::new(),
         });
-        apply_search(&mut dataset).expect("clear search");
+        assert!(
+            build_matcher(dataset.search.as_ref().expect("search specification"))
+                .expect("build matcher")
+                .is_none()
+        );
+        dataset.search_matches.clear();
+        assert!(dataset.search_matches.is_empty());
+
+        let current_order = Arc::clone(&dataset.order);
+        dataset.sort_generation = 2;
+        assert!(!commit_sort(&mut dataset, 1, Vec::new(), vec![0]));
+        assert!(Arc::ptr_eq(&dataset.order, &current_order));
+
+        dataset.search_generation = 2;
+        assert!(!commit_search(
+            &mut dataset,
+            1,
+            &current_order,
+            vec![(0, 0)],
+        ));
+        assert!(dataset.search_matches.is_empty());
+
+        dataset.search_generation = 3;
+        dataset.order = Arc::new(current_order.as_ref().clone());
+        assert!(!commit_search(
+            &mut dataset,
+            3,
+            &current_order,
+            vec![(0, 0)],
+        ));
         assert!(dataset.search_matches.is_empty());
     }
 }

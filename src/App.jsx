@@ -29,6 +29,7 @@ import {
   MAX_FONT_SIZE,
   MIN_FONT_SIZE,
   PANEL_WIDTH_PX,
+  SEARCH_DEBOUNCE_MS,
   COLLAPSED_PANEL_WIDTH_PX,
   COLUMN_PANEL_WIDTH_PX,
   HIDDEN_PANEL_WIDTH_PX,
@@ -129,24 +130,35 @@ function App() {
     setSearchMatchCount(0);
     setActiveSearchMatch(null);
     setSearchError(null);
-    invoke("search_dataset", {
-      datasetId: activeSheet.datasetId,
-      pattern: searchQuery,
-      isRegex: searchIsRegex,
-      isCaseSensitive: searchIsCaseSensitive,
-      columns: activeSheet.selectedColumns,
-    })
-      .then((count) => {
-        if (!cancelled) setSearchMatchCount(count);
+    let timeout;
+    invoke("invalidate_search", { datasetId: activeSheet.datasetId })
+      .then(() => {
+        if (cancelled) return;
+        timeout = window.setTimeout(() => {
+          invoke("search_dataset", {
+            datasetId: activeSheet.datasetId,
+            pattern: searchQuery,
+            isRegex: searchIsRegex,
+            isCaseSensitive: searchIsCaseSensitive,
+            columns: activeSheet.selectedColumns,
+          })
+            .then((count) => {
+              if (!cancelled) setSearchMatchCount(count);
+            })
+            .catch((error) => {
+              if (!cancelled) {
+                setSearchMatchCount(0);
+                setSearchError(String(error));
+              }
+            });
+        }, searchQuery ? SEARCH_DEBOUNCE_MS : 0);
       })
       .catch((error) => {
-        if (!cancelled) {
-          setSearchMatchCount(0);
-          setSearchError(String(error));
-        }
+        if (!cancelled) setSearchError(String(error));
       });
     return () => {
       cancelled = true;
+      if (timeout !== undefined) window.clearTimeout(timeout);
     };
   }, [
     activeSheet?.datasetId,

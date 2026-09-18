@@ -1,5 +1,3 @@
-// Contains failures from lazily loaded application features.
-// A full reload is required because React caches rejected lazy imports.
 import { Component } from "react";
 
 export default class LazyErrorBoundary extends Component {

@@ -1,5 +1,3 @@
-// Pure chart-data transformations shared by the plot UI and tests.
-// Keeping these functions free of React and Plotly makes them deterministic.
 const ZERO = 0;
 const ONE = 1;
 const TWO = 2;

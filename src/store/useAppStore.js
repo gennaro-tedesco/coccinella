@@ -334,8 +334,9 @@ export const useAppStore = create((set, get) => ({
   setSorting: async (sheetId, sorting) => {
     const sheet = get().sheets[sheetId];
     if (!sheet) return;
+    let applied;
     try {
-      await invoke("sort_dataset", {
+      applied = await invoke("sort_dataset", {
         datasetId: sheet.datasetId,
         sorting: sorting.map((sort) => ({
           ...sort,
@@ -346,6 +347,7 @@ export const useAppStore = create((set, get) => ({
       get().showError(error);
       return;
     }
+    if (!applied) return;
     set((state) => ({
       sheets: state.sheets[sheetId]
         ? {

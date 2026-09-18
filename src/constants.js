@@ -1,5 +1,3 @@
-// Shared behavioral limits and UI timing values.
-// Keep structural arithmetic local to the code that uses it.
 export const DEFAULT_COLUMN_PRECISION = 2;
 export const MIN_COLUMN_PRECISION = 0;
 export const MAX_COLUMN_PRECISION = 10;
@@ -24,6 +22,7 @@ export const ICON_SIZE_DEFAULT = 16;
 export const ICON_SIZE_STATUS = 18;
 export const ROW_HEIGHT_CHANGE_THRESHOLD_PX = 0.5;
 export const FUZZY_SEARCH_DEBOUNCE_MS = 150;
+export const SEARCH_DEBOUNCE_MS = 200;
 export const PANEL_WIDTH_PX = 200;
 export const COLUMN_PANEL_WIDTH_PX = 220;
 export const COLLAPSED_PANEL_WIDTH_PX = 32;

@@ -58,4 +58,20 @@ describe("application store dataset lifecycle", () => {
     expect(useAppStore.getState().sheets.root).toBeDefined();
     expect(useAppStore.getState().errorMessage).toBe("close failed");
   });
+
+  it("ignores obsolete sort results", async () => {
+    useAppStore
+      .getState()
+      .openSheet("people.csv", rootMetadata, "/tmp/people.csv");
+    const sorting = [{ id: "name", desc: false }];
+    invokeMock.mockResolvedValueOnce(false);
+
+    await useAppStore.getState().setSorting("root", sorting);
+    expect(useAppStore.getState().sheets.root.sorting).toEqual([]);
+
+    invokeMock.mockResolvedValueOnce(true);
+    await useAppStore.getState().setSorting("root", sorting);
+    expect(useAppStore.getState().sheets.root.sorting).toEqual(sorting);
+    expect(useAppStore.getState().sheets.root.dataVersion).toBe(1);
+  });
 });
