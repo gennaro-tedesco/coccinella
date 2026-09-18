@@ -12,6 +12,68 @@ async function saveFilteredSheet(sheet) {
   });
 }
 
+function FilteredSheetNode({
+  id,
+  sheets,
+  activeSheetId,
+  setActiveSheetId,
+  closeFilteredSheet,
+  showError,
+}) {
+  const sheet = sheets[id];
+  if (!sheet) return null;
+  return (
+    <li>
+      <div className={"sheet-node-row" + (id === activeSheetId ? " active" : "")}>
+        <span className="sheet-tree-branch" aria-hidden="true" />
+        <div className="sheet-child-content">
+          <button type="button" className="sheet-node" onClick={() => setActiveSheetId(id)}>
+            {sheet.filterOf.pattern}
+          </button>
+          <button
+            type="button"
+            className="sheet-node-action"
+            aria-label="Save filtered sheet"
+            title="Save filtered sheet"
+            onClick={(event) => {
+              event.stopPropagation();
+              void saveFilteredSheet(sheet).catch(showError);
+            }}
+          >
+            <Save size={ICON_SIZE_SMALL} />
+          </button>
+          <button
+            type="button"
+            className="sheet-node-action"
+            aria-label="Close filtered sheet"
+            onClick={(event) => {
+              event.stopPropagation();
+              void closeFilteredSheet(id);
+            }}
+          >
+            <X size={ICON_SIZE_SMALL} />
+          </button>
+        </div>
+      </div>
+      {sheet.children.length > 0 && (
+        <ul className="sheet-children">
+          {sheet.children.map((childId) => (
+            <FilteredSheetNode
+              key={childId}
+              id={childId}
+              sheets={sheets}
+              activeSheetId={activeSheetId}
+              setActiveSheetId={setActiveSheetId}
+              closeFilteredSheet={closeFilteredSheet}
+              showError={showError}
+            />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 function SheetPanel() {
   const sheetOrder = useAppStore((state) => state.sheetOrder);
   const sheets = useAppStore((state) => state.sheets);
@@ -72,54 +134,17 @@ function SheetPanel() {
             </div>
             {sheets[id].children.length > 0 && (
               <ul className="sheet-children">
-                {sheets[id].children.map((childId) => {
-                  const child = sheets[childId];
-                  if (!child) return null;
-                  return (
-                    <li key={childId}>
-                      <div
-                        className={
-                          "sheet-node-row" +
-                          (childId === activeSheetId ? " active" : "")
-                        }
-                      >
-                        <span className="sheet-tree-branch" aria-hidden="true" />
-                        <div className="sheet-child-content">
-                          <button
-                            type="button"
-                            className="sheet-node"
-                            onClick={() => setActiveSheetId(childId)}
-                          >
-                            {child.filterOf.pattern}
-                          </button>
-                          <button
-                            type="button"
-                            className="sheet-node-action"
-                            aria-label="Save filtered sheet"
-                            title="Save filtered sheet"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void saveFilteredSheet(child).catch(showError);
-                            }}
-                          >
-                            <Save size={ICON_SIZE_SMALL} />
-                          </button>
-                          <button
-                            type="button"
-                            className="sheet-node-action"
-                            aria-label="Close filtered sheet"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void closeFilteredSheet(childId);
-                            }}
-                          >
-                            <X size={ICON_SIZE_SMALL} />
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
+                {sheets[id].children.map((childId) => (
+                  <FilteredSheetNode
+                    key={childId}
+                    id={childId}
+                    sheets={sheets}
+                    activeSheetId={activeSheetId}
+                    setActiveSheetId={setActiveSheetId}
+                    closeFilteredSheet={closeFilteredSheet}
+                    showError={showError}
+                  />
+                ))}
               </ul>
             )}
           </li>

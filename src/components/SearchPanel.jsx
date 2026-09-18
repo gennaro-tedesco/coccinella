@@ -3,9 +3,6 @@ import { useAppStore } from "../store/useAppStore";
 
 function SearchPanel() {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
-  const sheet = useAppStore((state) =>
-    state.activeSheetId ? state.sheets[state.activeSheetId] : null,
-  );
   const query = useAppStore((state) => state.searchQuery);
   const isRegex = useAppStore((state) => state.searchIsRegex);
   const isCaseSensitive = useAppStore((state) => state.searchIsCaseSensitive);
@@ -35,7 +32,7 @@ function SearchPanel() {
     setActiveIndex((clampedIndex + direction + matchCount) % matchCount);
   }
 
-  const canFilter = matchCount > 0 && !sheet?.filterOf;
+  const canFilter = matchCount > 0;
 
   return (
     <div
@@ -104,11 +101,7 @@ function SearchPanel() {
         type="button"
         className="search-panel-filter"
         disabled={!canFilter}
-        title={
-          sheet?.filterOf
-            ? "Already viewing a filtered sheet"
-            : "Filter to matching rows"
-        }
+        title="Filter to matching rows"
         onClick={() => {
           createFilteredSheet(activeSheetId, query, isRegex, isCaseSensitive);
           closeSearch();

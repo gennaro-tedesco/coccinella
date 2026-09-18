@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { ICON_SIZE_SMALL } from "../constants";
+import { rootSheetId } from "../utils/sheets";
 
 function FileTabs() {
   const sheetOrder = useAppStore((state) => state.sheetOrder);
@@ -10,9 +11,7 @@ function FileTabs() {
   const closeSheet = useAppStore((state) => state.closeSheet);
 
   const activeSheet = activeSheetId ? sheets[activeSheetId] : null;
-  const activeRootId = activeSheet?.filterOf
-    ? activeSheet.filterOf.sourceId
-    : activeSheetId;
+  const activeRootId = activeSheet ? rootSheetId(sheets, activeSheetId) : null;
 
   return (
     <div className="file-tabs">

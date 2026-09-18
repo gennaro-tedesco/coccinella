@@ -890,16 +890,21 @@ fn close_dataset(dataset_id: String, state: State<'_, AppState>) -> Result<(), S
             .map(|(id, handle)| (id.clone(), Arc::clone(handle)))
             .collect::<Vec<_>>()
     };
-    let mut children = Vec::new();
-    for (id, handle) in candidates {
-        if lock_dataset(&handle)?.source_id.as_deref() == Some(&dataset_id) {
-            children.push(id);
+    let mut closed_ids = vec![dataset_id];
+    let mut index = 0;
+    while index < closed_ids.len() {
+        for (id, handle) in &candidates {
+            if lock_dataset(handle)?.source_id.as_deref() == Some(&closed_ids[index])
+                && !closed_ids.contains(id)
+            {
+                closed_ids.push(id.clone());
+            }
         }
+        index += 1;
     }
     let mut store = datasets(&state)?;
-    store.remove(&dataset_id);
-    for child in children {
-        store.remove(&child);
+    for id in closed_ids {
+        store.remove(&id);
     }
     Ok(())
 }

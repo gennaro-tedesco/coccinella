@@ -84,7 +84,7 @@ function App() {
 
   const activeSheet = activeSheetId ? sheets[activeSheetId] : null;
   const searchMatchCount = useAppStore((state) => state.searchMatchCount);
-  const canFilterFromSearch = searchMatchCount > 0 && !activeSheet?.filterOf;
+  const canFilterFromSearch = searchMatchCount > 0;
 
   const [finder, setFinder] = useState(null);
   const [csvFiles, setCsvFiles] = useState(null);

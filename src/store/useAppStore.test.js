@@ -19,6 +19,10 @@ const childMetadata = {
   ...rootMetadata,
   datasetId: "child",
 };
+const grandchildMetadata = {
+  ...rootMetadata,
+  datasetId: "grandchild",
+};
 
 describe("application store dataset lifecycle", () => {
   beforeEach(() => {
@@ -57,6 +61,32 @@ describe("application store dataset lifecycle", () => {
 
     expect(useAppStore.getState().sheets.root).toBeDefined();
     expect(useAppStore.getState().errorMessage).toBe("close failed");
+  });
+
+  it("creates and recursively closes filtered descendants", async () => {
+    useAppStore
+      .getState()
+      .openSheet("people.csv", rootMetadata, "/tmp/people.csv");
+    invokeMock.mockResolvedValueOnce(childMetadata);
+    await useAppStore
+      .getState()
+      .createFilteredSheet("root", "Ada", false, false);
+    invokeMock.mockResolvedValueOnce(grandchildMetadata);
+    await useAppStore
+      .getState()
+      .createFilteredSheet("child", "Lovelace", false, false);
+
+    expect(useAppStore.getState().sheets.root.children).toEqual(["child"]);
+    expect(useAppStore.getState().sheets.child.children).toEqual(["grandchild"]);
+    expect(useAppStore.getState().activeSheetId).toBe("grandchild");
+
+    invokeMock.mockResolvedValueOnce(undefined);
+    await useAppStore.getState().closeFilteredSheet("child");
+
+    expect(useAppStore.getState().sheets).toEqual({
+      root: expect.objectContaining({ children: [] }),
+    });
+    expect(useAppStore.getState().activeSheetId).toBe("root");
   });
 
   it("ignores obsolete sort results", async () => {

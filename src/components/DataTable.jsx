@@ -168,6 +168,7 @@ function DataTable(_props, ref) {
           header: name,
           cell: (info) => {
             const value = info.getValue();
+            if (value === null || value === undefined || value === "") return value;
             if (sheet?.columnTypes[name] === "number") {
               const number = Number(value);
               if (!Number.isNaN(number)) {

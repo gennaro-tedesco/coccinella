@@ -3,6 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import { DEFAULT_COLUMN_PRECISION } from "../constants";
+import { descendantSheetIds } from "../utils/sheets";
 
 export const useAppStore = create((set, get) => ({
   mode: "data",
@@ -230,8 +231,11 @@ export const useAppStore = create((set, get) => ({
       const source = state.sheets[sourceId];
       const sheets = { ...state.sheets };
       const plotConfig = { ...state.plotConfig };
-      delete sheets[id];
-      delete plotConfig[id];
+      const closedIds = [id, ...descendantSheetIds(sheets, id)];
+      for (const closedId of closedIds) {
+        delete sheets[closedId];
+        delete plotConfig[closedId];
+      }
       if (source) {
         sheets[sourceId] = {
           ...source,
@@ -242,9 +246,9 @@ export const useAppStore = create((set, get) => ({
         sheets,
         plotConfig,
         activeSheetId:
-          state.activeSheetId === id ? sourceId : state.activeSheetId,
+          closedIds.includes(state.activeSheetId) ? sourceId : state.activeSheetId,
         previousSheetId:
-          state.previousSheetId === id ? null : state.previousSheetId,
+          closedIds.includes(state.previousSheetId) ? null : state.previousSheetId,
       };
     });
   },
@@ -281,7 +285,7 @@ export const useAppStore = create((set, get) => ({
     set((state) => {
       const sheetOrder = state.sheetOrder.filter((sheetId) => sheetId !== id);
       const sheets = { ...state.sheets };
-      const closedIds = [id, ...(sheets[id]?.children ?? [])];
+      const closedIds = [id, ...descendantSheetIds(sheets, id)];
       for (const closedId of closedIds) delete sheets[closedId];
       const plotConfig = { ...state.plotConfig };
       for (const closedId of closedIds) delete plotConfig[closedId];

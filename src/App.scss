@@ -552,6 +552,10 @@ body,
   padding: tokens.$padding-22;
 }
 
+.sheet-children .sheet-children {
+  margin-left: tokens.$width-5;
+}
+
 .sheet-children > li {
   position: relative;
 }
@@ -1237,8 +1241,8 @@ body,
 }
 
 .null-values-trigger:disabled {
+  color: inherit;
   cursor: default;
-  opacity: tokens.$opacity-12;
 }
 
 .separator-control {
