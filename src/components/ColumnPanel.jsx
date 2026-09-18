@@ -7,6 +7,13 @@ import { formatBytes } from "../utils/stats";
 import { rescanCsvFile } from "../utils/openFile";
 import ColumnStats from "./ColumnStats";
 import ColumnSettings from "./ColumnSettings";
+import {
+  COLUMN_DRAG_THRESHOLD_PX,
+  ICON_SIZE_COMPACT,
+  ICON_SIZE_DEFAULT,
+  POST_DRAG_CLICK_DELAY_MS,
+  COLUMN_DROP_MIDPOINT_DIVISOR,
+} from "../constants";
 
 const SEPARATORS = [
   { value: ",", label: "," },
@@ -31,6 +38,7 @@ function ColumnPanel() {
   const toggleColumnPanel = useAppStore((state) => state.toggleColumnPanel);
   const hoveredColumn = useAppStore((state) => state.hoveredColumn);
   const setHoveredColumn = useAppStore((state) => state.setHoveredColumn);
+  const showError = useAppStore((state) => state.showError);
   const [openSettingsColumn, setOpenSettingsColumn] = useState(null);
   const [draggedColumn, setDraggedColumn] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
@@ -46,17 +54,14 @@ function ColumnPanel() {
 
   async function handleSeparatorChange(separator) {
     setSeparatorMenuOpen(false);
-    setSeparatorInput(separator);
     if (!sheet?.path) return;
     try {
-      const metadata = await rescanCsvFile(
-        sheet.datasetId,
-        sheet.path,
-        separator,
-      );
+      const metadata = await rescanCsvFile(sheet.datasetId, separator);
       rescanSheet(activeSheetId, separator, metadata);
+      setSeparatorInput(separator);
     } catch (error) {
-      console.error("Failed to rescan CSV with new separator:", error);
+      setSeparatorInput(sheet.separator);
+      showError(error);
     }
   }
 
@@ -84,7 +89,7 @@ function ColumnPanel() {
           aria-label="Open columns panel"
           onClick={toggleColumnPanel}
         >
-          <ChevronLeft size={16} />
+          <ChevronLeft size={ICON_SIZE_DEFAULT} />
         </button>
       </div>
     );
@@ -101,7 +106,7 @@ function ColumnPanel() {
             aria-label="Close columns panel"
             onClick={toggleColumnPanel}
           >
-            <ChevronRight size={16} />
+            <ChevronRight size={ICON_SIZE_DEFAULT} />
           </button>
           <div />
         </div>
@@ -132,7 +137,7 @@ function ColumnPanel() {
         event.clientX - drag.startX,
         event.clientY - drag.startY,
       );
-      if (distance < 4) return;
+      if (distance < COLUMN_DRAG_THRESHOLD_PX) return;
       drag.active = true;
       setOpenSettingsColumn(null);
       setDraggedColumn(drag.column);
@@ -151,7 +156,9 @@ function ColumnPanel() {
 
     const bounds = row.getBoundingClientRect();
     const position =
-      event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+      event.clientY < bounds.top + bounds.height / COLUMN_DROP_MIDPOINT_DIVISOR
+        ? "before"
+        : "after";
     const nextTarget = { column: targetColumn, position };
     dropTargetRef.current = nextTarget;
     setDropTarget((current) =>
@@ -175,7 +182,7 @@ function ColumnPanel() {
           target.position,
         );
       }
-      ignoreClickUntilRef.current = performance.now() + 100;
+      ignoreClickUntilRef.current = performance.now() + POST_DRAG_CLICK_DELAY_MS;
     }
     clearColumnDrag();
   }
@@ -282,7 +289,7 @@ function ColumnPanel() {
                   );
                 }}
               >
-                <Settings size={13} />
+                <Settings size={ICON_SIZE_COMPACT} />
               </button>
             </div>
             {openSettingsColumn === column && (
@@ -304,7 +311,7 @@ function ColumnPanel() {
           aria-label="Close columns panel"
           onClick={toggleColumnPanel}
         >
-          <ChevronRight size={16} />
+          <ChevronRight size={ICON_SIZE_DEFAULT} />
         </button>
         <div />
       </div>

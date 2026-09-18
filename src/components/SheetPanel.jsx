@@ -1,19 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
 import { ChevronLeft, ChevronRight, Save, X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
+import { ICON_SIZE_DEFAULT, ICON_SIZE_SMALL } from "../constants";
 
 async function saveFilteredSheet(sheet) {
   const filename = sheet.filename.replace(/[<>:"/\\|?*]/g, "-");
-  const path = await save({
-    defaultPath: filename.endsWith(".csv") ? filename : `${filename}.csv`,
-    filters: [{ name: "CSV", extensions: ["csv"] }],
-  });
-  if (!path) return;
-
-  await invoke("save_csv_file", {
+  await invoke("save_csv_file_dialog", {
     datasetId: sheet.datasetId,
-    path,
+    defaultName: filename.endsWith(".csv") ? filename : `${filename}.csv`,
     columns: sheet.columns,
   });
 }
@@ -27,6 +21,7 @@ function SheetPanel() {
   const closeFilteredSheet = useAppStore((state) => state.closeFilteredSheet);
   const sheetPanelOpen = useAppStore((state) => state.sheetPanelOpen);
   const toggleSheetPanel = useAppStore((state) => state.toggleSheetPanel);
+  const showError = useAppStore((state) => state.showError);
 
   if (!sheetPanelOpen) {
     return (
@@ -37,7 +32,7 @@ function SheetPanel() {
           aria-label="Open sheets panel"
           onClick={toggleSheetPanel}
         >
-          <ChevronRight size={16} />
+          <ChevronRight size={ICON_SIZE_DEFAULT} />
         </button>
       </div>
     );
@@ -69,13 +64,12 @@ function SheetPanel() {
                 aria-label="Close file"
                 onClick={(event) => {
                   event.stopPropagation();
-                  closeSheet(id);
+                  void closeSheet(id);
                 }}
               >
-                <X size={12} />
+                <X size={ICON_SIZE_SMALL} />
               </button>
             </div>
-            <ul className="sheet-versions" />
             {sheets[id].children.length > 0 && (
               <ul className="sheet-children">
                 {sheets[id].children.map((childId) => {
@@ -105,10 +99,10 @@ function SheetPanel() {
                             title="Save filtered sheet"
                             onClick={(event) => {
                               event.stopPropagation();
-                              void saveFilteredSheet(child);
+                              void saveFilteredSheet(child).catch(showError);
                             }}
                           >
-                            <Save size={12} />
+                            <Save size={ICON_SIZE_SMALL} />
                           </button>
                           <button
                             type="button"
@@ -116,10 +110,10 @@ function SheetPanel() {
                             aria-label="Close filtered sheet"
                             onClick={(event) => {
                               event.stopPropagation();
-                              closeFilteredSheet(childId);
+                              void closeFilteredSheet(childId);
                             }}
                           >
-                            <X size={12} />
+                            <X size={ICON_SIZE_SMALL} />
                           </button>
                         </div>
                       </div>
@@ -139,7 +133,7 @@ function SheetPanel() {
           aria-label="Close sheets panel"
           onClick={toggleSheetPanel}
         >
-          <ChevronLeft size={16} />
+          <ChevronLeft size={ICON_SIZE_DEFAULT} />
         </button>
       </div>
     </div>

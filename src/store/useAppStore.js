@@ -2,6 +2,7 @@
 // FEATURE: CSV data workspace
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
+import { DEFAULT_COLUMN_PRECISION } from "../constants";
 
 export const useAppStore = create((set, get) => ({
   mode: "data",
@@ -25,6 +26,10 @@ export const useAppStore = create((set, get) => ({
   activeSheetId: null,
   previousSheetId: null,
   plotConfig: {},
+  errorMessage: null,
+  showError: (error) =>
+    set({ errorMessage: error instanceof Error ? error.message : String(error) }),
+  clearError: () => set({ errorMessage: null }),
 
   searchOpen: false,
   searchQuery: "",
@@ -32,10 +37,11 @@ export const useAppStore = create((set, get) => ({
   searchIsCaseSensitive: false,
   searchActiveIndex: 0,
   searchMatchCount: 0,
+  searchError: null,
   activeSearchMatch: null,
   searchVersion: 0,
   openSearch: () =>
-    set({ searchOpen: true, searchQuery: "", searchActiveIndex: 0 }),
+    set({ searchOpen: true, searchQuery: "", searchActiveIndex: 0, searchError: null }),
   closeSearch: () => set({ searchOpen: false }),
   setSearchQuery: (query) =>
     set({
@@ -43,6 +49,7 @@ export const useAppStore = create((set, get) => ({
       searchActiveIndex: 0,
       searchMatchCount: 0,
       activeSearchMatch: null,
+      searchError: null,
     }),
   setSearchIsRegex: (isRegex) =>
     set({
@@ -65,6 +72,7 @@ export const useAppStore = create((set, get) => ({
       searchVersion: state.searchVersion + 1,
     })),
   setActiveSearchMatch: (activeSearchMatch) => set({ activeSearchMatch }),
+  setSearchError: (searchError) => set({ searchError }),
 
   openSheet: (filename, metadata, path) =>
     set((state) => {
@@ -73,7 +81,7 @@ export const useAppStore = create((set, get) => ({
       const columnPrecision = {};
       for (const column of metadata.columns) {
         columnVisibility[column] = true;
-        columnPrecision[column] = 2;
+        columnPrecision[column] = DEFAULT_COLUMN_PRECISION;
       }
       return {
         sheets: {
@@ -92,7 +100,6 @@ export const useAppStore = create((set, get) => ({
             columnPrecision,
             selectedColumns: [],
             sorting: [],
-            versions: [],
             children: [],
             filterOf: null,
             sizeBytes: metadata.sizeBytes,
@@ -118,7 +125,7 @@ export const useAppStore = create((set, get) => ({
           metadata.columns.map((column) => [column, true]),
         );
         const columnPrecision = Object.fromEntries(
-          metadata.columns.map((column) => [column, 2]),
+          metadata.columns.map((column) => [column, DEFAULT_COLUMN_PRECISION]),
         );
         sheets[metadata.datasetId] = {
           ...existing,
@@ -144,13 +151,19 @@ export const useAppStore = create((set, get) => ({
   createFilteredSheet: async (sourceId, pattern, isRegex, isCaseSensitive) => {
     const source = get().sheets[sourceId];
     if (!source) return;
-    const metadata = await invoke("create_filtered_dataset", {
-      sourceId: source.datasetId,
-      pattern,
-      isRegex,
-      isCaseSensitive,
-      columns: source.selectedColumns,
-    });
+    let metadata;
+    try {
+      metadata = await invoke("create_filtered_dataset", {
+        sourceId: source.datasetId,
+        pattern,
+        isRegex,
+        isCaseSensitive,
+        columns: source.selectedColumns,
+      });
+    } catch (error) {
+      get().showError(error);
+      return;
+    }
     if (!metadata) return;
     set((state) => {
       const currentSource = state.sheets[sourceId];
@@ -170,7 +183,6 @@ export const useAppStore = create((set, get) => ({
         columnPrecision: { ...source.columnPrecision },
         selectedColumns: [],
         sorting: [],
-        versions: [],
         children: [],
         filterOf: {
           sourceId,
@@ -199,15 +211,24 @@ export const useAppStore = create((set, get) => ({
     });
   },
 
-  closeFilteredSheet: (id) =>
+  closeFilteredSheet: async (id) => {
+    const child = get().sheets[id];
+    if (!child?.filterOf) return;
+    try {
+      await invoke("close_dataset", { datasetId: child.datasetId });
+    } catch (error) {
+      get().showError(error);
+      return;
+    }
     set((state) => {
       const child = state.sheets[id];
       if (!child || !child.filterOf) return state;
       const sourceId = child.filterOf.sourceId;
-      void invoke("close_dataset", { datasetId: child.datasetId });
       const source = state.sheets[sourceId];
       const sheets = { ...state.sheets };
+      const plotConfig = { ...state.plotConfig };
       delete sheets[id];
+      delete plotConfig[id];
       if (source) {
         sheets[sourceId] = {
           ...source,
@@ -216,12 +237,14 @@ export const useAppStore = create((set, get) => ({
       }
       return {
         sheets,
+        plotConfig,
         activeSheetId:
           state.activeSheetId === id ? sourceId : state.activeSheetId,
         previousSheetId:
           state.previousSheetId === id ? null : state.previousSheetId,
       };
-    }),
+    });
+  },
 
   setActiveSheetId: (id) =>
     set((state) => {
@@ -243,17 +266,22 @@ export const useAppStore = create((set, get) => ({
       };
     }),
 
-  closeSheet: (id) =>
+  closeSheet: async (id) => {
+    const sheet = get().sheets[id];
+    if (!sheet) return;
+    try {
+      await invoke("close_dataset", { datasetId: sheet.datasetId });
+    } catch (error) {
+      get().showError(error);
+      return;
+    }
     set((state) => {
       const sheetOrder = state.sheetOrder.filter((sheetId) => sheetId !== id);
       const sheets = { ...state.sheets };
       const closedIds = [id, ...(sheets[id]?.children ?? [])];
-      if (sheets[id]) {
-        void invoke("close_dataset", { datasetId: sheets[id].datasetId });
-      }
       for (const closedId of closedIds) delete sheets[closedId];
       const plotConfig = { ...state.plotConfig };
-      delete plotConfig[id];
+      for (const closedId of closedIds) delete plotConfig[closedId];
       let activeSheetId = state.activeSheetId;
       if (closedIds.includes(activeSheetId)) {
         const closedIndex = state.sheetOrder.indexOf(id);
@@ -270,7 +298,8 @@ export const useAppStore = create((set, get) => ({
         activeSheetId,
         previousSheetId,
       };
-    }),
+    });
+  },
 
   setColumnVisibility: (sheetId, columnVisibility) =>
     set((state) => ({
@@ -305,25 +334,25 @@ export const useAppStore = create((set, get) => ({
   setSorting: async (sheetId, sorting) => {
     const sheet = get().sheets[sheetId];
     if (!sheet) return;
-    set((state) => ({
-      sheets: {
-        ...state.sheets,
-        [sheetId]: { ...state.sheets[sheetId], sorting },
-      },
-    }));
-    await invoke("sort_dataset", {
-      datasetId: sheet.datasetId,
-      sorting: sorting.map((sort) => ({
-        ...sort,
-        columnType: sheet.columnTypes[sort.id],
-      })),
-    });
+    try {
+      await invoke("sort_dataset", {
+        datasetId: sheet.datasetId,
+        sorting: sorting.map((sort) => ({
+          ...sort,
+          columnType: sheet.columnTypes[sort.id],
+        })),
+      });
+    } catch (error) {
+      get().showError(error);
+      return;
+    }
     set((state) => ({
       sheets: state.sheets[sheetId]
         ? {
             ...state.sheets,
             [sheetId]: {
               ...state.sheets[sheetId],
+              sorting,
               dataVersion: state.sheets[sheetId].dataVersion + 1,
             },
           }

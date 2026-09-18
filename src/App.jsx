@@ -1,8 +1,8 @@
 // Renders the application workspace and handles global keyboard shortcuts.
 // FEATURE: CSV data workspace
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import "./App.scss";
 import { useAppStore } from "./store/useAppStore";
 import TopBar from "./components/TopBar";
 import SheetPanel from "./components/SheetPanel";
@@ -11,13 +11,32 @@ import FilterTabs from "./components/FilterTabs";
 import SearchPanel from "./components/SearchPanel";
 import DataTable from "./components/DataTable";
 import ColumnPanel from "./components/ColumnPanel";
-import ChartBuilder from "./components/ChartBuilder";
 import EmptyState from "./components/EmptyState";
 import FuzzyFinder from "./components/FuzzyFinder";
 import GoToLine from "./components/GoToLine";
 import { openCsvFile, openCsvFileAtPath } from "./utils/openFile";
+import { ErrorSnackbar } from "./components/Snackbar";
+import LazyErrorBoundary from "./components/LazyErrorBoundary";
+import {
+  DEFAULT_FONT_SIZE,
+  FALLBACK_ROW_HEIGHT_PX,
+  FONT_SIZE_STEP,
+  GO_TO_LINE_CONTEXT_ROWS,
+  GO_TO_LINE_HIGHLIGHT_MS,
+  GO_TO_LINE_ROW_HEIGHT_PX,
+  HALF_PAGE_SCROLL_RATIO,
+  HORIZONTAL_SCROLL_PX,
+  MAX_FONT_SIZE,
+  MIN_FONT_SIZE,
+  PANEL_WIDTH_PX,
+  COLLAPSED_PANEL_WIDTH_PX,
+  COLUMN_PANEL_WIDTH_PX,
+  HIDDEN_PANEL_WIDTH_PX,
+} from "./constants";
 
-const GO_TO_LINE_HIGHLIGHT_MS = 2000;
+const ChartBuilder = lazy(() => import("./components/ChartBuilder"));
+const getPathLabel = (candidate) => candidate.path;
+const getSheetLabel = (id) => useAppStore.getState().sheets[id]?.filename ?? "";
 
 function App() {
   const mode = useAppStore((state) => state.mode);
@@ -54,6 +73,10 @@ function App() {
   const setActiveSearchMatch = useAppStore(
     (state) => state.setActiveSearchMatch,
   );
+  const setSearchError = useAppStore((state) => state.setSearchError);
+  const errorMessage = useAppStore((state) => state.errorMessage);
+  const showError = useAppStore((state) => state.showError);
+  const clearError = useAppStore((state) => state.clearError);
   const createFilteredSheet = useAppStore(
     (state) => state.createFilteredSheet,
   );
@@ -64,7 +87,7 @@ function App() {
 
   const [finder, setFinder] = useState(null);
   const [csvFiles, setCsvFiles] = useState(null);
-  const [fontSize, setFontSize] = useState(14);
+  const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
   const [goToLineOpen, setGoToLineOpen] = useState(false);
   const contentRef = useRef(null);
   const dataTableRef = useRef(null);
@@ -105,6 +128,7 @@ function App() {
     }
     setSearchMatchCount(0);
     setActiveSearchMatch(null);
+    setSearchError(null);
     invoke("search_dataset", {
       datasetId: activeSheet.datasetId,
       pattern: searchQuery,
@@ -115,8 +139,11 @@ function App() {
       .then((count) => {
         if (!cancelled) setSearchMatchCount(count);
       })
-      .catch(() => {
-        if (!cancelled) setSearchMatchCount(0);
+      .catch((error) => {
+        if (!cancelled) {
+          setSearchMatchCount(0);
+          setSearchError(String(error));
+        }
       });
     return () => {
       cancelled = true;
@@ -130,6 +157,7 @@ function App() {
     searchIsCaseSensitive,
     setSearchMatchCount,
     setActiveSearchMatch,
+    setSearchError,
   ]);
 
   useEffect(() => {
@@ -141,9 +169,13 @@ function App() {
     invoke("get_search_match", {
       datasetId: activeSheet.datasetId,
       index: searchActiveIndex % searchMatchCount,
-    }).then((match) => {
-      if (!cancelled) setActiveSearchMatch(match);
-    });
+    })
+      .then((match) => {
+        if (!cancelled) setActiveSearchMatch(match);
+      })
+      .catch((error) => {
+        if (!cancelled) showError(error);
+      });
     return () => {
       cancelled = true;
     };
@@ -152,19 +184,30 @@ function App() {
     searchActiveIndex,
     searchMatchCount,
     setActiveSearchMatch,
+    showError,
   ]);
 
   useEffect(() => {
     async function openFileFinder() {
-      const fzfAvailable = await invoke("fzf_available");
-      if (!fzfAvailable) {
-        await openCsvFile(openSheet);
-        return;
-      }
+      try {
+        const fzfAvailable = await invoke("fzf_available");
+        if (!fzfAvailable) {
+          await openCsvFile(openSheet);
+          return;
+        }
 
-      setFinder("files");
-      if (csvFiles === null) {
-        invoke("list_csv_files").then(setCsvFiles);
+        setFinder("files");
+        if (csvFiles === null) {
+          try {
+            setCsvFiles(await invoke("list_csv_files"));
+          } catch (error) {
+            setFinder(null);
+            showError(error);
+            await openCsvFile(openSheet);
+          }
+        }
+      } catch (error) {
+        showError(error);
       }
     }
 
@@ -302,7 +345,9 @@ function App() {
         const increasing =
           event.code === "Equal" || event.code === "NumpadAdd";
         setFontSize((size) =>
-          increasing ? Math.min(size + 1, 24) : Math.max(size - 1, 10),
+          increasing
+            ? Math.min(size + FONT_SIZE_STEP, MAX_FONT_SIZE)
+            : Math.max(size - FONT_SIZE_STEP, MIN_FONT_SIZE),
         );
         return;
       }
@@ -341,7 +386,9 @@ function App() {
         ) {
           event.preventDefault();
           const direction = event.key.toLowerCase() === "u" ? -1 : 1;
-          content.scrollBy({ top: direction * content.clientHeight * 0.5 });
+          content.scrollBy({
+            top: direction * content.clientHeight * HALF_PAGE_SCROLL_RATIO,
+          });
           return;
         }
 
@@ -356,12 +403,12 @@ function App() {
           const rowHeight =
             content
               .querySelector(".data-table tbody tr")
-              ?.getBoundingClientRect().height ?? 32;
+              ?.getBoundingClientRect().height ?? FALLBACK_ROW_HEIGHT_PX;
           const movement = {
-            h: { left: -80 },
+            h: { left: -HORIZONTAL_SCROLL_PX },
             j: { top: rowHeight },
             k: { top: -rowHeight },
-            l: { left: 80 },
+            l: { left: HORIZONTAL_SCROLL_PX },
           };
           content.scrollBy(movement[event.key]);
           return;
@@ -377,12 +424,16 @@ function App() {
       ) {
         if (event.code === "Equal" || event.key === "+") {
           event.preventDefault();
-          setFontSize((size) => Math.min(size + 1, 24));
+          setFontSize((size) =>
+            Math.min(size + FONT_SIZE_STEP, MAX_FONT_SIZE),
+          );
           return;
         }
         if (event.code === "Minus" || event.key === "_") {
           event.preventDefault();
-          setFontSize((size) => Math.max(size - 1, 10));
+          setFontSize((size) =>
+            Math.max(size - FONT_SIZE_STEP, MIN_FONT_SIZE),
+          );
           return;
         }
       }
@@ -432,6 +483,7 @@ function App() {
     searchMatchCount,
     canFilterFromSearch,
     createFilteredSheet,
+    showError,
   ]);
 
   function handleGoToLine(line) {
@@ -442,9 +494,9 @@ function App() {
       const rowHeight =
         content
           .querySelector(".data-table tbody tr[data-row-index]")
-          ?.getBoundingClientRect().height ?? 29;
+          ?.getBoundingClientRect().height ?? GO_TO_LINE_ROW_HEIGHT_PX;
       content.scrollTo({
-        top: Math.max(0, line - 2) * rowHeight,
+        top: Math.max(0, line - GO_TO_LINE_CONTEXT_ROWS) * rowHeight,
       });
       setGoToLineOpen(false);
       return;
@@ -495,11 +547,11 @@ function App() {
   const rightWidth =
     mode === "data"
       ? columnPanelOpen
-        ? "220px"
-        : "32px"
+        ? `${COLUMN_PANEL_WIDTH_PX}px`
+        : `${COLLAPSED_PANEL_WIDTH_PX}px`
       : columnPanelOpen
-        ? "32px"
-        : "0px";
+        ? `${COLLAPSED_PANEL_WIDTH_PX}px`
+        : `${HIDDEN_PANEL_WIDTH_PX}px`;
 
   return (
     <div className="app">
@@ -517,7 +569,7 @@ function App() {
         <div
           className="main"
           style={{
-            gridTemplateColumns: `${sheetPanelOpen ? "200px" : "32px"} 1fr ${rightWidth}`,
+            gridTemplateColumns: `${sheetPanelOpen ? `${PANEL_WIDTH_PX}px` : `${COLLAPSED_PANEL_WIDTH_PX}px`} 1fr ${rightWidth}`,
           }}
         >
           <SheetPanel />
@@ -528,7 +580,11 @@ function App() {
               {mode === "data" ? (
                 <DataTable ref={dataTableRef} />
               ) : (
-                <ChartBuilder fontSize={fontSize} />
+                <LazyErrorBoundary>
+                  <Suspense fallback={<div className="chart-builder-placeholder">Loading chart tools...</div>}>
+                    <ChartBuilder fontSize={fontSize} />
+                  </Suspense>
+                </LazyErrorBoundary>
               )}
             </div>
           </div>
@@ -541,10 +597,10 @@ function App() {
         <FuzzyFinder
           placeholder="Open file..."
           items={csvFiles ?? []}
-          getLabel={(path) => path}
-          onSelect={(path) => {
+          getLabel={getPathLabel}
+          onSelect={(candidate) => {
             setFinder(null);
-            openCsvFileAtPath(path, openSheet);
+            void openCsvFileAtPath(candidate, openSheet).catch(showError);
           }}
           onClose={() => setFinder(null)}
         />
@@ -552,11 +608,11 @@ function App() {
       {finder === "sheets" && (
         <FuzzyFinder
           placeholder="Go to sheet..."
-          items={sheetOrder.map((id) => sheets[id])}
-          getLabel={(sheet) => sheet.filename}
-          onSelect={(sheet) => {
+          items={sheetOrder}
+          getLabel={getSheetLabel}
+          onSelect={(id) => {
             setFinder(null);
-            setActiveSheetId(sheet.id);
+            setActiveSheetId(id);
           }}
           onClose={() => setFinder(null)}
         />
@@ -569,6 +625,9 @@ function App() {
         />
       )}
       {searchOpen && mode === "data" && activeSheetId && <SearchPanel />}
+      {errorMessage && (
+        <ErrorSnackbar onClose={clearError}>{errorMessage}</ErrorSnackbar>
+      )}
     </div>
   );
 }

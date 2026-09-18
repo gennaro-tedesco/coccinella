@@ -1,0 +1,34 @@
+// Shared behavioral limits and UI timing values.
+// Keep structural arithmetic local to the code that uses it.
+export const DEFAULT_COLUMN_PRECISION = 2;
+export const MIN_COLUMN_PRECISION = 0;
+export const MAX_COLUMN_PRECISION = 10;
+export const DEFAULT_FONT_SIZE = 14;
+export const MIN_FONT_SIZE = 10;
+export const MAX_FONT_SIZE = 24;
+export const FONT_SIZE_STEP = 1;
+export const HALF_PAGE_SCROLL_RATIO = 0.5;
+export const HORIZONTAL_SCROLL_PX = 80;
+export const FALLBACK_ROW_HEIGHT_PX = 32;
+export const GO_TO_LINE_ROW_HEIGHT_PX = 29;
+export const GO_TO_LINE_CONTEXT_ROWS = 2;
+export const GO_TO_LINE_HIGHLIGHT_MS = 2000;
+export const COLUMN_DRAG_THRESHOLD_PX = 4;
+export const POST_DRAG_CLICK_DELAY_MS = 100;
+export const BYTES_PER_UNIT = 1024;
+export const BYTE_DISPLAY_PRECISION = 1;
+export const ICON_SIZE_SMALL = 12;
+export const ICON_SIZE_COMPACT = 13;
+export const ICON_SIZE_MENU = 14;
+export const ICON_SIZE_DEFAULT = 16;
+export const ICON_SIZE_STATUS = 18;
+export const ROW_HEIGHT_CHANGE_THRESHOLD_PX = 0.5;
+export const FUZZY_SEARCH_DEBOUNCE_MS = 150;
+export const PANEL_WIDTH_PX = 200;
+export const COLUMN_PANEL_WIDTH_PX = 220;
+export const COLLAPSED_PANEL_WIDTH_PX = 32;
+export const HIDDEN_PANEL_WIDTH_PX = 0;
+export const COLUMN_DROP_MIDPOINT_DIVISOR = 2;
+export const FULL_SIZE_PERCENT = "100%";
+export const SOURCE_HEADER_LINE = 1;
+export const SOURCE_DATA_LINE_OFFSET = 2;

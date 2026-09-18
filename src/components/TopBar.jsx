@@ -8,6 +8,7 @@ import {
 import { useAppStore } from "../store/useAppStore";
 import { openCsvFile } from "../utils/openFile";
 import { THEMES, THEME_ORDER } from "../utils/themes";
+import { ICON_SIZE_MENU } from "../constants";
 
 const SHORTCUTS = [
   ["Open file finder", "Ctrl+p"],
@@ -36,10 +37,15 @@ function TopBar({ onOpenSearch, onOpenGoTo }) {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
   const theme = useAppStore((state) => state.theme);
   const setTheme = useAppStore((state) => state.setTheme);
+  const showError = useAppStore((state) => state.showError);
 
   async function handleOpen() {
     setMenuOpen(false);
-    await openCsvFile(openSheet);
+    try {
+      await openCsvFile(openSheet);
+    } catch (error) {
+      showError(error);
+    }
   }
 
   return (
@@ -111,7 +117,7 @@ function TopBar({ onOpenSearch, onOpenGoTo }) {
                 onClick={() => setThemeSubmenuOpen((open) => !open)}
               >
                 <span>Theme</span>
-                <ChevronRight size={14} />
+                <ChevronRight size={ICON_SIZE_MENU} />
               </button>
               {themeSubmenuOpen && (
                 <ul className="file-menu-dropdown submenu">
@@ -148,7 +154,7 @@ function TopBar({ onOpenSearch, onOpenGoTo }) {
                 }
               >
                 <span>Shortcuts</span>
-                <ChevronRight size={14} />
+                <ChevronRight size={ICON_SIZE_MENU} />
               </button>
               {shortcutsSubmenuOpen && (
                 <ul className="file-menu-dropdown submenu shortcuts-submenu">

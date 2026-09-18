@@ -8,12 +8,20 @@ import {
   BoxSelect,
   X,
 } from "lucide-react";
-import Plotly from "plotly.js-dist-min";
+import Plotly from "plotly.js/lib/core";
+import Bar from "plotly.js/lib/bar";
+import Box from "plotly.js/lib/box";
+import Histogram from "plotly.js/lib/histogram";
+import Scatter from "plotly.js/lib/scatter";
 import createPlotlyComponent from "react-plotly.js/factory";
 import { useAppStore } from "../store/useAppStore";
 import { THEMES } from "../utils/themes";
+import { FULL_SIZE_PERCENT, ICON_SIZE_DEFAULT } from "../constants";
+import { buildTraces } from "../utils/chart";
 
+Plotly.register([Bar, Box, Histogram, Scatter]);
 const Plot = createPlotlyComponent(Plotly);
+const EMPTY_CHART_DATA = { xValues: [], yValues: null, groupValues: null };
 
 const NUMERIC_TYPES = new Set(["number"]);
 const CATEGORICAL_TYPES = new Set(["string", "category", "boolean", "uuid", "date"]);
@@ -63,19 +71,6 @@ const PLOT_TYPES = [
     yTypes: NUMERIC_TYPES,
   },
 ];
-
-const AGG_FUNCS = {
-  mean: (nums) => nums.reduce((a, b) => a + b, 0) / nums.length,
-  sum: (nums) => nums.reduce((a, b) => a + b, 0),
-  min: (nums) => Math.min(...nums),
-  max: (nums) => Math.max(...nums),
-  median: (nums) => {
-    const sorted = [...nums].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-  },
-  count: (nums) => nums.length,
-};
 
 const AGG_FUNC_OPTIONS = [
   { value: "mean", label: "Mean" },
@@ -133,103 +128,6 @@ function columnsOfTypes(sheet, types) {
   return sheet.columns.filter((column) => types.has(sheet.columnTypes[column]));
 }
 
-function groupIndices(length, groupValues) {
-  if (!groupValues) return { "": Array.from({ length }, (_, index) => index) };
-  const groups = {};
-  groupValues.forEach((value, index) => {
-    (groups[value] ??= []).push(index);
-  });
-  return groups;
-}
-
-function buildTraces(config, chartData, palette, gapColor) {
-  const { xValues, yValues, groupValues } = chartData;
-  const grouped = Boolean(config.groupColumn) && groupValues;
-  const groups = groupIndices(xValues.length, grouped ? groupValues : null);
-  const groupKeys = Object.keys(groups);
-  const startIndex = config.colorIndex ?? 0;
-  const colorFor = (index) => palette[(startIndex + index) % palette.length];
-
-  switch (config.chartType) {
-    case "scatter": {
-      if (!yValues) return [];
-      const mode = config.style ?? "markers";
-      const sorted = mode !== "markers";
-      return groupKeys.map((key, groupIndex) => {
-        const indices = sorted
-          ? [...groups[key]].sort((a, b) => Number(xValues[a]) - Number(xValues[b]))
-          : groups[key];
-        return {
-          x: indices.map((index) => xValues[index]),
-          y: indices.map((index) => yValues[index]),
-          type: "scatter",
-          mode,
-          marker: { color: colorFor(groupIndex) },
-          line: { color: colorFor(groupIndex) },
-          name: grouped ? key : undefined,
-        };
-      });
-    }
-    case "histogram":
-      return groupKeys.map((key, groupIndex) => ({
-        x: groups[key].map((index) => xValues[index]),
-        type: "histogram",
-        nbinsx: config.binCount ? Number(config.binCount) : undefined,
-        histnorm: config.histNorm !== "count" ? config.histNorm : undefined,
-        cumulative: config.cumulative ? { enabled: true } : undefined,
-        marker: {
-          color: colorFor(groupIndex),
-          line: { color: gapColor, width: 1 },
-        },
-        name: grouped ? key : undefined,
-      }));
-    case "countplot":
-      return groupKeys.map((key, groupIndex) => {
-        const counts = {};
-        groups[key].forEach((index) => {
-          const category = xValues[index];
-          counts[category] = (counts[category] ?? 0) + 1;
-        });
-        return {
-          x: Object.keys(counts),
-          y: Object.values(counts),
-          type: "bar",
-          marker: { color: colorFor(groupIndex) },
-          name: grouped ? key : undefined,
-        };
-      });
-    case "boxplot":
-      return groupKeys.map((key, groupIndex) => ({
-        y: groups[key].map((index) => xValues[index]),
-        type: "box",
-        name: grouped ? key : config.xColumn,
-        marker: { color: colorFor(groupIndex) },
-        line: { color: colorFor(groupIndex) },
-      }));
-    case "barchart": {
-      if (!yValues) return [];
-      const agg = AGG_FUNCS[config.aggFunc] ?? AGG_FUNCS.mean;
-      return groupKeys.map((key, groupIndex) => {
-        const buckets = {};
-        groups[key].forEach((index) => {
-          const num = Number(yValues[index]);
-          if (Number.isNaN(num)) return;
-          (buckets[xValues[index]] ??= []).push(num);
-        });
-        return {
-          x: Object.keys(buckets),
-          y: Object.values(buckets).map(agg),
-          type: "bar",
-          marker: { color: colorFor(groupIndex) },
-          name: grouped ? key : undefined,
-        };
-      });
-    }
-    default:
-      return [];
-  }
-}
-
 const Y_AXIS_TITLE = {
   countplot: "Count",
 };
@@ -269,14 +167,11 @@ function ChartBuilder({ fontSize }) {
   );
   const setPlotConfig = useAppStore((state) => state.setPlotConfig);
   const theme = useAppStore((state) => THEMES[state.theme] ?? THEMES.oceanic);
+  const showError = useAppStore((state) => state.showError);
 
   const config = plotConfig ?? null;
   const plotType = config ? plotTypeFor(config.chartType) : null;
-  const [chartData, setChartData] = useState({
-    xValues: [],
-    yValues: null,
-    groupValues: null,
-  });
+  const [chartData, setChartData] = useState(EMPTY_CHART_DATA);
   const [openField, setOpenField] = useState(null);
 
   useEffect(() => {
@@ -292,18 +187,34 @@ function ChartBuilder({ fontSize }) {
     if (!sheet || !plotType || !config.xColumn) return undefined;
     if (plotType.needsY && !config.yColumn) return undefined;
     let cancelled = false;
+    setChartData(EMPTY_CHART_DATA);
     invoke("get_chart_data", {
       datasetId: sheet.datasetId,
       xColumn: config.xColumn,
       yColumn: plotType.needsY ? config.yColumn : null,
       groupColumn: config.groupColumn || null,
-    }).then((result) => {
-      if (!cancelled) setChartData(result);
-    });
+    })
+      .then((result) => {
+        if (!cancelled) setChartData(result);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setChartData(EMPTY_CHART_DATA);
+          showError(error);
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [sheet, plotType, config?.xColumn, config?.yColumn, config?.groupColumn]);
+  }, [
+    sheet?.datasetId,
+    sheet?.dataVersion,
+    plotType,
+    config?.xColumn,
+    config?.yColumn,
+    config?.groupColumn,
+    showError,
+  ]);
 
   if (!sheet) {
     return (
@@ -484,7 +395,7 @@ function ChartBuilder({ fontSize }) {
               aria-label="Close plot"
               onClick={() => updateConfig({ chartType: null })}
             >
-              <X size={16} />
+              <X size={ICON_SIZE_DEFAULT} />
             </button>
           </div>
           <div className="chart-plot">
@@ -516,7 +427,7 @@ function ChartBuilder({ fontSize }) {
                 },
               }}
               useResizeHandler
-              style={{ width: "100%", height: "100%" }}
+              style={{ width: FULL_SIZE_PERCENT, height: FULL_SIZE_PERCENT }}
             />
           </div>
         </>

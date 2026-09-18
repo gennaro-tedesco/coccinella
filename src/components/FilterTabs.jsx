@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
+import { ICON_SIZE_SMALL } from "../constants";
 
 function FilterTabs() {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
@@ -36,10 +37,10 @@ function FilterTabs() {
               aria-label="Close filtered sheet"
               onClick={(event) => {
                 event.stopPropagation();
-                closeFilteredSheet(childId);
+                void closeFilteredSheet(childId);
               }}
             >
-              <X size={12} />
+              <X size={ICON_SIZE_SMALL} />
             </button>
           </div>
         );

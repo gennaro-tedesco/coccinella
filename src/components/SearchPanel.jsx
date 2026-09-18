@@ -11,6 +11,7 @@ function SearchPanel() {
   const isCaseSensitive = useAppStore((state) => state.searchIsCaseSensitive);
   const activeIndex = useAppStore((state) => state.searchActiveIndex);
   const matchCount = useAppStore((state) => state.searchMatchCount);
+  const searchError = useAppStore((state) => state.searchError);
   const setQuery = useAppStore((state) => state.setSearchQuery);
   const setIsRegex = useAppStore((state) => state.setSearchIsRegex);
   const setIsCaseSensitive = useAppStore(
@@ -81,7 +82,7 @@ function SearchPanel() {
         Case sensitive
       </label>
       <span className="search-panel-count">
-        {matchCount ? `${clampedIndex + 1} / ${matchCount}` : "0 / 0"}
+        {searchError || (matchCount ? `${clampedIndex + 1} / ${matchCount}` : "0 / 0")}
       </span>
       <button
         type="button"

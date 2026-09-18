@@ -1,11 +1,13 @@
+import { BYTES_PER_UNIT, BYTE_DISPLAY_PRECISION } from "../constants";
+
 export function formatBytes(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < BYTES_PER_UNIT) return `${bytes} B`;
   const units = ["KB", "MB", "GB"];
-  let value = bytes / 1024;
+  let value = bytes / BYTES_PER_UNIT;
   let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
+  while (value >= BYTES_PER_UNIT && unitIndex < units.length - 1) {
+    value /= BYTES_PER_UNIT;
     unitIndex += 1;
   }
-  return `${value.toFixed(1)} ${units[unitIndex]}`;
+  return `${value.toFixed(BYTE_DISPLAY_PRECISION)} ${units[unitIndex]}`;
 }

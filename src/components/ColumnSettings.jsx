@@ -5,6 +5,12 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { COLUMN_TYPES } from "../utils/columnTypes";
 import ColumnStats from "./ColumnStats";
+import {
+  DEFAULT_COLUMN_PRECISION,
+  MAX_COLUMN_PRECISION,
+  MIN_COLUMN_PRECISION,
+  ICON_SIZE_SMALL,
+} from "../constants";
 
 function TypeSelector({ sheet, column }) {
   const [open, setOpen] = useState(false);
@@ -51,7 +57,7 @@ function TypeSelector({ sheet, column }) {
 function ColumnSettings({ sheet, column, minWidth }) {
   const setColumnPrecision = useAppStore((state) => state.setColumnPrecision);
   const type = sheet.columnTypes[column];
-  const precision = sheet.columnPrecision[column] ?? 2;
+  const precision = sheet.columnPrecision[column] ?? DEFAULT_COLUMN_PRECISION;
   const hasStats = type !== "string" && type !== "uuid";
 
   return (
@@ -72,12 +78,12 @@ function ColumnSettings({ sheet, column, minWidth }) {
               type="button"
               className="type-selector-trigger"
               aria-label={`Decrease ${column} precision`}
-              disabled={precision === 0}
+              disabled={precision === MIN_COLUMN_PRECISION}
               onClick={() =>
                 setColumnPrecision(sheet.id, column, precision - 1)
               }
             >
-              <ChevronDown size={12} />
+              <ChevronDown size={ICON_SIZE_SMALL} />
             </button>
             <output className="precision-value">
               {precision}
@@ -86,12 +92,12 @@ function ColumnSettings({ sheet, column, minWidth }) {
               type="button"
               className="type-selector-trigger"
               aria-label={`Increase ${column} precision`}
-              disabled={precision === 10}
+              disabled={precision === MAX_COLUMN_PRECISION}
               onClick={() =>
                 setColumnPrecision(sheet.id, column, precision + 1)
               }
             >
-              <ChevronUp size={12} />
+              <ChevronUp size={ICON_SIZE_SMALL} />
             </button>
           </div>
         </div>

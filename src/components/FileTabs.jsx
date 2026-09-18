@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
+import { ICON_SIZE_SMALL } from "../constants";
 
 function FileTabs() {
   const sheetOrder = useAppStore((state) => state.sheetOrder);
@@ -33,10 +34,10 @@ function FileTabs() {
             aria-label="Close file"
             onClick={(event) => {
               event.stopPropagation();
-              closeSheet(id);
+              void closeSheet(id);
             }}
           >
-            <X size={12} />
+            <X size={ICON_SIZE_SMALL} />
           </button>
         </div>
       ))}

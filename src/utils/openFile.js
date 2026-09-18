@@ -1,25 +1,24 @@
-import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 
-export async function openCsvFileAtPath(path, openSheet, separator) {
-  const metadata = await invoke("load_csv_file", {
-    path,
-    separator: separator || ",",
-  });
-  const filename = path.split(/[\\/]/).pop();
-  openSheet(filename, metadata, path);
+function addOpenedSheet(opened, openSheet) {
+  openSheet(opened.filename, opened.metadata, opened.path);
 }
 
-export async function rescanCsvFile(datasetId, path, separator) {
-  return invoke("rescan_csv_file", { datasetId, path, separator });
+export async function openCsvFileAtPath(candidate, openSheet, separator) {
+  const opened = await invoke("load_indexed_csv_file", {
+    token: candidate.token,
+    separator: separator || ",",
+  });
+  addOpenedSheet(opened, openSheet);
+}
+
+export async function rescanCsvFile(datasetId, separator) {
+  return invoke("rescan_csv_file", { datasetId, separator });
 }
 
 export async function openCsvFile(openSheet) {
-  const path = await open({
-    multiple: false,
-    filters: [{ name: "CSV", extensions: ["csv"] }],
+  const opened = await invoke("open_csv_dialog", {
+    separator: ",",
   });
-  if (!path) return;
-
-  await openCsvFileAtPath(path, openSheet);
+  if (opened) addOpenedSheet(opened, openSheet);
 }

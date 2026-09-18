@@ -17,6 +17,13 @@ import {
 import { Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import ColumnSettings from "./ColumnSettings";
+import {
+  DEFAULT_COLUMN_PRECISION,
+  ICON_SIZE_COMPACT,
+  ROW_HEIGHT_CHANGE_THRESHOLD_PX,
+  SOURCE_DATA_LINE_OFFSET,
+  SOURCE_HEADER_LINE,
+} from "../constants";
 
 const PAGE_SIZE = 200;
 const PAGE_STEP = 100;
@@ -37,6 +44,7 @@ function DataTable(_props, ref) {
   const setHoveredColumn = useAppStore((state) => state.setHoveredColumn);
   const activeSearchMatch = useAppStore((state) => state.activeSearchMatch);
   const searchVersion = useAppStore((state) => state.searchVersion);
+  const showError = useAppStore((state) => state.showError);
   const [openColumn, setOpenColumn] = useState(null);
   const [openColumnWidth, setOpenColumnWidth] = useState(null);
   const [offset, setOffset] = useState(0);
@@ -117,13 +125,20 @@ function DataTable(_props, ref) {
       datasetId: sheet.datasetId,
       offset,
       limit: PAGE_SIZE,
-    }).then((result) => {
-      if (!cancelled) setPage(result);
-    });
+    })
+      .then((result) => {
+        if (!cancelled) setPage(result);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setPage({ offset, rows: [], matches: [] });
+          showError(error);
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [sheet?.datasetId, sheet?.dataVersion, searchVersion, offset]);
+  }, [sheet?.datasetId, sheet?.dataVersion, searchVersion, offset, showError]);
 
   useEffect(() => {
     const row = tableRef.current?.querySelector("tbody tr[data-row-index]");
@@ -131,7 +146,10 @@ function DataTable(_props, ref) {
     function measure() {
       const measured = row.getBoundingClientRect().height;
       setRowHeight((current) =>
-        measured && Math.abs(measured - current) > 0.5 ? measured : current,
+        measured &&
+        Math.abs(measured - current) > ROW_HEIGHT_CHANGE_THRESHOLD_PX
+          ? measured
+          : current,
       );
     }
     measure();
@@ -153,7 +171,9 @@ function DataTable(_props, ref) {
             if (sheet?.columnTypes[name] === "number") {
               const number = Number(value);
               if (!Number.isNaN(number)) {
-                return number.toFixed(sheet?.columnPrecision[name] ?? 2);
+                return number.toFixed(
+                  sheet?.columnPrecision[name] ?? DEFAULT_COLUMN_PRECISION,
+                );
               }
             }
             return value;
@@ -262,7 +282,7 @@ function DataTable(_props, ref) {
 
   return (
     <table className="data-table" ref={tableRef}>
-      <thead data-source-line="1">
+      <thead data-source-line={SOURCE_HEADER_LINE}>
         {table.getHeaderGroups().map((headerGroup) => (
           <tr key={headerGroup.id}>
             {headerGroup.headers.map((header) => {
@@ -327,7 +347,7 @@ function DataTable(_props, ref) {
                         });
                       }}
                     >
-                      <Settings size={13} />
+                      <Settings size={ICON_SIZE_COMPACT} />
                     </button>
                   </div>
                   {openColumn === header.id && (
@@ -357,7 +377,7 @@ function DataTable(_props, ref) {
             <tr
               key={rowIndex}
               data-row-index={rowIndex}
-              data-source-line={rowIndex + 2}
+              data-source-line={rowIndex + SOURCE_DATA_LINE_OFFSET}
             >
               {row.getVisibleCells().map((cell) => {
                 const isSelected = selectedColumns.includes(cell.column.id);

@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useAppStore } from "../store/useAppStore";
+import { FUZZY_SEARCH_DEBOUNCE_MS } from "../constants";
 
 function FuzzyFinder({ placeholder, items, getLabel, onSelect, onClose }) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const [matches, setMatches] = useState(items);
   const inputRef = useRef(null);
+  const showError = useAppStore((state) => state.showError);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -17,25 +20,35 @@ function FuzzyFinder({ placeholder, items, getLabel, onSelect, onClose }) {
       return;
     }
     let cancelled = false;
-    const labels = items.map(getLabel);
-    invoke("fuzzy_filter", { query, candidates: labels }).then((matchedLabels) => {
-      if (cancelled) return;
-      const pool = new Map();
-      for (const item of items) {
-        const label = getLabel(item);
-        if (!pool.has(label)) pool.set(label, []);
-        pool.get(label).push(item);
-      }
-      setMatches(
-        matchedLabels
-          .map((label) => pool.get(label)?.shift())
-          .filter((item) => item !== undefined),
-      );
-    });
+    const timeout = window.setTimeout(() => {
+      const labels = items.map(getLabel);
+      invoke("fuzzy_filter", { query, candidates: labels })
+        .then((matchedLabels) => {
+          if (cancelled) return;
+          const pool = new Map();
+          for (const item of items) {
+            const label = getLabel(item);
+            if (!pool.has(label)) pool.set(label, []);
+            pool.get(label).push(item);
+          }
+          setMatches(
+            matchedLabels
+              .map((label) => pool.get(label)?.shift())
+              .filter((item) => item !== undefined),
+          );
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setMatches([]);
+            showError(error);
+          }
+        });
+    }, FUZZY_SEARCH_DEBOUNCE_MS);
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
     };
-  }, [items, query, getLabel]);
+  }, [items, query, getLabel, showError]);
 
   useEffect(() => {
     setActiveIndex(0);

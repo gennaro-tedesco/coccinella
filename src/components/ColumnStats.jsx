@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { DEFAULT_COLUMN_PRECISION } from "../constants";
+import { useAppStore } from "../store/useAppStore";
 
 function StatRow({ label, value }) {
   return (
@@ -12,7 +14,8 @@ function StatRow({ label, value }) {
 
 function ColumnStats({ sheet, column }) {
   const type = sheet.columnTypes[column];
-  const precision = sheet.columnPrecision[column] ?? 2;
+  const precision = sheet.columnPrecision[column] ?? DEFAULT_COLUMN_PRECISION;
+  const showError = useAppStore((state) => state.showError);
   const hasStats = type !== "string" && type !== "uuid";
   const [stats, setStats] = useState(undefined);
 
@@ -24,13 +27,17 @@ function ColumnStats({ sheet, column }) {
       datasetId: sheet.datasetId,
       column,
       columnType: type,
-    }).then((result) => {
-      if (!cancelled) setStats(result);
-    });
+    })
+      .then((result) => {
+        if (!cancelled) setStats(result);
+      })
+      .catch((error) => {
+        if (!cancelled) showError(error);
+      });
     return () => {
       cancelled = true;
     };
-  }, [sheet.datasetId, sheet.contentVersion, type, column, hasStats]);
+  }, [sheet.datasetId, sheet.contentVersion, type, column, hasStats, showError]);
 
   if (!hasStats) return null;
 
