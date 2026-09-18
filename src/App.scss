@@ -1200,8 +1200,7 @@ body,
 
 .sheet-summary {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: tokens.$gap-18;
   margin-bottom: tokens.$margin-bottom-2;
   padding-bottom: tokens.$padding-bottom-2;
@@ -1215,9 +1214,31 @@ body,
   gap: tokens.$gap-19;
 }
 
+.sheet-summary-row {
+  display: flex;
+  align-items: center;
+  gap: tokens.$gap-19;
+}
+
 .sheet-summary-value {
   color: var(--fg);
   font-weight: tokens.$font-weight-8;
+}
+
+.null-values-trigger {
+  display: flex;
+  align-items: center;
+  gap: tokens.$gap-20;
+  border: none;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.null-values-trigger:disabled {
+  cursor: default;
+  opacity: tokens.$opacity-12;
 }
 
 .separator-control {
@@ -1226,16 +1247,19 @@ body,
 }
 
 .separator-input {
-  width: tokens.$width-12;
+  width: tokens.$width-19;
   padding: tokens.$padding-59 tokens.$padding-60;
   text-align: center;
 }
 
 .separator-dropdown {
-  min-width: tokens.$min-width-10;
+  min-width: tokens.$width-19;
+  left: 0;
+  right: auto;
 }
 
 .separator-dropdown li button {
+  padding: tokens.$padding-9 tokens.$padding-38;
   text-align: center;
 }
 

@@ -1,7 +1,7 @@
 // Renders column controls and statistics for the currently hovered column.
 // FEATURE: CSV data workspace
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Settings } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleOff, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { formatBytes } from "../utils/stats";
 import { rescanCsvFile } from "../utils/openFile";
@@ -39,6 +39,8 @@ function ColumnPanel() {
   const hoveredColumn = useAppStore((state) => state.hoveredColumn);
   const setHoveredColumn = useAppStore((state) => state.setHoveredColumn);
   const showError = useAppStore((state) => state.showError);
+  const setSearchQuery = useAppStore((state) => state.setSearchQuery);
+  const setSearchIsRegex = useAppStore((state) => state.setSearchIsRegex);
   const [openSettingsColumn, setOpenSettingsColumn] = useState(null);
   const [draggedColumn, setDraggedColumn] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
@@ -73,6 +75,15 @@ function ColumnPanel() {
     document.addEventListener("click", handleOutsideClick);
     return () => document.removeEventListener("click", handleOutsideClick);
   }, [openSettingsColumn]);
+
+  useEffect(() => {
+    if (!separatorMenuOpen) return;
+    function handleOutsideClick() {
+      setSeparatorMenuOpen(false);
+    }
+    document.addEventListener("click", handleOutsideClick);
+    return () => document.removeEventListener("click", handleOutsideClick);
+  }, [separatorMenuOpen]);
 
   useEffect(() => {
     if (openSettingsColumn && hoveredColumn !== openSettingsColumn) {
@@ -112,6 +123,12 @@ function ColumnPanel() {
         </div>
       </div>
     );
+  }
+
+  function highlightNullValues() {
+    if (!sheet.nullCount) return;
+    setSearchIsRegex(true);
+    setSearchQuery("^$");
   }
 
   function toggleVisibility(column) {
@@ -207,32 +224,52 @@ function ColumnPanel() {
             </span>
           </div>
         </div>
-        <div className="type-selector separator-control">
+        <div className="sheet-summary-row">
+          <div className="type-selector separator-control">
+            <button
+              type="button"
+              className="type-selector-trigger separator-input"
+              aria-label="CSV separator"
+              title="CSV separator"
+              aria-expanded={separatorMenuOpen}
+              onClick={(event) => {
+                event.stopPropagation();
+                setSeparatorMenuOpen((open) => !open);
+              }}
+            >
+              {SEPARATORS.find(({ value }) => value === separatorInput)?.label}
+            </button>
+            {separatorMenuOpen && (
+              <ul className="file-menu-dropdown type-selector-dropdown separator-dropdown">
+                {SEPARATORS.map(({ value, label }) => (
+                  <li key={label}>
+                    <button
+                      type="button"
+                      className={value === separatorInput ? "active" : ""}
+                      onClick={() => handleSeparatorChange(value)}
+                    >
+                      {label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <span>separator</span>
+        </div>
+        <div className="sheet-summary-row">
           <button
             type="button"
-            className="type-selector-trigger separator-input"
-            aria-label="CSV separator"
-            title="CSV separator"
-            aria-expanded={separatorMenuOpen}
-            onClick={() => setSeparatorMenuOpen((open) => !open)}
+            className="null-values-trigger"
+            onClick={highlightNullValues}
+            disabled={!sheet.nullCount}
+            title="Highlight null values"
           >
-            {SEPARATORS.find(({ value }) => value === separatorInput)?.label}
+            <span className="sheet-summary-value">
+              {(sheet.nullCount ?? 0).toLocaleString()}
+            </span>
+            <CircleOff size={ICON_SIZE_COMPACT} />
           </button>
-          {separatorMenuOpen && (
-            <ul className="file-menu-dropdown type-selector-dropdown separator-dropdown">
-              {SEPARATORS.map(({ value, label }) => (
-                <li key={label}>
-                  <button
-                    type="button"
-                    className={value === separatorInput ? "active" : ""}
-                    onClick={() => handleSeparatorChange(value)}
-                  >
-                    {label}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
       </div>
       <ul className="column-list">

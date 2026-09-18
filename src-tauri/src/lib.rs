@@ -151,6 +151,7 @@ struct SheetMetadata {
     row_count: usize,
     size_bytes: u64,
     separator: String,
+    null_count: usize,
 }
 
 #[derive(Serialize)]
@@ -388,6 +389,21 @@ async fn read_dataset_blocking(path: String, separator: u8) -> Result<Dataset, S
 }
 
 fn metadata(id: &str, dataset: &Dataset) -> SheetMetadata {
+    let column_count = dataset.columns.len();
+    let null_count = dataset
+        .view
+        .iter()
+        .map(|row_index| {
+            (0..column_count)
+                .filter(|column_index| {
+                    dataset
+                        .rows
+                        .cell(*row_index as usize, *column_index)
+                        .is_empty()
+                })
+                .count()
+        })
+        .sum();
     SheetMetadata {
         dataset_id: id.to_owned(),
         columns: dataset.columns.clone(),
@@ -400,6 +416,7 @@ fn metadata(id: &str, dataset: &Dataset) -> SheetMetadata {
         row_count: dataset.view.len(),
         size_bytes: dataset.size_bytes,
         separator: char::from(dataset.separator).to_string(),
+        null_count,
     }
 }
 

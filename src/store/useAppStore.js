@@ -103,6 +103,7 @@ export const useAppStore = create((set, get) => ({
             children: [],
             filterOf: null,
             sizeBytes: metadata.sizeBytes,
+            nullCount: metadata.nullCount,
             dataVersion: 0,
             contentVersion: 0,
           },
@@ -140,6 +141,7 @@ export const useAppStore = create((set, get) => ({
             metadata.datasetId === sheetId ? [] : existing.selectedColumns,
           sorting: existing.sorting,
           sizeBytes: metadata.sizeBytes,
+          nullCount: metadata.nullCount,
           dataVersion: existing.dataVersion + 1,
           contentVersion: existing.contentVersion + 1,
         };
@@ -192,6 +194,7 @@ export const useAppStore = create((set, get) => ({
           columns: source.selectedColumns,
         },
         sizeBytes: metadata.sizeBytes,
+        nullCount: metadata.nullCount,
         dataVersion: 0,
         contentVersion: 0,
       };
