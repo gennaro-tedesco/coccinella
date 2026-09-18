@@ -174,7 +174,7 @@ struct SearchMatch {
 #[serde(rename_all = "camelCase")]
 struct ChartData {
     x_values: Vec<String>,
-    y_values: Option<Vec<String>>,
+    y_values: Vec<Vec<String>>,
     group_values: Option<Vec<String>>,
 }
 
@@ -1187,12 +1187,12 @@ async fn get_column_stats(
 async fn get_chart_data(
     dataset_id: String,
     x_column: String,
-    y_column: Option<String>,
+    y_columns: Vec<String>,
     group_column: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<ChartData, String> {
     let handle = dataset(&state, &dataset_id)?;
-    let (rows, order, x_index, y_index, group_index) = {
+    let (rows, order, x_index, y_indices, group_index) = {
         let dataset = lock_dataset(&handle)?;
         if dataset.order.len() > MAX_CHART_POINTS {
             return Err(format!(
@@ -1211,7 +1211,10 @@ async fn get_chart_data(
             Arc::clone(&dataset.rows),
             Arc::clone(&dataset.order),
             column_index(&x_column)?,
-            y_column.as_deref().map(column_index).transpose()?,
+            y_columns
+                .iter()
+                .map(|column| column_index(column))
+                .collect::<Result<Vec<_>, _>>()?,
             group_column.as_deref().map(column_index).transpose()?,
         )
     };
@@ -1223,7 +1226,7 @@ async fn get_chart_data(
     };
     Ok(ChartData {
         x_values: column_values(x_index),
-        y_values: y_index.map(column_values),
+        y_values: y_indices.into_iter().map(column_values).collect(),
         group_values: group_index.map(column_values),
     })
 }

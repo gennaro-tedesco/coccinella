@@ -28,6 +28,7 @@ function groupIndices(length, groupValues) {
 
 export function buildTraces(config, chartData, palette, gapColor) {
   const { xValues, yValues, groupValues } = chartData;
+  const primaryYValues = yValues[ZERO];
   const grouped = Boolean(config.groupColumn) && groupValues;
   const groups = groupIndices(xValues.length, grouped ? groupValues : null);
   const groupKeys = Object.keys(groups);
@@ -36,7 +37,7 @@ export function buildTraces(config, chartData, palette, gapColor) {
 
   switch (config.chartType) {
     case "scatter": {
-      if (!yValues) return [];
+      if (!primaryYValues) return [];
       const mode = config.style ?? "markers";
       const sorted = mode !== "markers";
       return groupKeys.map((key, groupIndex) => {
@@ -45,7 +46,7 @@ export function buildTraces(config, chartData, palette, gapColor) {
           : groups[key];
         return {
           x: indices.map((index) => xValues[index]),
-          y: indices.map((index) => yValues[index]),
+          y: indices.map((index) => primaryYValues[index]),
           type: "scatter",
           mode,
           marker: { color: colorFor(groupIndex) },
@@ -96,12 +97,12 @@ export function buildTraces(config, chartData, palette, gapColor) {
         line: { color: colorFor(groupIndex) },
       }));
     case "barchart": {
-      if (!yValues) return [];
+      if (!primaryYValues) return [];
       const agg = AGG_FUNCS[config.aggFunc] ?? AGG_FUNCS.mean;
       return groupKeys.map((key, groupIndex) => {
         const buckets = {};
         groups[key].forEach((index) => {
-          const num = Number(yValues[index]);
+          const num = Number(primaryYValues[index]);
           if (Number.isNaN(num)) return;
           (buckets[xValues[index]] ??= []).push(num);
         });
@@ -113,6 +114,25 @@ export function buildTraces(config, chartData, palette, gapColor) {
           name: grouped ? key : undefined,
         };
       });
+    }
+    case "linechart":
+    case "stackedbar": {
+      const indices = Array.from({ length: xValues.length }, (_, index) => index).sort(
+        (a, b) => {
+          const numericDifference = Number(xValues[a]) - Number(xValues[b]);
+          if (!Number.isNaN(numericDifference)) return numericDifference;
+          return String(xValues[a]).localeCompare(String(xValues[b]));
+        },
+      );
+      return yValues.map((values, index) => ({
+        x: indices.map((rowIndex) => xValues[rowIndex]),
+        y: indices.map((rowIndex) => values[rowIndex]),
+        type: config.chartType === "linechart" ? "scatter" : "bar",
+        mode: config.chartType === "linechart" ? "lines+markers" : undefined,
+        marker: { color: colorFor(index) },
+        line: { color: colorFor(index) },
+        name: config.yColumns[index],
+      }));
     }
     default:
       return [];

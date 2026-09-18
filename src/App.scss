@@ -901,10 +901,43 @@ body,
 
 .plot-picker {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(tokens.$grid-template-columns-1, tokens.$grid-template-columns-2));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: tokens.$gap-13;
   padding: tokens.$padding-43;
   flex-shrink: tokens.$flex-shrink-5;
+}
+
+.multi-field-dropdown label {
+  flex-direction: row;
+  align-items: center;
+  padding: tokens.$padding-9;
+  cursor: pointer;
+}
+
+.multi-field-dropdown input[type="checkbox"] {
+  position: relative;
+  flex-shrink: 0;
+  width: tokens.$width-6;
+  height: tokens.$height-10;
+  margin: 0;
+  padding: 0;
+}
+
+.multi-field-dropdown input[type="checkbox"]:checked {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.multi-field-dropdown input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  inset: tokens.$inset-3;
+  width: tokens.$width-18;
+  height: tokens.$height-15;
+  margin: auto;
+  border: solid var(--bg-alt);
+  border-width: tokens.$border-width-1 tokens.$border-width-2 tokens.$border-width-3 tokens.$border-width-4;
+  transform: rotate(tokens.$transform-6);
 }
 
 .plot-tile {

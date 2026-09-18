@@ -5,6 +5,8 @@ import {
   ChartColumn,
   ChartBarBig,
   ChartBarIncreasing,
+  ChartLine,
+  ChartNoAxesColumnIncreasing,
   BoxSelect,
   X,
 } from "lucide-react";
@@ -21,10 +23,11 @@ import { buildTraces } from "../utils/chart";
 
 Plotly.register([Bar, Box, Histogram, Scatter]);
 const Plot = createPlotlyComponent(Plotly);
-const EMPTY_CHART_DATA = { xValues: [], yValues: null, groupValues: null };
+const EMPTY_CHART_DATA = { xValues: [], yValues: [], groupValues: null };
 
 const NUMERIC_TYPES = new Set(["number"]);
 const CATEGORICAL_TYPES = new Set(["string", "category", "boolean", "uuid", "date"]);
+const SEQUENCE_TYPES = new Set(["number", "date"]);
 
 const PLOT_TYPES = [
   {
@@ -70,6 +73,26 @@ const PLOT_TYPES = [
     xTypes: CATEGORICAL_TYPES,
     yTypes: NUMERIC_TYPES,
   },
+  {
+    id: "linechart",
+    label: "Time Series",
+    description: "Track numeric series over time",
+    icon: ChartLine,
+    needsY: true,
+    multipleY: true,
+    xTypes: SEQUENCE_TYPES,
+    yTypes: NUMERIC_TYPES,
+  },
+  {
+    id: "stackedbar",
+    label: "Stacked bar",
+    description: "Compare totals in sequence",
+    icon: ChartNoAxesColumnIncreasing,
+    needsY: true,
+    multipleY: true,
+    xTypes: SEQUENCE_TYPES,
+    yTypes: NUMERIC_TYPES,
+  },
 ];
 
 const AGG_FUNC_OPTIONS = [
@@ -85,6 +108,11 @@ const SCATTER_STYLE_OPTIONS = [
   { value: "markers", label: "Markers" },
   { value: "lines", label: "Line" },
   { value: "lines+markers", label: "Line + markers" },
+];
+
+const BAR_MODE_OPTIONS = [
+  { value: "stack", label: "Stacked" },
+  { value: "group", label: "Side by side" },
 ];
 
 function plotTypeFor(chartType) {
@@ -124,6 +152,41 @@ function FieldDropdown({ label, value, options, onChange, open, onToggle, classN
   );
 }
 
+function MultiFieldDropdown({ label, values, options, onChange, open, onToggle }) {
+  return (
+    <div className="chart-field">
+      <span>{label}</span>
+      <div className="type-selector" onClick={(event) => event.stopPropagation()}>
+        <button type="button" className="type-selector-trigger" onClick={onToggle}>
+          {values.length ? values.join(", ") : "—"}
+        </button>
+        {open && (
+          <ul className="file-menu-dropdown type-selector-dropdown multi-field-dropdown">
+            {options.map((option) => (
+              <li key={option.value}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={values.includes(option.value)}
+                    onChange={() =>
+                      onChange(
+                        values.includes(option.value)
+                          ? values.filter((value) => value !== option.value)
+                          : [...values, option.value],
+                      )
+                    }
+                  />
+                  {option.label}
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function columnsOfTypes(sheet, types) {
   return sheet.columns.filter((column) => types.has(sheet.columnTypes[column]));
 }
@@ -141,6 +204,7 @@ const HIST_NORM_OPTIONS = [
 ];
 
 function yAxisTitleFor(plotType, config) {
+  if (plotType.multipleY) return "Value";
   if (plotType.id === "barchart") {
     const aggLabel = AGG_FUNC_OPTIONS.find(
       (option) => option.value === (config.aggFunc ?? "mean"),
@@ -185,13 +249,15 @@ function ChartBuilder({ fontSize }) {
 
   useEffect(() => {
     if (!sheet || !plotType || !config.xColumn) return undefined;
-    if (plotType.needsY && !config.yColumn) return undefined;
+    if (plotType.needsY && !config.yColumn && !config.yColumns?.length) return undefined;
     let cancelled = false;
     setChartData(EMPTY_CHART_DATA);
     invoke("get_chart_data", {
       datasetId: sheet.datasetId,
       xColumn: config.xColumn,
-      yColumn: plotType.needsY ? config.yColumn : null,
+      yColumns: plotType.needsY
+        ? (plotType.multipleY ? config.yColumns : [config.yColumn]).filter(Boolean)
+        : [],
       groupColumn: config.groupColumn || null,
     })
       .then((result) => {
@@ -212,6 +278,7 @@ function ChartBuilder({ fontSize }) {
     plotType,
     config?.xColumn,
     config?.yColumn,
+    config?.yColumns,
     config?.groupColumn,
     showError,
   ]);
@@ -232,10 +299,14 @@ function ChartBuilder({ fontSize }) {
     const xOptions = columnsOfTypes(sheet, type.xTypes);
     const yOptions = type.needsY ? columnsOfTypes(sheet, type.yTypes) : [];
     const sameTypeSet = type.xTypes === type.yTypes;
+    const xColumn = xOptions[0] ?? "";
     setPlotConfig(activeSheetId, {
       chartType: type.id,
-      xColumn: xOptions[0] ?? "",
+      xColumn,
       yColumn: sameTypeSet ? (yOptions[1] ?? yOptions[0] ?? "") : (yOptions[0] ?? ""),
+      yColumns: type.multipleY
+        ? yOptions.filter((column) => column !== xColumn).slice(0, 2)
+        : [],
       groupColumn: "",
       binCount: "",
       histNorm: "count",
@@ -244,13 +315,18 @@ function ChartBuilder({ fontSize }) {
       colorIndex: 0,
       aggFunc: "mean",
       style: "markers",
+      barMode: "stack",
     });
   }
 
   const traces = plotType ? buildTraces(config, chartData, theme.colors, theme.bg) : [];
   const grouped = Boolean(config?.groupColumn);
   const xOptions = plotType ? columnsOfTypes(sheet, plotType.xTypes) : [];
-  const yOptions = plotType?.needsY ? columnsOfTypes(sheet, plotType.yTypes) : [];
+  const yOptions = plotType?.needsY
+    ? columnsOfTypes(sheet, plotType.yTypes).filter(
+        (column) => !plotType.multipleY || column !== config.xColumn,
+      )
+    : [];
   const groupOptions = plotType
     ? columnsOfTypes(sheet, CATEGORICAL_TYPES).filter(
         (column) => column !== config.xColumn,
@@ -309,7 +385,7 @@ function ChartBuilder({ fontSize }) {
               open={openField === "x"}
               onToggle={() => setOpenField(openField === "x" ? null : "x")}
             />
-            {plotType.needsY && (
+            {plotType.needsY && !plotType.multipleY && (
               <FieldDropdown
                 label="Y"
                 value={config.yColumn}
@@ -319,14 +395,26 @@ function ChartBuilder({ fontSize }) {
                 onToggle={() => setOpenField(openField === "y" ? null : "y")}
               />
             )}
-            <FieldDropdown
-              label="Group by"
-              value={config.groupColumn ?? ""}
-              options={groupFieldOptions}
-              onChange={(value) => updateConfig({ groupColumn: value })}
-              open={openField === "group"}
-              onToggle={() => setOpenField(openField === "group" ? null : "group")}
-            />
+            {plotType.multipleY && (
+              <MultiFieldDropdown
+                label="Values"
+                values={config.yColumns ?? []}
+                options={yFieldOptions}
+                onChange={(values) => updateConfig({ yColumns: values })}
+                open={openField === "values"}
+                onToggle={() => setOpenField(openField === "values" ? null : "values")}
+              />
+            )}
+            {!plotType.multipleY && (
+              <FieldDropdown
+                label="Group by"
+                value={config.groupColumn ?? ""}
+                options={groupFieldOptions}
+                onChange={(value) => updateConfig({ groupColumn: value })}
+                open={openField === "group"}
+                onToggle={() => setOpenField(openField === "group" ? null : "group")}
+              />
+            )}
             <FieldDropdown
               className="color-field"
               label="Color"
@@ -380,6 +468,16 @@ function ChartBuilder({ fontSize }) {
                 }
               />
             )}
+            {plotType.id === "stackedbar" && (
+              <FieldDropdown
+                label="Bar layout"
+                value={config.barMode ?? "stack"}
+                options={BAR_MODE_OPTIONS}
+                onChange={(value) => updateConfig({ barMode: value })}
+                open={openField === "barMode"}
+                onToggle={() => setOpenField(openField === "barMode" ? null : "barMode")}
+              />
+            )}
             {plotType.id === "boxplot" && (
               <label className="plot-checkbox">
                 Show points
@@ -411,15 +509,16 @@ function ChartBuilder({ fontSize }) {
           </div>
           <div className="chart-plot">
             <Plot
-              key={`${config.chartType}-${config.xColumn}-${config.yColumn}-${config.groupColumn}-${config.binCount}-${config.histNorm}-${config.cumulative}-${config.showPoints}-${config.colorIndex}-${config.aggFunc}-${config.style}`}
+              key={`${config.chartType}-${config.xColumn}-${config.yColumn}-${config.yColumns?.join(",")}-${config.groupColumn}-${config.binCount}-${config.histNorm}-${config.cumulative}-${config.showPoints}-${config.colorIndex}-${config.aggFunc}-${config.style}-${config.barMode}`}
               data={traces}
               layout={{
                 autosize: true,
                 paper_bgcolor: theme.bg,
                 plot_bgcolor: theme.bg,
                 font: { family: "Lexend, sans-serif", size: fontSize, color: theme.fg },
-                barmode: "group",
-                showlegend: grouped,
+                barmode:
+                  plotType.id === "stackedbar" ? (config.barMode ?? "stack") : "group",
+                showlegend: grouped || plotType.multipleY,
                 xaxis: {
                   title: plotType.valueOnYAxis
                     ? (config.groupColumn ?? "")

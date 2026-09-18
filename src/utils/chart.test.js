@@ -15,7 +15,7 @@ describe("chart aggregation", () => {
       { chartType: "countplot", groupColumn: "team" },
       {
         xValues: ["A", "A", "B"],
-        yValues: null,
+        yValues: [],
         groupValues: ["red", "red", "blue"],
       },
       ["#111", "#222"],
@@ -31,7 +31,7 @@ describe("chart aggregation", () => {
   it("includes every boxplot point when requested", () => {
     const [trace] = buildTraces(
       { chartType: "boxplot", xColumn: "score", showPoints: true },
-      { xValues: [1, 2, 3], yValues: null, groupValues: null },
+      { xValues: [1, 2, 3], yValues: [], groupValues: null },
       ["#111", "#222"],
       "#000",
     );
@@ -44,5 +44,41 @@ describe("chart aggregation", () => {
       marker: { color: "#222" },
       line: { color: "#111" },
     });
+  });
+
+  it("builds ordered traces for each selected line-chart value", () => {
+    const traces = buildTraces(
+      { chartType: "linechart", yColumns: ["Passed", "Failed"] },
+      {
+        xValues: ["2026-09-18", "2026-09-17"],
+        yValues: [["4", "5"], ["18", "17"]],
+        groupValues: null,
+      },
+      ["#111", "#222"],
+      "#000",
+    );
+
+    expect(traces).toMatchObject([
+      { name: "Passed", x: ["2026-09-17", "2026-09-18"], y: ["5", "4"] },
+      { name: "Failed", x: ["2026-09-17", "2026-09-18"], y: ["17", "18"] },
+    ]);
+  });
+
+  it("builds one bar trace for each selected stacked value", () => {
+    const traces = buildTraces(
+      { chartType: "stackedbar", yColumns: ["Passed", "Failed"] },
+      {
+        xValues: [2, 1],
+        yValues: [[4, 5], [18, 17]],
+        groupValues: null,
+      },
+      ["#111", "#222"],
+      "#000",
+    );
+
+    expect(traces).toMatchObject([
+      { type: "bar", name: "Passed", x: [1, 2], y: [5, 4] },
+      { type: "bar", name: "Failed", x: [1, 2], y: [17, 18] },
+    ]);
   });
 });
