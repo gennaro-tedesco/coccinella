@@ -87,7 +87,12 @@ export function buildTraces(config, chartData, palette, gapColor) {
         y: groups[key].map((index) => xValues[index]),
         type: "box",
         name: grouped ? key : config.xColumn,
-        marker: { color: colorFor(groupIndex) },
+        boxpoints: config.showPoints ? "all" : undefined,
+        jitter: config.showPoints ? 0.3 : undefined,
+        pointpos: config.showPoints ? ZERO : undefined,
+        marker: {
+          color: config.showPoints ? colorFor(groupIndex + ONE) : colorFor(groupIndex),
+        },
         line: { color: colorFor(groupIndex) },
       }));
     case "barchart": {

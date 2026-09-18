@@ -799,10 +799,28 @@ body,
 }
 
 .chart-controls .plot-checkbox input {
+  position: relative;
   width: tokens.$width-6;
   height: tokens.$height-10;
   margin: tokens.$margin-11 tokens.$margin-12 tokens.$margin-13;
   padding: tokens.$padding-39;
+}
+
+.chart-controls .plot-checkbox input:checked {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.chart-controls .plot-checkbox input:checked::after {
+  content: "";
+  position: absolute;
+  inset: tokens.$inset-3;
+  margin: auto;
+  width: tokens.$width-18;
+  height: tokens.$height-15;
+  border: solid var(--bg-alt);
+  border-width: tokens.$border-width-1 tokens.$border-width-2 tokens.$border-width-3 tokens.$border-width-4;
+  transform: rotate(tokens.$transform-6);
 }
 
 .chart-controls .type-selector-trigger {
@@ -815,6 +833,26 @@ body,
   left: tokens.$left-6;
   right: auto;
   font-size: tokens.$font-size-7;
+}
+
+.chart-controls .color-field .type-selector-trigger {
+  min-width: tokens.$min-width-14;
+}
+
+.chart-controls .color-field .type-selector-dropdown {
+  min-width: tokens.$min-width-15;
+}
+
+.chart-controls .color-field .type-selector-dropdown li button {
+  padding: tokens.$padding-9;
+}
+
+.chart-controls .color-field .color-option {
+  justify-content: center;
+}
+
+.chart-controls .color-field .type-selector-trigger .color-option {
+  min-height: tokens.$min-height-7;
 }
 
 .chart-controls input[type="number"] {

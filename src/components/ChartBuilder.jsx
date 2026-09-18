@@ -91,11 +91,11 @@ function plotTypeFor(chartType) {
   return PLOT_TYPES.find((type) => type.id === chartType);
 }
 
-function FieldDropdown({ label, value, options, onChange, open, onToggle }) {
+function FieldDropdown({ label, value, options, onChange, open, onToggle, className = "" }) {
   const selected = options.find((option) => option.value === value);
 
   return (
-    <div className="chart-field">
+    <div className={`chart-field ${className}`.trim()}>
       <span>{label}</span>
       <div className="type-selector" onClick={(e) => e.stopPropagation()}>
         <button type="button" className="type-selector-trigger" onClick={onToggle}>
@@ -240,6 +240,7 @@ function ChartBuilder({ fontSize }) {
       binCount: "",
       histNorm: "count",
       cumulative: false,
+      showPoints: false,
       colorIndex: 0,
       aggFunc: "mean",
       style: "markers",
@@ -271,9 +272,8 @@ function ChartBuilder({ fontSize }) {
   const colorFieldOptions = theme.colors.map((hex, index) => ({
     value: index,
     render: () => (
-      <span className="color-option">
+      <span className="color-option" role="img" aria-label={`Color ${hex}`}>
         <span className="color-swatch" style={{ backgroundColor: hex }} />
-        {hex}
       </span>
     ),
   }));
@@ -328,6 +328,7 @@ function ChartBuilder({ fontSize }) {
               onToggle={() => setOpenField(openField === "group" ? null : "group")}
             />
             <FieldDropdown
+              className="color-field"
               label="Color"
               value={config.colorIndex ?? 0}
               options={colorFieldOptions}
@@ -379,6 +380,16 @@ function ChartBuilder({ fontSize }) {
                 }
               />
             )}
+            {plotType.id === "boxplot" && (
+              <label className="plot-checkbox">
+                Show points
+                <input
+                  type="checkbox"
+                  checked={Boolean(config.showPoints)}
+                  onChange={(e) => updateConfig({ showPoints: e.target.checked })}
+                />
+              </label>
+            )}
             {plotType.id === "scatter" && (
               <FieldDropdown
                 label="Style"
@@ -400,7 +411,7 @@ function ChartBuilder({ fontSize }) {
           </div>
           <div className="chart-plot">
             <Plot
-              key={`${config.chartType}-${config.xColumn}-${config.yColumn}-${config.groupColumn}-${config.binCount}-${config.histNorm}-${config.cumulative}-${config.colorIndex}-${config.aggFunc}-${config.style}`}
+              key={`${config.chartType}-${config.xColumn}-${config.yColumn}-${config.groupColumn}-${config.binCount}-${config.histNorm}-${config.cumulative}-${config.showPoints}-${config.colorIndex}-${config.aggFunc}-${config.style}`}
               data={traces}
               layout={{
                 autosize: true,

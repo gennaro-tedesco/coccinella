@@ -27,4 +27,22 @@ describe("chart aggregation", () => {
       { name: "blue", x: ["B"], y: [1] },
     ]);
   });
+
+  it("includes every boxplot point when requested", () => {
+    const [trace] = buildTraces(
+      { chartType: "boxplot", xColumn: "score", showPoints: true },
+      { xValues: [1, 2, 3], yValues: null, groupValues: null },
+      ["#111", "#222"],
+      "#000",
+    );
+
+    expect(trace).toMatchObject({
+      y: [1, 2, 3],
+      boxpoints: "all",
+      jitter: 0.3,
+      pointpos: 0,
+      marker: { color: "#222" },
+      line: { color: "#111" },
+    });
+  });
 });
