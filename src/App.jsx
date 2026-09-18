@@ -2,6 +2,7 @@
 // FEATURE: CSV data workspace
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./App.scss";
 import { useAppStore } from "./store/useAppStore";
 import TopBar from "./components/TopBar";
@@ -99,6 +100,37 @@ function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  useEffect(() => {
+    let active = true;
+    let unlisten;
+
+    async function openPendingFiles() {
+      const candidates = await invoke("take_opened_csv_files");
+      if (!active) return;
+      for (const candidate of candidates) {
+        await openCsvFileAtPath(candidate, openSheet);
+      }
+    }
+
+    listen("open-csv-files", () => {
+      void openPendingFiles().catch(showError);
+    })
+      .then((stopListening) => {
+        if (!active) {
+          stopListening();
+          return;
+        }
+        unlisten = stopListening;
+        void openPendingFiles().catch(showError);
+      })
+      .catch(showError);
+
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [openSheet, showError]);
 
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontSize}px`;

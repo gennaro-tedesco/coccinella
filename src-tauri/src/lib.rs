@@ -105,6 +105,7 @@ struct AppState {
     next_path_token: AtomicU64,
     datasets: Mutex<DatasetStore>,
     indexed_paths: Mutex<HashMap<String, PathBuf>>,
+    pending_open_files: Mutex<Vec<FileCandidate>>,
 }
 
 #[derive(Clone)]
@@ -296,6 +297,36 @@ fn validate_csv_path(path: &str) -> Result<(), String> {
     } else {
         Err("Only .csv files are supported".into())
     }
+}
+
+#[cfg(target_os = "macos")]
+fn queue_opened_csv_files(urls: &[tauri::Url], state: &AppState) -> Result<usize, String> {
+    let paths = urls
+        .iter()
+        .filter_map(|url| url.to_file_path().ok())
+        .filter(|path| validate_csv_path(&path.to_string_lossy()).is_ok())
+        .collect::<Vec<_>>();
+    let mut indexed_paths = state
+        .indexed_paths
+        .lock()
+        .map_err(|error| error.to_string())?;
+    let mut pending_open_files = state
+        .pending_open_files
+        .lock()
+        .map_err(|error| error.to_string())?;
+
+    for path in paths {
+        let token = state
+            .next_path_token
+            .fetch_add(1, AtomicOrdering::Relaxed)
+            .to_string();
+        pending_open_files.push(FileCandidate {
+            token: token.clone(),
+            path: path.to_string_lossy().into_owned(),
+        });
+        indexed_paths.insert(token, path);
+    }
+    Ok(pending_open_files.len())
 }
 
 fn insert_dataset(dataset: Dataset, state: &State<'_, AppState>) -> Result<SheetMetadata, String> {
@@ -1311,6 +1342,15 @@ fn list_csv_files(state: State<'_, AppState>) -> Result<Vec<FileCandidate>, Stri
 }
 
 #[tauri::command]
+fn take_opened_csv_files(state: State<'_, AppState>) -> Result<Vec<FileCandidate>, String> {
+    let mut pending = state
+        .pending_open_files
+        .lock()
+        .map_err(|error| error.to_string())?;
+    Ok(std::mem::take(&mut *pending))
+}
+
+#[tauri::command]
 fn fzf_available() -> bool {
     std::process::Command::new("fzf")
         .arg("--version")
@@ -1368,11 +1408,28 @@ pub fn run() {
             get_chart_data,
             save_csv_file_dialog,
             list_csv_files,
+            take_opened_csv_files,
             fzf_available,
             fuzzy_filter
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = event {
+                use tauri::{Emitter, Manager};
+
+                match queue_opened_csv_files(&urls, &app.state::<AppState>()) {
+                    Ok(0) => {}
+                    Ok(_) => {
+                        if let Err(error) = app.emit("open-csv-files", ()) {
+                            eprintln!("failed to emit open-csv-files event: {error}");
+                        }
+                    }
+                    Err(error) => eprintln!("failed to queue opened CSV files: {error}"),
+                }
+            }
+        });
 }
 
 #[cfg(test)]
