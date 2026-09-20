@@ -4,15 +4,15 @@
   <br>
 </h1>
 
-<h4 align="center">the `csv` companion that gets out of the way</h4>
+<h4 align="center">the csv companion that gets out of the way</h4>
 <h3 align="center">
   <a href="#Installation">Installation</a> •
-  <a href="#Usage">Usage</a> •
+  <a href="#Usage">Usage</a>
 </h3>
 
 `coccinella` is the `csv` companion that is always with you but that you never notice is there, because it gets out of the way: it does exactly what you expect it to do. The UI does what you want: it looks good, it feels good.
 
-<img alt="example_image" src="">
+<img src="https://github.com/user-attachments/assets/cb1dbe3f-639b-4ca3-9b8a-f86d9905fbb5">
 
 ## Installation
 
