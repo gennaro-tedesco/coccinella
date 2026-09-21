@@ -7,7 +7,7 @@
 <h4 align="center">the csv companion that gets out of the way</h4>
 <h3 align="center">
   <a href="#Installation">Installation</a> •
-  <a href="#Usage">Usage</a>
+  <a href="#Examples">Examples</a>
 </h3>
 
 `coccinella` is the `csv` companion that is always with you but that you never notice is there, because it gets out of the way: it does exactly what you expect it to do. The UI does what you want: it looks good, it feels good.
@@ -20,16 +20,16 @@ TBD
 
 ## Features
 
-Intuitive UI, in-built fuzzy finder, blazingly fast, integrated plotting capabilities at your fingertips. And vim keys.
+Intuitive UI, blazingly fast, with built-in fuzzy finder and integrated plotting capabilities at your fingertips.
 
 ![demo](https://github.com/user-attachments/assets/f3bcc830-fa37-460e-ac12-8daca7d4e1c8)
 
 ## Examples
 
+For a list of all shortcut keymaps mentioned below browse the hamburger menu (or press `F1`).
+
 <details>
   <summary>Load and browse files</summary>
-
-<img width="400" src="">
 
 Data are lazy loaded so that even big files show with no delay. Columns data types are automatically inferred and can be manually changed using the columns settings; use the right panel to drag and drop columns around, select/unselect columns to show and see all columns and file stats on hover.<br><br>
 
