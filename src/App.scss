@@ -249,8 +249,10 @@ body,
 .empty-state {
   flex: tokens.$flex-1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: tokens.$gap-2;
 }
 
 .empty-state button {
@@ -261,16 +263,26 @@ body,
   border-color: var(--accent);
 }
 
+.empty-state-logo {
+  width: 96px;
+  height: auto;
+  opacity: 0.8;
+}
+
 .top-bar {
   position: relative;
   display: flex;
   align-items: center;
   padding: tokens.$padding-3 tokens.$padding-4 tokens.$padding-5 tokens.$padding-6;
+  min-height: 61px;
   background-color: var(--bg-alt);
 }
 
 .file-menu {
-  position: relative;
+  position: absolute;
+  top: 50%;
+  left: tokens.$padding-6;
+  transform: translateY(-50%);
 }
 
 .file-menu-trigger {
@@ -283,8 +295,8 @@ body,
 }
 
 .file-menu-trigger svg {
-  width: tokens.$width-2;
-  height: tokens.$height-4;
+  width: tokens.$width-4;
+  height: tokens.$height-6;
   transition: transform tokens.$transition-1 ease;
 }
 

@@ -1,5 +1,6 @@
 import { useAppStore } from "../store/useAppStore";
 import { openCsvFile } from "../utils/openFile";
+import logo from "../assets/logo.png";
 
 function EmptyState() {
   const openSheet = useAppStore((state) => state.openSheet);
@@ -13,6 +14,7 @@ function EmptyState() {
       >
         Open File
       </button>
+      <img className="empty-state-logo" src={logo} alt="coccinella" />
     </div>
   );
 }
