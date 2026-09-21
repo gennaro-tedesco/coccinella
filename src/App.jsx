@@ -1,7 +1,7 @@
 // Renders the application workspace and handles global keyboard shortcuts.
 // FEATURE: CSV data workspace
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.scss";
 import { useAppStore } from "./store/useAppStore";
@@ -96,6 +96,7 @@ function App() {
   const highlightedLineRef = useRef(null);
   const highlightTimeoutRef = useRef(null);
   const pendingGRef = useRef(false);
+  const fileScanRef = useRef(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -234,21 +235,25 @@ function App() {
   useEffect(() => {
     async function openFileFinder() {
       try {
-        const fzfAvailable = await invoke("fzf_available");
-        if (!fzfAvailable) {
-          await openCsvFile(openSheet);
-          return;
-        }
-
         setFinder("files");
-        if (csvFiles === null) {
-          try {
-            setCsvFiles(await invoke("list_csv_files"));
-          } catch (error) {
-            setFinder(null);
-            showError(error);
-            await openCsvFile(openSheet);
-          }
+        if (csvFiles !== null || fileScanRef.current) return;
+
+        setCsvFiles([]);
+        const onFiles = new Channel();
+        onFiles.onmessage = (files) => {
+          setCsvFiles((current) => [...(current ?? []), ...files]);
+        };
+        const scan = invoke("list_csv_files", { onFiles });
+        fileScanRef.current = scan;
+        try {
+          await scan;
+        } catch (error) {
+          setCsvFiles(null);
+          setFinder(null);
+          showError(error);
+          await openCsvFile(openSheet);
+        } finally {
+          fileScanRef.current = null;
         }
       } catch (error) {
         showError(error);

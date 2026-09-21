@@ -1,15 +1,19 @@
 // Owns CSV data and exposes paged operations to the Tauri frontend.
 // FEATURE: CSV data workspace
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
+use nucleo_matcher::{
+    pattern::{AtomKind, CaseMatching, Normalization, Pattern},
+    Config as FuzzyConfig, Matcher as FuzzyMatcher,
+};
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
-use tauri::{AppHandle, State};
+use tauri::{ipc::Channel, AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 
@@ -19,7 +23,24 @@ const MAX_CSV_FIELDS: usize = 10_000_000;
 const MAX_CSV_COLUMNS: usize = 10_000;
 const TYPE_INFERENCE_ROWS: usize = 10_000;
 const MAX_CHART_POINTS: usize = 100_000;
-const MAX_INDEXED_FILES: &str = "10000";
+const MAX_INDEXED_FILES: usize = 1_000;
+const FILE_DISCOVERY_BATCH_SIZE: usize = 50;
+const EXCLUDED_SEARCH_DIRECTORIES: [&str; 5] = [
+    "Library",
+    "Applications",
+    "Dropbox",
+    "Google Drive",
+    "OneDrive",
+];
+#[cfg(target_os = "macos")]
+const MACOS_PROTECTED_DIRECTORIES: [&str; 6] = [
+    "Desktop",
+    "Documents",
+    "Downloads",
+    "Music",
+    "Movies",
+    "Pictures",
+];
 const CATEGORY_MAX_DISTINCT_VALUES: usize = 20;
 const CATEGORY_MAX_DISTINCT_RATIO: usize = 2;
 const VARIANCE_POWER: i32 = 2;
@@ -1295,53 +1316,113 @@ async fn save_csv_file_dialog(
 }
 
 #[tauri::command]
-fn list_csv_files(state: State<'_, AppState>) -> Result<Vec<FileCandidate>, String> {
-    let home = std::env::var("HOME").map_err(|error| error.to_string())?;
-    let output = std::process::Command::new("fd")
-        .args([
-            "--type",
-            "f",
-            "--extension",
-            "csv",
-            "--max-results",
-            MAX_INDEXED_FILES,
-            "--exclude",
-            "Library",
-            "--exclude",
-            "Applications",
-            "--exclude",
-            "Dropbox",
-            "--exclude",
-            "Google Drive",
-            "--exclude",
-            "OneDrive",
-            ".",
-            &home,
-        ])
-        .output()
-        .map_err(|error| format!("fd not found: {error}"))?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).to_string());
-    }
-    let mut indexed_paths = state
+async fn list_csv_files(
+    app: AppHandle,
+    on_files: Channel<Vec<FileCandidate>>,
+) -> Result<(), String> {
+    let home = dirs::home_dir().ok_or("Home directory not found")?;
+    app.state::<AppState>()
         .indexed_paths
         .lock()
-        .map_err(|error| error.to_string())?;
-    indexed_paths.clear();
-    let mut candidates = Vec::new();
-    for path in String::from_utf8_lossy(&output.stdout).lines() {
-        let path = std::fs::canonicalize(path).map_err(|error| error.to_string())?;
-        let token = state
-            .next_path_token
-            .fetch_add(1, AtomicOrdering::Relaxed)
-            .to_string();
-        candidates.push(FileCandidate {
-            token: token.clone(),
-            path: path.to_string_lossy().into_owned(),
-        });
-        indexed_paths.insert(token, path);
+        .map_err(|error| error.to_string())?
+        .clear();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        discover_csv_files(&home, MAX_INDEXED_FILES, |paths| {
+            let state = app.state::<AppState>();
+            let mut indexed_paths = state
+                .indexed_paths
+                .lock()
+                .map_err(|error| error.to_string())?;
+            let candidates = paths
+                .into_iter()
+                .map(|path| {
+                    let token = state
+                        .next_path_token
+                        .fetch_add(1, AtomicOrdering::Relaxed)
+                        .to_string();
+                    indexed_paths.insert(token.clone(), path.clone());
+                    FileCandidate {
+                        token,
+                        path: path.to_string_lossy().into_owned(),
+                    }
+                })
+                .collect();
+            drop(indexed_paths);
+            on_files.send(candidates).map_err(|error| error.to_string())
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn discover_csv_files(
+    home: &Path,
+    max_files: usize,
+    mut emit: impl FnMut(Vec<PathBuf>) -> Result<(), String>,
+) -> Result<(), String> {
+    let mut directories = VecDeque::from([home.to_path_buf()]);
+    let mut discovered = 0;
+    let mut batch = Vec::with_capacity(FILE_DISCOVERY_BATCH_SIZE);
+
+    while !directories.is_empty() && discovered < max_files {
+        let directories_at_depth = directories.len();
+        for _ in 0..directories_at_depth {
+            let directory = directories
+                .pop_front()
+                .expect("directory frontier is not empty");
+            let Ok(entries) = std::fs::read_dir(directory) else {
+                continue;
+            };
+            for entry in entries.filter_map(Result::ok) {
+                let name = entry.file_name();
+                let Some(name) = name.to_str() else {
+                    continue;
+                };
+                if name.starts_with('.') || is_excluded_search_directory(name) {
+                    continue;
+                }
+                let Ok(file_type) = entry.file_type() else {
+                    continue;
+                };
+                if file_type.is_dir() {
+                    directories.push_back(entry.path());
+                } else if file_type.is_file() && is_csv_path(&entry.path()) {
+                    batch.push(entry.path());
+                    discovered += 1;
+                    if batch.len() == FILE_DISCOVERY_BATCH_SIZE {
+                        emit(std::mem::take(&mut batch))?;
+                    }
+                    if discovered == max_files {
+                        break;
+                    }
+                }
+            }
+            if discovered == max_files {
+                break;
+            }
+        }
+        if !batch.is_empty() {
+            emit(std::mem::take(&mut batch))?;
+        }
     }
-    Ok(candidates)
+    Ok(())
+}
+
+fn is_excluded_search_directory(name: &str) -> bool {
+    if EXCLUDED_SEARCH_DIRECTORIES.contains(&name) {
+        return true;
+    }
+    #[cfg(target_os = "macos")]
+    if MACOS_PROTECTED_DIRECTORIES.contains(&name) {
+        return true;
+    }
+    false
+}
+
+fn is_csv_path(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("csv"))
 }
 
 #[tauri::command]
@@ -1354,40 +1435,33 @@ fn take_opened_csv_files(state: State<'_, AppState>) -> Result<Vec<FileCandidate
 }
 
 #[tauri::command]
-fn fzf_available() -> bool {
-    std::process::Command::new("fzf")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
-}
-
-#[tauri::command]
 fn fuzzy_filter(query: String, candidates: Vec<String>) -> Result<Vec<String>, String> {
-    if query.is_empty() {
+    let terms: Vec<_> = query.split_whitespace().map(regex::escape).collect();
+    if terms.is_empty() {
         return Ok(candidates);
     }
-    use std::io::Write;
-    let mut child = std::process::Command::new("fzf")
-        .arg("--filter")
-        .arg(&query)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("fzf not found: {error}"))?;
-    child
-        .stdin
-        .as_mut()
-        .ok_or("failed to open fzf stdin")?
-        .write_all(candidates.join("\n").as_bytes())
+    let filename_pattern = RegexBuilder::new(&terms.join(".*"))
+        .case_insensitive(!query.chars().any(char::is_uppercase))
+        .build()
         .map_err(|error| error.to_string())?;
-    let output = child
-        .wait_with_output()
-        .map_err(|error| error.to_string())?;
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .map(str::to_owned)
+    let candidates = candidates.into_iter().filter(|candidate| {
+        let filename = Path::new(candidate)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(candidate);
+        filename_pattern.is_match(filename)
+    });
+    let mut matcher = FuzzyMatcher::new(FuzzyConfig::DEFAULT.match_paths());
+    let pattern = Pattern::new(
+        &query,
+        CaseMatching::Smart,
+        Normalization::Smart,
+        AtomKind::Fuzzy,
+    );
+    Ok(pattern
+        .match_list(candidates, &mut matcher)
+        .into_iter()
+        .map(|(candidate, _score)| candidate)
         .collect())
 }
 
@@ -1412,7 +1486,6 @@ pub fn run() {
             save_csv_file_dialog,
             list_csv_files,
             take_opened_csv_files,
-            fzf_available,
             fuzzy_filter
         ])
         .build(tauri::generate_context!())
@@ -1519,6 +1592,112 @@ mod tests {
 
         let rows = packed_rows(&[&["2026-09-17T10:30:00"], &["2026-09-18T11:45:00Z"]]);
         assert_eq!(infer_column_types(&rows, 1), ["date"]);
+    }
+
+    #[test]
+    fn discovers_csv_files_breadth_first_with_exclusions() {
+        let root = std::env::temp_dir().join(format!(
+            "coccinella-discovery-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("files")
+        ));
+        let nested = root.join("nested");
+        let deeper = nested.join("deeper");
+        let excluded = root.join("Library");
+        let hidden = root.join(".hidden");
+        std::fs::create_dir_all(&deeper).expect("create nested fixture directory");
+        std::fs::create_dir_all(&excluded).expect("create excluded fixture directory");
+        std::fs::create_dir_all(&hidden).expect("create hidden fixture directory");
+        std::fs::write(root.join("root.csv"), "id\n1\n").expect("write root fixture");
+        std::fs::write(nested.join("nested.CSV"), "id\n2\n").expect("write nested fixture");
+        std::fs::write(deeper.join("deep.csv"), "id\n3\n").expect("write deep fixture");
+        std::fs::write(root.join("notes.txt"), "ignored").expect("write text fixture");
+        std::fs::write(excluded.join("excluded.csv"), "id\n4\n").expect("write excluded fixture");
+        std::fs::write(hidden.join("hidden.csv"), "id\n5\n").expect("write hidden fixture");
+
+        let mut batches = Vec::new();
+        discover_csv_files(&root, MAX_INDEXED_FILES, |paths| {
+            batches.push(paths);
+            Ok(())
+        })
+        .expect("discover fixture files");
+        std::fs::remove_dir_all(&root).expect("remove fixture directory");
+        let names: Vec<_> = batches
+            .into_iter()
+            .flatten()
+            .filter_map(|path| path.file_name()?.to_str().map(str::to_owned))
+            .collect();
+
+        assert_eq!(names, ["root.csv", "nested.CSV", "deep.csv"]);
+    }
+
+    #[test]
+    fn batches_discovered_files_and_stops_at_the_limit() {
+        let root = std::env::temp_dir().join(format!(
+            "coccinella-discovery-limit-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("files")
+        ));
+        std::fs::create_dir_all(&root).expect("create fixture directory");
+        for index in 0..FILE_DISCOVERY_BATCH_SIZE + 5 {
+            std::fs::write(root.join(format!("{index}.csv")), "id\n1\n").expect("write fixture");
+        }
+
+        let mut batch_lengths = Vec::new();
+        discover_csv_files(&root, FILE_DISCOVERY_BATCH_SIZE + 2, |paths| {
+            batch_lengths.push(paths.len());
+            Ok(())
+        })
+        .expect("discover fixture files");
+        std::fs::remove_dir_all(&root).expect("remove fixture directory");
+
+        assert_eq!(MAX_INDEXED_FILES, 1_000);
+        assert_eq!(batch_lengths, [FILE_DISCOVERY_BATCH_SIZE, 2]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn excludes_macos_protected_directories() {
+        for directory in MACOS_PROTECTED_DIRECTORIES {
+            assert!(is_excluded_search_directory(directory));
+        }
+    }
+
+    #[test]
+    fn matches_contiguous_query_terms_in_filenames() {
+        let matches = fuzzy_filter(
+            "diamonds".into(),
+            vec![
+                "/tmp/diamonds.csv".into(),
+                "/tmp/raw_diamonds_2024.csv".into(),
+                "/tmp/d-i-a-m-o-n-d-s.csv".into(),
+                "/tmp/directory/with/matching/letters.csv".into(),
+                "/tmp/diamonds/archive.csv".into(),
+            ],
+        )
+        .expect("fuzzy filter candidates");
+
+        assert_eq!(matches.len(), 2);
+        assert!(matches.contains(&"/tmp/diamonds.csv".to_owned()));
+        assert!(matches.contains(&"/tmp/raw_diamonds_2024.csv".to_owned()));
+    }
+
+    #[test]
+    fn spaces_allow_ordered_gaps_between_query_terms() {
+        let matches = fuzzy_filter(
+            "d i a".into(),
+            vec![
+                "/tmp/diamonds.csv".into(),
+                "/tmp/d---i---a.csv".into(),
+                "/tmp/a---i---d.csv".into(),
+                "/tmp/d---a---i.csv".into(),
+            ],
+        )
+        .expect("filter candidates with ordered gaps");
+
+        assert_eq!(matches.len(), 2);
+        assert!(matches.contains(&"/tmp/diamonds.csv".to_owned()));
+        assert!(matches.contains(&"/tmp/d---i---a.csv".to_owned()));
     }
 
     #[test]
