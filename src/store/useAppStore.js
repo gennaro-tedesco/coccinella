@@ -219,6 +219,64 @@ export const useAppStore = create((set, get) => ({
     });
   },
 
+  createJoinedSheet: async (leftId, rightId, columns, joinType) => {
+    const { sheets } = get();
+    const left = sheets[leftId];
+    const right = sheets[rightId];
+    if (!left || !right) return false;
+    let metadata;
+    try {
+      metadata = await invoke("create_joined_dataset", {
+        leftId: left.datasetId,
+        rightId: right.datasetId,
+        columns,
+        joinType,
+      });
+    } catch (error) {
+      get().showError(error);
+      return false;
+    }
+    set((state) => {
+      const id = metadata.datasetId;
+      const columnVisibility = {};
+      const columnPrecision = {};
+      for (const column of metadata.columns) {
+        columnVisibility[column] = true;
+        columnPrecision[column] = DEFAULT_COLUMN_PRECISION;
+      }
+      return {
+        sheets: {
+          ...state.sheets,
+          [id]: {
+            id,
+            filename: `${left.filename} + ${right.filename}`,
+            path: null,
+            datasetId: id,
+            separator: metadata.separator,
+            rowCount: metadata.rowCount,
+            columns: metadata.columns,
+            sourceColumns: metadata.columns,
+            columnVisibility,
+            columnTypes: metadata.columnTypes,
+            columnPrecision,
+            selectedColumns: [],
+            sorting: [],
+            children: [],
+            filterOf: null,
+            sizeBytes: metadata.sizeBytes,
+            nullCount: metadata.nullCount,
+            dataVersion: 0,
+            contentVersion: 0,
+          },
+        },
+        sheetOrder: [...state.sheetOrder, id],
+        activeSheetId: id,
+        previousSheetId: state.activeSheetId,
+      };
+    });
+    return true;
+  },
+
   closeFilteredSheet: async (id) => {
     const child = get().sheets[id];
     if (!child?.filterOf) return;
@@ -387,6 +445,63 @@ export const useAppStore = create((set, get) => ({
           }
         : state.sheets,
     }));
+  },
+
+  saveSheetView: async (sheetId) => {
+    const sheet = get().sheets[sheetId];
+    if (!sheet) return false;
+    const filename = sheet.filename.replace(/[<>:"/\\|?*]/g, "-");
+    const basename = filename.replace(/\.csv$/i, "");
+    try {
+      return await invoke("save_csv_file_dialog", {
+        datasetId: sheet.datasetId,
+        defaultName: `${basename}-view.csv`,
+        columns: sheet.columns.filter(
+          (column) => sheet.columnVisibility[column] !== false,
+        ),
+      });
+    } catch (error) {
+      get().showError(error);
+      return false;
+    }
+  },
+
+  reloadSheetView: async (sheetId) => {
+    const sheet = get().sheets[sheetId];
+    if (!sheet) return false;
+    if (sheet.sorting.length > 0) {
+      try {
+        const applied = await invoke("sort_dataset", {
+          datasetId: sheet.datasetId,
+          sorting: [],
+        });
+        if (!applied) return false;
+      } catch (error) {
+        get().showError(error);
+        return false;
+      }
+    }
+    set((state) => {
+      const current = state.sheets[sheetId];
+      if (!current) return state;
+      return {
+        sheets: {
+          ...state.sheets,
+          [sheetId]: {
+            ...current,
+            columnVisibility: Object.fromEntries(
+              current.columns.map((column) => [column, true]),
+            ),
+            sorting: [],
+            dataVersion:
+              sheet.sorting.length > 0
+                ? current.dataVersion + 1
+                : current.dataVersion,
+          },
+        },
+      };
+    });
+    return true;
   },
 
   toggleColumnSelection: (sheetId, column) =>

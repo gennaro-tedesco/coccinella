@@ -9,12 +9,14 @@ import { useAppStore } from "../store/useAppStore";
 import { openCsvFile } from "../utils/openFile";
 import { THEMES, THEME_ORDER } from "../utils/themes";
 import { ICON_SIZE_MENU } from "../constants";
+import logo from "../assets/logo.png";
 
 const SHORTCUTS = [
   ["Show shortcuts", "F1"],
   ["Open file finder", "Ctrl+p"],
   ["Go to sheet", "Ctrl+b"],
   ["Go to line", ":"],
+  ["Merge datasets", "="],
   ["Toggle side panels", "z"],
   ["Previous sheet", "Ctrl+^"],
   ["Scroll left", "h"],
@@ -28,14 +30,16 @@ const SHORTCUTS = [
   ["Toggle column selection", "Ctrl+click"],
 ];
 
-function TopBar({ onOpenSearch, onOpenGoTo }) {
+function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [themeSubmenuOpen, setThemeSubmenuOpen] = useState(false);
   const [shortcutsSubmenuOpen, setShortcutsSubmenuOpen] = useState(false);
+  const [aboutSubmenuOpen, setAboutSubmenuOpen] = useState(false);
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
   const openSheet = useAppStore((state) => state.openSheet);
   const activeSheetId = useAppStore((state) => state.activeSheetId);
+  const canMerge = useAppStore((state) => state.sheetOrder.length >= 2);
   const theme = useAppStore((state) => state.theme);
   const setTheme = useAppStore((state) => state.setTheme);
   const showError = useAppStore((state) => state.showError);
@@ -46,6 +50,7 @@ function TopBar({ onOpenSearch, onOpenGoTo }) {
     if (!shortcutsMenuOpen) return;
     setMenuOpen(true);
     setThemeSubmenuOpen(false);
+    setAboutSubmenuOpen(false);
     setShortcutsSubmenuOpen(true);
     closeShortcutsMenu();
   }, [shortcutsMenuOpen, closeShortcutsMenu]);
@@ -67,6 +72,7 @@ function TopBar({ onOpenSearch, onOpenGoTo }) {
           setMenuOpen(false);
           setThemeSubmenuOpen(false);
           setShortcutsSubmenuOpen(false);
+          setAboutSubmenuOpen(false);
         }}
       >
         <button
@@ -77,6 +83,7 @@ function TopBar({ onOpenSearch, onOpenGoTo }) {
             setMenuOpen((open) => !open);
             setThemeSubmenuOpen(false);
             setShortcutsSubmenuOpen(false);
+            setAboutSubmenuOpen(false);
           }}
         >
           <Menu />
@@ -114,12 +121,26 @@ function TopBar({ onOpenSearch, onOpenGoTo }) {
                 Go to
               </button>
             </li>
+            <li>
+              <button
+                type="button"
+                disabled={!canMerge}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setMode("data");
+                  onOpenMerge();
+                }}
+              >
+                Merge
+              </button>
+            </li>
             <li className="menu-separator" />
             <li
               className="has-submenu"
               onMouseEnter={() => {
                 setThemeSubmenuOpen(true);
                 setShortcutsSubmenuOpen(false);
+                setAboutSubmenuOpen(false);
               }}
               onMouseLeave={() => setThemeSubmenuOpen(false)}
             >
@@ -155,6 +176,7 @@ function TopBar({ onOpenSearch, onOpenGoTo }) {
               onMouseEnter={() => {
                 setShortcutsSubmenuOpen(true);
                 setThemeSubmenuOpen(false);
+                setAboutSubmenuOpen(false);
               }}
               onMouseLeave={() => setShortcutsSubmenuOpen(false)}
             >
@@ -175,6 +197,34 @@ function TopBar({ onOpenSearch, onOpenGoTo }) {
                       <kbd>{keys}</kbd>
                     </li>
                   ))}
+                </ul>
+              )}
+            </li>
+            <li className="menu-separator" />
+            <li
+              className="has-submenu"
+              onMouseEnter={() => {
+                setAboutSubmenuOpen(true);
+                setThemeSubmenuOpen(false);
+                setShortcutsSubmenuOpen(false);
+              }}
+              onMouseLeave={() => setAboutSubmenuOpen(false)}
+            >
+              <button
+                type="button"
+                onClick={() => setAboutSubmenuOpen((open) => !open)}
+              >
+                <span>About</span>
+                <ChevronRight size={ICON_SIZE_MENU} />
+              </button>
+              {aboutSubmenuOpen && (
+                <ul className="file-menu-dropdown submenu">
+                  <li className="about-item">
+                    <img src={logo} alt="coccinella" />
+                    <span>
+                      Version {import.meta.env.VITE_BUILD_VERSION}
+                    </span>
+                  </li>
                 </ul>
               )}
             </li>

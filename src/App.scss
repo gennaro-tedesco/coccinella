@@ -384,6 +384,25 @@ body,
   font-size: tokens.$font-size-3;
 }
 
+.about-item {
+  display: flex;
+  align-items: center;
+  gap: tokens.$gap-2;
+  padding: tokens.$padding-11 tokens.$padding-12;
+  white-space: nowrap;
+  color: var(--fg-dark);
+}
+
+.about-item img {
+  width: tokens.$width-12;
+  flex-shrink: 0;
+}
+
+.about-item span {
+  color: var(--fg);
+  font-size: tokens.$font-size-3;
+}
+
 .menu-separator {
   height: tokens.$height-5;
   margin: tokens.$margin-6 tokens.$margin-7;
@@ -551,6 +570,10 @@ body,
 
 .sheet-node-row:hover .sheet-node-close,
 .sheet-node-row:hover .sheet-node-action {
+  opacity: tokens.$opacity-2;
+}
+
+.sheet-node-action.view-change-action {
   opacity: tokens.$opacity-2;
 }
 
@@ -944,13 +967,16 @@ body,
 }
 
 .multi-field-dropdown label {
+  display: flex;
   flex-direction: row;
   align-items: center;
+  gap: tokens.$gap-12;
   padding: tokens.$padding-9;
   cursor: pointer;
 }
 
-.multi-field-dropdown input[type="checkbox"] {
+.multi-field-dropdown input[type="checkbox"],
+.merge-columns input[type="checkbox"] {
   position: relative;
   flex-shrink: 0;
   width: tokens.$width-6;
@@ -959,12 +985,14 @@ body,
   padding: 0;
 }
 
-.multi-field-dropdown input[type="checkbox"]:checked {
+.multi-field-dropdown input[type="checkbox"]:checked,
+.merge-columns input[type="checkbox"]:checked {
   background-color: var(--accent);
   border-color: var(--accent);
 }
 
-.multi-field-dropdown input[type="checkbox"]:checked::after {
+.multi-field-dropdown input[type="checkbox"]:checked::after,
+.merge-columns input[type="checkbox"]:checked::after {
   content: "";
   position: absolute;
   inset: tokens.$inset-3;
@@ -1786,4 +1814,215 @@ button:disabled {
 .search-panel-filter {
   color: var(--accent);
   font-weight: tokens.$font-weight-10;
+}
+
+.merge-overlay {
+  overflow: auto;
+}
+
+.merge-panel {
+  display: flex;
+  flex-direction: column;
+  width: tokens.$width-20;
+  max-width: tokens.$max-width-7;
+  max-height: tokens.$max-height-2;
+  padding: tokens.$padding-90;
+  gap: tokens.$gap-25;
+  overflow: auto;
+  background-color: var(--bg-alt);
+  border: tokens.$border-15 solid var(--border);
+  border-radius: tokens.$border-radius-37;
+  box-shadow: tokens.$box-shadow-49 tokens.$box-shadow-50 tokens.$box-shadow-51 rgba(tokens.$box-shadow-52, tokens.$box-shadow-53, tokens.$box-shadow-54, tokens.$box-shadow-55);
+}
+
+.merge-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.merge-header h2 {
+  margin: tokens.$margin-19;
+  font-size: tokens.$font-size-23;
+}
+
+.merge-header p {
+  margin: tokens.$margin-20 tokens.$margin-21 tokens.$margin-21;
+  color: var(--fg-dark);
+  font-size: tokens.$font-size-24;
+}
+
+.merge-close {
+  padding: tokens.$padding-91;
+  border: none;
+  background: none;
+}
+
+.merge-datasets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(tokens.$min-width-16, tokens.$grid-template-columns-5));
+  gap: tokens.$gap-26;
+}
+
+.merge-dataset-field,
+.merge-columns {
+  display: flex;
+  gap: tokens.$gap-27;
+  color: var(--fg-dark);
+  font-size: tokens.$font-size-25;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.merge-dataset-selector,
+.merge-column-selector {
+  position: relative;
+}
+
+.merge-dataset-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: tokens.$gap-1;
+  width: 100%;
+  padding: tokens.$padding-92;
+  color: var(--fg);
+  background-color: var(--bg);
+  text-align: left;
+}
+
+.merge-dataset-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.merge-dataset-trigger svg {
+  flex-shrink: 0;
+}
+
+.merge-dataset-dropdown {
+  width: 100%;
+  min-width: 100%;
+}
+
+.merge-column-dropdown {
+  width: 100%;
+  min-width: 100%;
+  max-height: tokens.$max-height-3;
+  overflow: auto;
+}
+
+.merge-empty {
+  padding: tokens.$padding-93;
+  color: var(--fg-dark);
+  background-color: var(--bg);
+  border-radius: tokens.$border-radius-38;
+  text-align: center;
+}
+
+.merge-types {
+  margin: tokens.$margin-22;
+  padding: tokens.$padding-94;
+  border: none;
+}
+
+.merge-types legend {
+  padding: tokens.$padding-95;
+  margin-bottom: tokens.$gap-28;
+  font-weight: 600;
+}
+
+.merge-type-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(tokens.$min-width-16, tokens.$grid-template-columns-7));
+  gap: tokens.$gap-30;
+}
+
+.merge-type {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: tokens.$gap-31;
+  padding: tokens.$padding-99;
+  text-align: center;
+  background-color: var(--bg);
+  border: tokens.$border-16 solid var(--border);
+  border-radius: tokens.$border-radius-40;
+}
+
+.merge-type:hover,
+.merge-type.active {
+  border-color: var(--accent);
+  background-color: var(--highlight);
+}
+
+.merge-type > span:last-child {
+  color: var(--fg-dark);
+  font-size: tokens.$font-size-26;
+}
+
+.join-icon {
+  position: relative;
+  display: block;
+  width: tokens.$width-22;
+  height: tokens.$height-17;
+}
+
+.join-icon span {
+  position: absolute;
+  top: 0;
+  width: tokens.$width-23;
+  height: tokens.$height-18;
+  border: tokens.$border-17 solid var(--fg-dark);
+  border-radius: 50%;
+}
+
+.join-icon span:first-child {
+  left: tokens.$left-11;
+}
+
+.join-icon span:last-child {
+  right: tokens.$right-4;
+}
+
+.join-icon-left span:first-child,
+.join-icon-right span:last-child {
+  background-color: color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+.join-icon-inner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 10px;
+  height: tokens.$height-18;
+  border-radius: 50%;
+  background-color: var(--accent);
+  clip-path: inset(0 0 0 0);
+}
+
+.merge-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: tokens.$gap-32;
+}
+
+.merge-actions button {
+  padding: tokens.$padding-100 tokens.$padding-101;
+}
+
+.merge-actions .merge-submit {
+  color: var(--bg-alt);
+  background-color: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+@media (max-width: tokens.$selector-41) {
+  .merge-datasets,
+  .merge-type-grid {
+    grid-template-columns: tokens.$grid-template-columns-8;
+  }
 }

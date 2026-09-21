@@ -33,14 +33,7 @@ const EXCLUDED_SEARCH_DIRECTORIES: [&str; 5] = [
     "OneDrive",
 ];
 #[cfg(target_os = "macos")]
-const MACOS_PROTECTED_DIRECTORIES: [&str; 6] = [
-    "Desktop",
-    "Documents",
-    "Downloads",
-    "Music",
-    "Movies",
-    "Pictures",
-];
+const MACOS_PROTECTED_DIRECTORIES: [&str; 3] = ["Music", "Movies", "Pictures"];
 const CATEGORY_MAX_DISTINCT_VALUES: usize = 20;
 const CATEGORY_MAX_DISTINCT_RATIO: usize = 2;
 const VARIANCE_POWER: i32 = 2;
@@ -162,6 +155,22 @@ struct SortSpec {
     id: String,
     desc: bool,
     column_type: String,
+}
+
+#[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum JoinType {
+    Left,
+    Right,
+    Inner,
+}
+
+struct JoinSource {
+    columns: Vec<String>,
+    rows: Arc<PackedRows>,
+    order: Arc<Vec<RowIndex>>,
+    column_types: Vec<String>,
+    separator: u8,
 }
 
 #[derive(Serialize)]
@@ -576,6 +585,171 @@ fn infer_column_types(rows: &PackedRows, column_count: usize) -> Vec<String> {
         .collect()
 }
 
+fn join_key<'a>(
+    rows: &'a PackedRows,
+    row_index: RowIndex,
+    column_indices: &[usize],
+) -> Option<Vec<&'a str>> {
+    column_indices
+        .iter()
+        .map(|column_index| {
+            let value = rows.cell(row_index as usize, *column_index);
+            (!value.is_empty()).then_some(value)
+        })
+        .collect()
+}
+
+fn join_datasets(
+    left: JoinSource,
+    right: JoinSource,
+    columns: &[String],
+    join_type: JoinType,
+) -> Result<Dataset, String> {
+    if columns.is_empty() {
+        return Err("Select at least one column to merge on".into());
+    }
+    let column_index = |source: &JoinSource, column: &str| {
+        source
+            .columns
+            .iter()
+            .position(|candidate| candidate == column)
+            .ok_or_else(|| format!("Column not found: {column}"))
+    };
+    let left_keys = columns
+        .iter()
+        .map(|column| column_index(&left, column))
+        .collect::<Result<Vec<_>, _>>()?;
+    let right_keys = columns
+        .iter()
+        .map(|column| column_index(&right, column))
+        .collect::<Result<Vec<_>, _>>()?;
+    let right_key_set = right_keys.iter().copied().collect::<HashSet<_>>();
+    let right_output_indices = (0..right.columns.len())
+        .filter(|index| !right_key_set.contains(index))
+        .collect::<Vec<_>>();
+
+    let mut output_columns = left.columns.clone();
+    let mut used_columns = output_columns.iter().cloned().collect::<HashSet<_>>();
+    for right_index in &right_output_indices {
+        let base = &right.columns[*right_index];
+        let mut output = base.clone();
+        let mut suffix = 2;
+        if used_columns.contains(&output) {
+            output = format!("{base} (right)");
+        }
+        while used_columns.contains(&output) {
+            output = format!("{base} (right {suffix})");
+            suffix += 1;
+        }
+        used_columns.insert(output.clone());
+        output_columns.push(output);
+    }
+    if output_columns.len() > MAX_CSV_COLUMNS {
+        return Err(format!(
+            "Merged data exceeds the {MAX_CSV_COLUMNS}-column limit"
+        ));
+    }
+
+    let mut right_index = HashMap::<Vec<&str>, Vec<RowIndex>>::new();
+    for row_index in right.order.iter().copied() {
+        if let Some(key) = join_key(&right.rows, row_index, &right_keys) {
+            right_index.entry(key).or_default().push(row_index);
+        }
+    }
+
+    let mut rows = PackedRows::with_capacity(output_columns.len(), 0);
+    let mut field_count = output_columns.len();
+    let mut matched_right = HashSet::new();
+    let left_key_positions = left_keys
+        .iter()
+        .enumerate()
+        .map(|(position, column_index)| (*column_index, position))
+        .collect::<HashMap<_, _>>();
+    let mut push_row = |left_row: Option<RowIndex>, right_row: Option<RowIndex>| {
+        if rows.len() >= MAX_CSV_ROWS {
+            return Err(format!("Merged data exceeds the {MAX_CSV_ROWS}-row limit"));
+        }
+        field_count += output_columns.len();
+        if field_count > MAX_CSV_FIELDS {
+            return Err(format!(
+                "Merged data exceeds the {MAX_CSV_FIELDS}-field limit"
+            ));
+        }
+        let mut record = csv::StringRecord::new();
+        for left_index in 0..left.columns.len() {
+            let value = match (left_row, right_row, left_key_positions.get(&left_index)) {
+                (Some(row_index), _, _) => left.rows.cell(row_index as usize, left_index),
+                (None, Some(row_index), Some(key_position)) => right
+                    .rows
+                    .cell(row_index as usize, right_keys[*key_position]),
+                _ => "",
+            };
+            record.push_field(value);
+        }
+        for right_index in &right_output_indices {
+            let value = right_row
+                .map(|row_index| right.rows.cell(row_index as usize, *right_index))
+                .unwrap_or("");
+            record.push_field(value);
+        }
+        rows.push_record(&record)
+    };
+
+    for left_row in left.order.iter().copied() {
+        let matches =
+            join_key(&left.rows, left_row, &left_keys).and_then(|key| right_index.get(&key));
+        if let Some(matches) = matches {
+            for right_row in matches {
+                push_row(Some(left_row), Some(*right_row))?;
+                matched_right.insert(*right_row);
+            }
+        } else if join_type == JoinType::Left {
+            push_row(Some(left_row), None)?;
+        }
+    }
+    if join_type == JoinType::Right {
+        for right_row in right.order.iter().copied() {
+            if !matched_right.contains(&right_row) {
+                push_row(None, Some(right_row))?;
+            }
+        }
+    }
+
+    rows.shrink_to_fit();
+    let column_types = left
+        .column_types
+        .iter()
+        .cloned()
+        .chain(
+            right_output_indices
+                .iter()
+                .map(|index| right.column_types[*index].clone()),
+        )
+        .collect();
+    let view = Arc::new(
+        (0..rows.len())
+            .map(|index| RowIndex::try_from(index).expect("row limit fits in u32"))
+            .collect::<Vec<_>>(),
+    );
+    Ok(Dataset {
+        columns: output_columns,
+        rows: Arc::new(rows),
+        order: Arc::clone(&view),
+        view,
+        column_types,
+        separator: left.separator,
+        size_bytes: 0,
+        source_id: None,
+        filter: None,
+        sorting: Vec::new(),
+        search: None,
+        search_matches: Vec::new(),
+        sort_generation: 0,
+        search_generation: 0,
+        source_path: None,
+    })
+}
+
 fn is_number(value: &str) -> bool {
     static NUMBER: OnceLock<Regex> = OnceLock::new();
     NUMBER
@@ -938,6 +1112,38 @@ async fn create_filtered_dataset(
     let result = metadata(&id, &dataset);
     datasets(&state)?.insert(id, Arc::new(Mutex::new(dataset)));
     Ok(Some(result))
+}
+
+#[tauri::command]
+async fn create_joined_dataset(
+    left_id: String,
+    right_id: String,
+    columns: Vec<String>,
+    join_type: JoinType,
+    state: State<'_, AppState>,
+) -> Result<SheetMetadata, String> {
+    if left_id == right_id {
+        return Err("Select two different datasets".into());
+    }
+    let source = |id: &str| -> Result<JoinSource, String> {
+        let handle = dataset(&state, id)?;
+        let dataset = lock_dataset(&handle)?;
+        Ok(JoinSource {
+            columns: dataset.columns.clone(),
+            rows: Arc::clone(&dataset.rows),
+            order: Arc::clone(&dataset.order),
+            column_types: dataset.column_types.clone(),
+            separator: dataset.separator,
+        })
+    };
+    let left = source(&left_id)?;
+    let right = source(&right_id)?;
+    let joined = tauri::async_runtime::spawn_blocking(move || {
+        join_datasets(left, right, &columns, join_type)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    insert_dataset(joined, &state)
 }
 
 #[tauri::command]
@@ -1481,7 +1687,11 @@ fn fuzzy_filter(query: String, candidates: Vec<String>) -> Result<Vec<FuzzyMatch
         .into_iter()
         .map(|(text, _score)| {
             let mut indices = Vec::new();
-            pattern.indices(Utf32Str::new(&text, &mut Vec::new()), &mut matcher, &mut indices);
+            pattern.indices(
+                Utf32Str::new(&text, &mut Vec::new()),
+                &mut matcher,
+                &mut indices,
+            );
             indices.sort_unstable();
             indices.dedup();
             FuzzyMatch { text, indices }
@@ -1499,6 +1709,7 @@ pub fn run() {
             load_indexed_csv_file,
             rescan_csv_file,
             create_filtered_dataset,
+            create_joined_dataset,
             close_dataset,
             get_rows,
             sort_dataset,
@@ -1545,6 +1756,94 @@ mod tests {
         }
         rows.shrink_to_fit();
         rows
+    }
+
+    fn join_source(columns: &[&str], records: &[&[&str]]) -> JoinSource {
+        let rows = Arc::new(packed_rows(records));
+        JoinSource {
+            columns: columns.iter().map(|column| (*column).to_owned()).collect(),
+            order: Arc::new(
+                (0..rows.len())
+                    .map(|index| RowIndex::try_from(index).expect("test rows fit in u32"))
+                    .collect(),
+            ),
+            column_types: vec!["string".into(); columns.len()],
+            rows,
+            separator: b',',
+        }
+    }
+
+    fn owned_rows(dataset: &Dataset) -> Vec<Vec<String>> {
+        dataset
+            .order
+            .iter()
+            .map(|row| dataset.rows.row_owned(*row as usize))
+            .collect()
+    }
+
+    #[test]
+    fn performs_sql_style_inner_left_and_right_joins() {
+        let make_left = || {
+            join_source(
+                &["id", "left_value", "shared"],
+                &[
+                    &["1", "A", "left-1"],
+                    &["2", "B", "left-2"],
+                    &["", "N", "left-null"],
+                ],
+            )
+        };
+        let make_right = || {
+            join_source(
+                &["id", "right_value", "shared"],
+                &[
+                    &["1", "X", "right-1"],
+                    &["1", "Y", "right-2"],
+                    &["3", "Z", "right-3"],
+                    &["", "N", "right-null"],
+                ],
+            )
+        };
+        let keys = vec!["id".to_owned()];
+
+        let inner =
+            join_datasets(make_left(), make_right(), &keys, JoinType::Inner).expect("inner join");
+        assert_eq!(
+            inner.columns,
+            [
+                "id",
+                "left_value",
+                "shared",
+                "right_value",
+                "shared (right)"
+            ]
+        );
+        assert_eq!(
+            owned_rows(&inner),
+            [
+                ["1", "A", "left-1", "X", "right-1"],
+                ["1", "A", "left-1", "Y", "right-2"],
+            ]
+        );
+
+        let left =
+            join_datasets(make_left(), make_right(), &keys, JoinType::Left).expect("left join");
+        assert_eq!(owned_rows(&left).len(), 4);
+        assert_eq!(
+            owned_rows(&left)[2..],
+            [["2", "B", "left-2", "", ""], ["", "N", "left-null", "", ""],]
+        );
+
+        let right =
+            join_datasets(make_left(), make_right(), &keys, JoinType::Right).expect("right join");
+        assert_eq!(owned_rows(&right).len(), 4);
+        assert_eq!(
+            owned_rows(&right)[2..],
+            [
+                ["3", "", "", "Z", "right-3"],
+                ["", "", "", "N", "right-null"],
+            ]
+        );
     }
 
     #[test]
@@ -1682,6 +1981,9 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn excludes_macos_protected_directories() {
+        for directory in ["Desktop", "Documents", "Downloads"] {
+            assert!(!is_excluded_search_directory(directory));
+        }
         for directory in MACOS_PROTECTED_DIRECTORIES {
             assert!(is_excluded_search_directory(directory));
         }

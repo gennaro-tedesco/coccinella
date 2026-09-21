@@ -104,4 +104,110 @@ describe("application store dataset lifecycle", () => {
     expect(useAppStore.getState().sheets.root.sorting).toEqual(sorting);
     expect(useAppStore.getState().sheets.root.dataVersion).toBe(1);
   });
+
+  it("saves only visible columns using the current sorted view", async () => {
+    const metadata = {
+      ...rootMetadata,
+      columns: ["name", "score"],
+      columnTypes: { name: "category", score: "number" },
+    };
+    useAppStore
+      .getState()
+      .openSheet("people.csv", metadata, "/tmp/people.csv");
+    useAppStore.getState().setColumnVisibility("root", {
+      name: true,
+      score: false,
+    });
+    invokeMock.mockResolvedValueOnce(true);
+    await useAppStore
+      .getState()
+      .setSorting("root", [{ id: "name", desc: false }]);
+    invokeMock.mockResolvedValueOnce(true);
+
+    const saved = await useAppStore.getState().saveSheetView("root");
+
+    expect(saved).toBe(true);
+    expect(invokeMock).toHaveBeenLastCalledWith("save_csv_file_dialog", {
+      datasetId: "root",
+      defaultName: "people-view.csv",
+      columns: ["name"],
+    });
+  });
+
+  it("reloads the original view for a child sheet", async () => {
+    const metadata = {
+      ...rootMetadata,
+      columns: ["name", "score"],
+      columnTypes: { name: "category", score: "number" },
+    };
+    useAppStore
+      .getState()
+      .openSheet("people.csv", metadata, "/tmp/people.csv");
+    invokeMock.mockResolvedValueOnce({ ...metadata, datasetId: "child" });
+    await useAppStore
+      .getState()
+      .createFilteredSheet("root", "Ada", false, false);
+    useAppStore.getState().setColumnVisibility("child", {
+      name: false,
+      score: true,
+    });
+    invokeMock.mockResolvedValueOnce(true);
+    await useAppStore
+      .getState()
+      .setSorting("child", [{ id: "score", desc: true }]);
+    invokeMock.mockResolvedValueOnce(true);
+
+    const reloaded = await useAppStore.getState().reloadSheetView("child");
+
+    expect(reloaded).toBe(true);
+    expect(invokeMock).toHaveBeenLastCalledWith("sort_dataset", {
+      datasetId: "child",
+      sorting: [],
+    });
+    expect(useAppStore.getState().sheets.child).toMatchObject({
+      columnVisibility: { name: true, score: true },
+      sorting: [],
+      dataVersion: 2,
+    });
+  });
+
+  it("creates a joined dataset as a new top-level sheet", async () => {
+    useAppStore
+      .getState()
+      .openSheet("people.csv", rootMetadata, "/tmp/people.csv");
+    useAppStore.getState().openSheet(
+      "scores.csv",
+      { ...rootMetadata, datasetId: "scores" },
+      "/tmp/scores.csv",
+    );
+    invokeMock.mockResolvedValueOnce({
+      ...rootMetadata,
+      datasetId: "joined",
+      columns: ["name", "score"],
+      columnTypes: { name: "category", score: "number" },
+    });
+
+    const created = await useAppStore
+      .getState()
+      .createJoinedSheet("root", "scores", ["name"], "left");
+
+    expect(invokeMock).toHaveBeenCalledWith("create_joined_dataset", {
+      leftId: "root",
+      rightId: "scores",
+      columns: ["name"],
+      joinType: "left",
+    });
+    expect(created).toBe(true);
+    expect(useAppStore.getState()).toMatchObject({
+      sheetOrder: ["root", "scores", "joined"],
+      activeSheetId: "joined",
+      previousSheetId: "scores",
+      sheets: {
+        joined: {
+          filename: "people.csv + scores.csv",
+          columns: ["name", "score"],
+        },
+      },
+    });
+  });
 });

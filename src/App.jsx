@@ -15,6 +15,7 @@ import ColumnPanel from "./components/ColumnPanel";
 import EmptyState from "./components/EmptyState";
 import FuzzyFinder from "./components/FuzzyFinder";
 import GoToLine from "./components/GoToLine";
+import MergePanel from "./components/MergePanel";
 import { openCsvFile, openCsvFileAtPath } from "./utils/openFile";
 import { ErrorSnackbar } from "./components/Snackbar";
 import LazyErrorBoundary from "./components/LazyErrorBoundary";
@@ -96,6 +97,7 @@ function App() {
   const [csvFiles, setCsvFiles] = useState(null);
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
   const [goToLineOpen, setGoToLineOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const contentRef = useRef(null);
   const dataTableRef = useRef(null);
   const highlightedLineRef = useRef(null);
@@ -151,6 +153,7 @@ function App() {
 
   useEffect(() => {
     if (mode !== "data") setGoToLineOpen(false);
+    if (mode !== "data") setMergeOpen(false);
     pendingGRef.current = false;
   }, [activeSheetId, mode]);
 
@@ -241,7 +244,7 @@ function App() {
     async function openFileFinder() {
       try {
         setFinder("files");
-        if (csvFiles !== null || fileScanRef.current) return;
+        if (fileScanRef.current) return;
 
         setCsvFiles([]);
         const onFiles = new Channel();
@@ -269,7 +272,8 @@ function App() {
       const target = event.target;
       const isEditing =
         target instanceof HTMLElement &&
-        (target.isContentEditable || target.matches("input, textarea"));
+        (target.isContentEditable || target.matches("input, textarea, select, button"));
+      if (mergeOpen) return;
       if (
         isEditing ||
         mode !== "data" ||
@@ -289,6 +293,23 @@ function App() {
       ) {
         event.preventDefault();
         setSearchQuery("");
+        return;
+      }
+
+      if (
+        !isEditing &&
+        mode === "data" &&
+        sheetOrder.length >= 2 &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        event.key === "="
+      ) {
+        event.preventDefault();
+        closeSearch();
+        setGoToLineOpen(false);
+        setFinder(null);
+        setMergeOpen(true);
         return;
       }
 
@@ -524,7 +545,8 @@ function App() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
-    csvFiles,
+    sheetOrder.length,
+    mergeOpen,
     mode,
     openSheet,
     switchToPreviousSheet,
@@ -618,12 +640,20 @@ function App() {
     <div className="app">
       <TopBar
         onOpenSearch={() => {
+          setMergeOpen(false);
           setGoToLineOpen(false);
           openSearch();
         }}
         onOpenGoTo={() => {
+          setMergeOpen(false);
           closeSearch();
           setGoToLineOpen(true);
+        }}
+        onOpenMerge={() => {
+          closeSearch();
+          setGoToLineOpen(false);
+          setFinder(null);
+          setMergeOpen(true);
         }}
       />
       {hasSheets ? (
@@ -687,6 +717,7 @@ function App() {
         />
       )}
       {searchOpen && mode === "data" && activeSheetId && <SearchPanel />}
+      {mergeOpen && mode === "data" && <MergePanel onClose={() => setMergeOpen(false)} />}
       {errorMessage && (
         <ErrorSnackbar onClose={clearError}>{errorMessage}</ErrorSnackbar>
       )}

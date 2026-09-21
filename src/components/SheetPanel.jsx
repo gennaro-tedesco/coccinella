@@ -1,16 +1,13 @@
-import { invoke } from "@tauri-apps/api/core";
-import { ChevronLeft, ChevronRight, Save, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, RotateCcw, Save, X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { useDragReorder } from "../hooks/useDragReorder";
 import { ICON_SIZE_DEFAULT, ICON_SIZE_SMALL } from "../constants";
 
-async function saveFilteredSheet(sheet) {
-  const filename = sheet.filename.replace(/[<>:"/\\|?*]/g, "-");
-  await invoke("save_csv_file_dialog", {
-    datasetId: sheet.datasetId,
-    defaultName: filename.endsWith(".csv") ? filename : `${filename}.csv`,
-    columns: sheet.columns,
-  });
+function isViewModified(sheet) {
+  return (
+    sheet.sorting.length > 0 ||
+    sheet.columns.some((column) => sheet.columnVisibility[column] === false)
+  );
 }
 
 function FilteredSheetNode({
@@ -19,10 +16,12 @@ function FilteredSheetNode({
   activeSheetId,
   setActiveSheetId,
   closeFilteredSheet,
-  showError,
+  saveSheetView,
+  reloadSheetView,
 }) {
   const sheet = sheets[id];
   if (!sheet) return null;
+  const viewModified = isViewModified(sheet);
   return (
     <li>
       <div className={"sheet-node-row" + (id === activeSheetId ? " active" : "")}>
@@ -33,16 +32,30 @@ function FilteredSheetNode({
           </button>
           <button
             type="button"
-            className="sheet-node-action"
-            aria-label="Save filtered sheet"
-            title="Save filtered sheet"
+            className={`sheet-node-action${viewModified ? " view-change-action" : ""}`}
+            aria-label="Save sheet view as new file"
+            title="Save sheet view as new file"
             onClick={(event) => {
               event.stopPropagation();
-              void saveFilteredSheet(sheet).catch(showError);
+              void saveSheetView(id);
             }}
           >
             <Save size={ICON_SIZE_SMALL} />
           </button>
+          {viewModified && (
+            <button
+              type="button"
+              className="sheet-node-action view-change-action"
+              aria-label="Reload original sheet view"
+              title="Reload original sheet view"
+              onClick={(event) => {
+                event.stopPropagation();
+                void reloadSheetView(id);
+              }}
+            >
+              <RotateCcw size={ICON_SIZE_SMALL} />
+            </button>
+          )}
           <button
             type="button"
             className="sheet-node-action"
@@ -66,7 +79,8 @@ function FilteredSheetNode({
               activeSheetId={activeSheetId}
               setActiveSheetId={setActiveSheetId}
               closeFilteredSheet={closeFilteredSheet}
-              showError={showError}
+              saveSheetView={saveSheetView}
+              reloadSheetView={reloadSheetView}
             />
           ))}
         </ul>
@@ -84,7 +98,8 @@ function SheetPanel() {
   const closeFilteredSheet = useAppStore((state) => state.closeFilteredSheet);
   const sheetPanelOpen = useAppStore((state) => state.sheetPanelOpen);
   const toggleSheetPanel = useAppStore((state) => state.toggleSheetPanel);
-  const showError = useAppStore((state) => state.showError);
+  const saveSheetView = useAppStore((state) => state.saveSheetView);
+  const reloadSheetView = useAppStore((state) => state.reloadSheetView);
   const moveSheet = useAppStore((state) => state.moveSheet);
 
   const {
@@ -122,61 +137,94 @@ function SheetPanel() {
         <div className="panel-empty">No files open</div>
       )}
       <ul className="sheet-tree">
-        {sheetOrder.map((id) => (
-          <li key={id}>
-            <div
-              data-sheet-tab
-              data-item={id}
-              className={
-                "sheet-node-row" +
-                (id === activeSheetId ? " active" : "") +
-                (draggedSheetId === id ? " dragging" : "") +
-                (dropTarget?.item === id ? ` drag-over-${dropTarget.position}` : "")
-              }
-            >
-              <button
-                type="button"
-                className="sheet-node"
-                onPointerDown={handlePointerDown(id)}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerCancel}
-                onClick={() => {
-                  if (shouldIgnoreClick()) return;
-                  setActiveSheetId(id);
-                }}
+        {sheetOrder.map((id) => {
+          const sheet = sheets[id];
+          const viewModified = isViewModified(sheet);
+          return (
+            <li key={id}>
+              <div
+                data-sheet-tab
+                data-item={id}
+                className={
+                  "sheet-node-row" +
+                  (id === activeSheetId ? " active" : "") +
+                  (draggedSheetId === id ? " dragging" : "") +
+                  (dropTarget?.item === id ? ` drag-over-${dropTarget.position}` : "")
+                }
               >
-                {sheets[id].filename}
-              </button>
-              <button
-                type="button"
-                className="sheet-node-close"
-                aria-label="Close file"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void closeSheet(id);
-                }}
-              >
-                <X size={ICON_SIZE_SMALL} />
-              </button>
-            </div>
-            {sheets[id].children.length > 0 && (
-              <ul className="sheet-children">
-                {sheets[id].children.map((childId) => (
-                  <FilteredSheetNode
-                    key={childId}
-                    id={childId}
-                    sheets={sheets}
-                    activeSheetId={activeSheetId}
-                    setActiveSheetId={setActiveSheetId}
-                    closeFilteredSheet={closeFilteredSheet}
-                    showError={showError}
-                  />
-                ))}
-              </ul>
-            )}
-          </li>
-        ))}
+                <button
+                  type="button"
+                  className="sheet-node"
+                  onPointerDown={handlePointerDown(id)}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerCancel}
+                  onClick={() => {
+                    if (shouldIgnoreClick()) return;
+                    setActiveSheetId(id);
+                  }}
+                >
+                  {sheet.filename}
+                </button>
+                {viewModified && (
+                  <>
+                    <button
+                      type="button"
+                      className="sheet-node-action view-change-action"
+                      aria-label="Save file view as new file"
+                      title="Save file view as new file"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void saveSheetView(id);
+                      }}
+                    >
+                      <Save size={ICON_SIZE_SMALL} />
+                    </button>
+                    <button
+                      type="button"
+                      className="sheet-node-action view-change-action"
+                      aria-label="Reload original file view"
+                      title="Reload original file view"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void reloadSheetView(id);
+                      }}
+                    >
+                      <RotateCcw size={ICON_SIZE_SMALL} />
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  className="sheet-node-close"
+                  aria-label="Close file"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void closeSheet(id);
+                  }}
+                >
+                  <X size={ICON_SIZE_SMALL} />
+                </button>
+              </div>
+              {sheet.children.length > 0 && (
+                <ul className="sheet-children">
+                  {sheet.children.map((childId) => (
+                    <FilteredSheetNode
+                      key={childId}
+                      id={childId}
+                      sheets={sheets}
+                      activeSheetId={activeSheetId}
+                      setActiveSheetId={setActiveSheetId}
+                      closeFilteredSheet={closeFilteredSheet}
+                      saveSheetView={saveSheetView}
+                      reloadSheetView={reloadSheetView}
+                    />
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
       </ul>
       <div className="panel-header">
         <div />
