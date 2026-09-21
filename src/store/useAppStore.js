@@ -32,6 +32,10 @@ export const useAppStore = create((set, get) => ({
     set({ errorMessage: error instanceof Error ? error.message : String(error) }),
   clearError: () => set({ errorMessage: null }),
 
+  shortcutsMenuOpen: false,
+  openShortcutsMenu: () => set({ shortcutsMenuOpen: true }),
+  closeShortcutsMenu: () => set({ shortcutsMenuOpen: false }),
+
   searchOpen: false,
   searchQuery: "",
   searchIsRegex: true,

@@ -63,6 +63,7 @@ function App() {
   const searchOpen = useAppStore((state) => state.searchOpen);
   const openSearch = useAppStore((state) => state.openSearch);
   const closeSearch = useAppStore((state) => state.closeSearch);
+  const openShortcutsMenu = useAppStore((state) => state.openShortcutsMenu);
   const searchQuery = useAppStore((state) => state.searchQuery);
   const searchIsRegex = useAppStore((state) => state.searchIsRegex);
   const searchIsCaseSensitive = useAppStore(
@@ -505,6 +506,12 @@ function App() {
         return;
       }
 
+      if (event.key === "F1") {
+        event.preventDefault();
+        openShortcutsMenu();
+        return;
+      }
+
       if (!event.ctrlKey) return;
       if (event.key === "p" || event.key === "P") {
         event.preventDefault();
@@ -525,6 +532,7 @@ function App() {
     toggleColumnPanel,
     openSearch,
     closeSearch,
+    openShortcutsMenu,
     activeSheetId,
     searchOpen,
     searchQuery,
