@@ -1573,9 +1573,6 @@ button:disabled {
 
 .fuzzy-finder-children > li:last-child::before {
   bottom: tokens.$bottom-2;
-  width: calc(tokens.$margin-left-2 + tokens.$width-5);
-  border-bottom: tokens.$border-top-1 solid var(--fg-dark);
-  border-bottom-left-radius: tokens.$border-radius-10;
 }
 
 .fuzzy-finder-leaf {
@@ -1584,7 +1581,6 @@ button:disabled {
   flex: tokens.$flex-4;
   min-width: tokens.$min-width-4;
   gap: tokens.$gap-5;
-  margin-left: tokens.$margin-left-1;
 }
 
 .fuzzy-finder-branch {
@@ -1604,10 +1600,6 @@ button:disabled {
   right: tokens.$right-1;
   left: tokens.$left-5;
   border-top: tokens.$border-top-1 solid var(--fg-dark);
-}
-
-.fuzzy-finder-children > li:last-child .fuzzy-finder-branch::after {
-  display: none;
 }
 
 .fuzzy-finder-match {
