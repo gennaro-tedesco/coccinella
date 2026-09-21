@@ -34,7 +34,7 @@
     "active": true,
     "targets": "all",
     "macOS": {
-      "signingIdentity": "Apple Development: gennarotedesco@gmail.com (FBM3W7STZR)"
+      "signingIdentity": "-"
     },
     "fileAssociations": [
       {
