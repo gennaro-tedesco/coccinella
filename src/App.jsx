@@ -38,6 +38,10 @@ import {
 
 const ChartBuilder = lazy(() => import("./components/ChartBuilder"));
 const getPathLabel = (candidate) => candidate.path;
+const getPathGroup = (candidate) => {
+  const slashIndex = candidate.path.lastIndexOf("/");
+  return slashIndex === -1 ? "" : candidate.path.slice(0, slashIndex);
+};
 const getSheetLabel = (id) => useAppStore.getState().sheets[id]?.filename ?? "";
 
 function App() {
@@ -647,6 +651,7 @@ function App() {
           placeholder="Open file..."
           items={csvFiles ?? []}
           getLabel={getPathLabel}
+          getGroup={getPathGroup}
           onSelect={(candidate) => {
             setFinder(null);
             void openCsvFileAtPath(candidate, openSheet).catch(showError);

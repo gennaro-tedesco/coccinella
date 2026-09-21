@@ -1508,6 +1508,77 @@ button:disabled {
   font-size: tokens.$font-size-19;
 }
 
+.fuzzy-finder-group-label {
+  padding: tokens.$padding-74 tokens.$padding-75;
+  color: var(--fg-dark);
+  font-size: tokens.$font-size-19;
+}
+
+.fuzzy-finder-children {
+  list-style: none;
+  margin: tokens.$margin-18;
+  padding: tokens.$padding-71;
+}
+
+.fuzzy-finder-children > li {
+  position: relative;
+}
+
+.fuzzy-finder-children > li::before {
+  content: "";
+  position: absolute;
+  z-index: tokens.$z-index-2;
+  top: tokens.$top-4;
+  bottom: tokens.$bottom-1;
+  left: tokens.$left-4;
+  border-left: tokens.$border-left-1 solid var(--fg-dark);
+  pointer-events: none;
+}
+
+.fuzzy-finder-children > li:last-child::before {
+  bottom: tokens.$bottom-2;
+  width: calc(tokens.$margin-left-2 + tokens.$width-5);
+  border-bottom: tokens.$border-top-1 solid var(--fg-dark);
+  border-bottom-left-radius: tokens.$border-radius-10;
+}
+
+.fuzzy-finder-leaf {
+  display: flex;
+  align-items: center;
+  flex: tokens.$flex-4;
+  min-width: tokens.$min-width-4;
+  gap: tokens.$gap-5;
+  margin-left: tokens.$margin-left-1;
+}
+
+.fuzzy-finder-branch {
+  position: relative;
+  display: inline-block;
+  width: tokens.$width-5;
+  height: tokens.$height-7;
+  flex: tokens.$flex-5 tokens.$flex-6 tokens.$flex-7;
+  margin-left: tokens.$margin-left-2;
+  vertical-align: tokens.$vertical-align-1;
+}
+
+.fuzzy-finder-branch::after {
+  content: "";
+  position: absolute;
+  top: tokens.$top-5;
+  right: tokens.$right-1;
+  left: tokens.$left-5;
+  border-top: tokens.$border-top-1 solid var(--fg-dark);
+}
+
+.fuzzy-finder-children > li:last-child .fuzzy-finder-branch::after {
+  display: none;
+}
+
+.fuzzy-finder-match {
+  color: var(--accent);
+  font-weight: tokens.$font-weight-2;
+}
+
 .snackbar {
   position: fixed;
   left: tokens.$left-8;

@@ -3,7 +3,7 @@
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use nucleo_matcher::{
     pattern::{AtomKind, CaseMatching, Normalization, Pattern},
-    Config as FuzzyConfig, Matcher as FuzzyMatcher,
+    Config as FuzzyConfig, Matcher as FuzzyMatcher, Utf32Str,
 };
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
@@ -211,6 +211,13 @@ struct OpenedSheet {
 struct FileCandidate {
     token: String,
     path: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FuzzyMatch {
+    text: String,
+    indices: Vec<u32>,
 }
 
 #[derive(Serialize)]
@@ -1341,10 +1348,11 @@ async fn list_csv_files(
                         .next_path_token
                         .fetch_add(1, AtomicOrdering::Relaxed)
                         .to_string();
+                    let display_path = shorten_home_path(&path, &home);
                     indexed_paths.insert(token.clone(), path.clone());
                     FileCandidate {
                         token,
-                        path: path.to_string_lossy().into_owned(),
+                        path: display_path,
                     }
                 })
                 .collect();
@@ -1354,6 +1362,14 @@ async fn list_csv_files(
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+fn shorten_home_path(path: &Path, home: &Path) -> String {
+    match path.strip_prefix(home) {
+        Ok(relative) if relative.as_os_str().is_empty() => "~".to_string(),
+        Ok(relative) => format!("~/{}", relative.to_string_lossy()),
+        Err(_) => path.to_string_lossy().into_owned(),
+    }
 }
 
 fn discover_csv_files(
@@ -1435,22 +1451,24 @@ fn take_opened_csv_files(state: State<'_, AppState>) -> Result<Vec<FileCandidate
 }
 
 #[tauri::command]
-fn fuzzy_filter(query: String, candidates: Vec<String>) -> Result<Vec<String>, String> {
+fn fuzzy_filter(query: String, candidates: Vec<String>) -> Result<Vec<FuzzyMatch>, String> {
     let terms: Vec<_> = query.split_whitespace().map(regex::escape).collect();
     if terms.is_empty() {
-        return Ok(candidates);
+        return Ok(candidates
+            .into_iter()
+            .map(|text| FuzzyMatch {
+                text,
+                indices: Vec::new(),
+            })
+            .collect());
     }
-    let filename_pattern = RegexBuilder::new(&terms.join(".*"))
+    let path_pattern = RegexBuilder::new(&terms.join(".*"))
         .case_insensitive(!query.chars().any(char::is_uppercase))
         .build()
         .map_err(|error| error.to_string())?;
-    let candidates = candidates.into_iter().filter(|candidate| {
-        let filename = Path::new(candidate)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or(candidate);
-        filename_pattern.is_match(filename)
-    });
+    let candidates = candidates
+        .into_iter()
+        .filter(|candidate| path_pattern.is_match(candidate));
     let mut matcher = FuzzyMatcher::new(FuzzyConfig::DEFAULT.match_paths());
     let pattern = Pattern::new(
         &query,
@@ -1461,7 +1479,13 @@ fn fuzzy_filter(query: String, candidates: Vec<String>) -> Result<Vec<String>, S
     Ok(pattern
         .match_list(candidates, &mut matcher)
         .into_iter()
-        .map(|(candidate, _score)| candidate)
+        .map(|(text, _score)| {
+            let mut indices = Vec::new();
+            pattern.indices(Utf32Str::new(&text, &mut Vec::new()), &mut matcher, &mut indices);
+            indices.sort_unstable();
+            indices.dedup();
+            FuzzyMatch { text, indices }
+        })
         .collect())
 }
 
@@ -1664,7 +1688,7 @@ mod tests {
     }
 
     #[test]
-    fn matches_contiguous_query_terms_in_filenames() {
+    fn matches_contiguous_query_terms_in_path() {
         let matches = fuzzy_filter(
             "diamonds".into(),
             vec![
@@ -1676,10 +1700,27 @@ mod tests {
             ],
         )
         .expect("fuzzy filter candidates");
+        let matches: Vec<_> = matches.into_iter().map(|m| m.text).collect();
 
-        assert_eq!(matches.len(), 2);
+        assert_eq!(matches.len(), 3);
         assert!(matches.contains(&"/tmp/diamonds.csv".to_owned()));
         assert!(matches.contains(&"/tmp/raw_diamonds_2024.csv".to_owned()));
+        assert!(matches.contains(&"/tmp/diamonds/archive.csv".to_owned()));
+    }
+
+    #[test]
+    fn matches_query_terms_found_only_in_directory_name() {
+        let matches = fuzzy_filter(
+            "dot".into(),
+            vec![
+                "/Users/tester/dotfiles/mpgcars.csv".into(),
+                "/Users/tester/reports/mpgcars.csv".into(),
+            ],
+        )
+        .expect("fuzzy filter candidates");
+        let matches: Vec<_> = matches.into_iter().map(|m| m.text).collect();
+
+        assert_eq!(matches, vec!["/Users/tester/dotfiles/mpgcars.csv"]);
     }
 
     #[test]
@@ -1694,10 +1735,34 @@ mod tests {
             ],
         )
         .expect("filter candidates with ordered gaps");
+        let matches: Vec<_> = matches.into_iter().map(|m| m.text).collect();
 
         assert_eq!(matches.len(), 2);
         assert!(matches.contains(&"/tmp/diamonds.csv".to_owned()));
         assert!(matches.contains(&"/tmp/d---i---a.csv".to_owned()));
+    }
+
+    #[test]
+    fn fuzzy_filter_reports_match_indices() {
+        let matches = fuzzy_filter("dia".into(), vec!["/tmp/diamonds.csv".into()])
+            .expect("fuzzy filter candidates");
+
+        assert_eq!(matches.len(), 1);
+        assert!(!matches[0].indices.is_empty());
+    }
+
+    #[test]
+    fn shortens_paths_under_home_directory() {
+        let home = Path::new("/Users/tester");
+        assert_eq!(
+            shorten_home_path(Path::new("/Users/tester/docs/data.csv"), home),
+            "~/docs/data.csv"
+        );
+        assert_eq!(shorten_home_path(Path::new("/Users/tester"), home), "~");
+        assert_eq!(
+            shorten_home_path(Path::new("/var/data.csv"), home),
+            "/var/data.csv"
+        );
     }
 
     #[test]
