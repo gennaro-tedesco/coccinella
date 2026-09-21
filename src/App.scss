@@ -504,6 +504,18 @@ body,
   background-color: var(--accent);
 }
 
+.sheet-node-row.dragging {
+  opacity: tokens.$opacity-16;
+}
+
+.sheet-node-row.drag-over-before {
+  box-shadow: inset tokens.$box-shadow-17 tokens.$box-shadow-18 var(--accent);
+}
+
+.sheet-node-row.drag-over-after {
+  box-shadow: inset tokens.$box-shadow-19 tokens.$box-shadow-20 var(--accent);
+}
+
 .sheet-node {
   display: block;
   flex: tokens.$flex-3;
@@ -653,6 +665,18 @@ body,
 .file-tab:hover:not(.active) {
   background-color: var(--active);
   color: var(--fg);
+}
+
+.file-tab.dragging {
+  opacity: tokens.$opacity-16;
+}
+
+.file-tab.drag-over-before {
+  box-shadow: inset tokens.$box-shadow-18 tokens.$box-shadow-17 var(--accent);
+}
+
+.file-tab.drag-over-after {
+  box-shadow: inset tokens.$box-shadow-20 tokens.$box-shadow-19 var(--accent);
 }
 
 .file-tab.active {

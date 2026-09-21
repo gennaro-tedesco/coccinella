@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronLeft, ChevronRight, Save, X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
+import { useDragReorder } from "../hooks/useDragReorder";
 import { ICON_SIZE_DEFAULT, ICON_SIZE_SMALL } from "../constants";
 
 async function saveFilteredSheet(sheet) {
@@ -84,6 +85,21 @@ function SheetPanel() {
   const sheetPanelOpen = useAppStore((state) => state.sheetPanelOpen);
   const toggleSheetPanel = useAppStore((state) => state.toggleSheetPanel);
   const showError = useAppStore((state) => state.showError);
+  const moveSheet = useAppStore((state) => state.moveSheet);
+
+  const {
+    draggedItem: draggedSheetId,
+    dropTarget,
+    shouldIgnoreClick,
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+    handlePointerCancel,
+  } = useDragReorder({
+    selector: "[data-sheet-tab]",
+    axis: "y",
+    onMove: moveSheet,
+  });
 
   if (!sheetPanelOpen) {
     return (
@@ -109,14 +125,26 @@ function SheetPanel() {
         {sheetOrder.map((id) => (
           <li key={id}>
             <div
+              data-sheet-tab
+              data-item={id}
               className={
-                "sheet-node-row" + (id === activeSheetId ? " active" : "")
+                "sheet-node-row" +
+                (id === activeSheetId ? " active" : "") +
+                (draggedSheetId === id ? " dragging" : "") +
+                (dropTarget?.item === id ? ` drag-over-${dropTarget.position}` : "")
               }
             >
               <button
                 type="button"
                 className="sheet-node"
-                onClick={() => setActiveSheetId(id)}
+                onPointerDown={handlePointerDown(id)}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerCancel}
+                onClick={() => {
+                  if (shouldIgnoreClick()) return;
+                  setActiveSheetId(id);
+                }}
               >
                 {sheets[id].filename}
               </button>

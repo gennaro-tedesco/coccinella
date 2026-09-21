@@ -342,6 +342,22 @@ export const useAppStore = create((set, get) => ({
       };
     }),
 
+  moveSheet: (sourceId, targetId, position) =>
+    set((state) => {
+      if (sourceId === targetId) return state;
+
+      const sheetOrder = state.sheetOrder.filter((id) => id !== sourceId);
+      const targetIndex = sheetOrder.indexOf(targetId);
+      if (targetIndex === -1) return state;
+      sheetOrder.splice(
+        targetIndex + (position === "after" ? 1 : 0),
+        0,
+        sourceId,
+      );
+
+      return { sheetOrder };
+    }),
+
   setSorting: async (sheetId, sorting) => {
     const sheet = get().sheets[sheetId];
     if (!sheet) return;
