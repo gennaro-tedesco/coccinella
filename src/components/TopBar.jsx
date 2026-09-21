@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Menu,
   ChevronRight,
@@ -11,6 +11,7 @@ import { THEMES, THEME_ORDER } from "../utils/themes";
 import { ICON_SIZE_MENU } from "../constants";
 
 const SHORTCUTS = [
+  ["Show shortcuts", "F1"],
   ["Open file finder", "Ctrl+p"],
   ["Go to sheet", "Ctrl+b"],
   ["Go to line", ":"],
@@ -38,6 +39,16 @@ function TopBar({ onOpenSearch, onOpenGoTo }) {
   const theme = useAppStore((state) => state.theme);
   const setTheme = useAppStore((state) => state.setTheme);
   const showError = useAppStore((state) => state.showError);
+  const shortcutsMenuOpen = useAppStore((state) => state.shortcutsMenuOpen);
+  const closeShortcutsMenu = useAppStore((state) => state.closeShortcutsMenu);
+
+  useEffect(() => {
+    if (!shortcutsMenuOpen) return;
+    setMenuOpen(true);
+    setThemeSubmenuOpen(false);
+    setShortcutsSubmenuOpen(true);
+    closeShortcutsMenu();
+  }, [shortcutsMenuOpen, closeShortcutsMenu]);
 
   async function handleOpen() {
     setMenuOpen(false);
