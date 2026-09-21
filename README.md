@@ -20,9 +20,9 @@ TBD
 
 ## Features
 
-Intuitive UI, blazingly fast, integrated plotting capabilities at your fingertips. Ah, and obviously vim keys (it goes without saying).
+Intuitive UI, in-built fuzzy finder, blazingly fast, integrated plotting capabilities at your fingertips. And vim keys.
 
-![demo](<>)
+![demo](https://github.com/user-attachments/assets/f3bcc830-fa37-460e-ac12-8daca7d4e1c8)
 
 ## Examples
 
