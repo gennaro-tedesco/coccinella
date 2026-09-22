@@ -1837,6 +1837,7 @@ button:disabled {
 }
 
 .merge-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: tokens.$width-20;
@@ -1845,11 +1846,24 @@ button:disabled {
   padding: tokens.$padding-90;
   gap: tokens.$gap-25;
   overflow: auto;
+  resize: both;
   scrollbar-gutter: stable;
   background-color: var(--bg-alt);
   border: tokens.$border-15 solid var(--border);
   border-radius: tokens.$border-radius-37;
   box-shadow: tokens.$box-shadow-49 tokens.$box-shadow-50 tokens.$box-shadow-51 rgba(tokens.$box-shadow-52, tokens.$box-shadow-53, tokens.$box-shadow-54, tokens.$box-shadow-55);
+}
+
+.merge-resize-handle {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: tokens.$width-6;
+  height: tokens.$height-10;
+  border-bottom: tokens.$border-17 solid var(--border);
+  border-left: tokens.$border-17 solid var(--border);
+  cursor: nesw-resize;
+  touch-action: none;
 }
 
 .operation-tabs {
@@ -1970,7 +1984,6 @@ button:disabled {
   max-height: tokens.$max-height-3;
   margin: tokens.$margin-22;
   padding: tokens.$padding-8;
-  padding-right: tokens.$padding-102;
   overflow: auto;
   scrollbar-gutter: stable;
   list-style: none;
@@ -1992,6 +2005,11 @@ button:disabled {
   color: var(--fg);
   font-size: tokens.$font-size-25;
   cursor: pointer;
+}
+
+.operation-checkbox.disabled {
+  color: var(--disabled);
+  cursor: not-allowed;
 }
 
 .operation-checkbox input[type="checkbox"] {
