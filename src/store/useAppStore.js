@@ -15,6 +15,7 @@ function derivedSheet(metadata, filename) {
   return {
     id: metadata.datasetId,
     filename,
+    derived: true,
     path: null,
     datasetId: metadata.datasetId,
     separator: metadata.separator,
@@ -183,6 +184,19 @@ export const useAppStore = create((set, get) => ({
       }
 
       return { sheets };
+    }),
+
+  renameSheet: (id, name) =>
+    set((state) => {
+      const sheet = state.sheets[id];
+      const trimmed = name.trim();
+      if (!sheet || !trimmed) return state;
+      return {
+        sheets: {
+          ...state.sheets,
+          [id]: { ...sheet, displayName: trimmed },
+        },
+      };
     }),
 
   createFilteredSheet: async (sourceId, pattern, isRegex, isCaseSensitive) => {

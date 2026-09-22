@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
+import { useRenameLabel } from "../hooks/useRenameLabel";
 import { ICON_SIZE_SMALL } from "../constants";
 import { rootSheetId } from "../utils/sheets";
 
@@ -18,6 +19,10 @@ function FilterTabs() {
   const sheets = useAppStore((state) => state.sheets);
   const setActiveSheetId = useAppStore((state) => state.setActiveSheetId);
   const closeFilteredSheet = useAppStore((state) => state.closeFilteredSheet);
+  const renameSheet = useAppStore((state) => state.renameSheet);
+
+  const { editingId, draft, setDraft, startEditing, commitEditing } =
+    useRenameLabel(renameSheet);
 
   const activeSheet = activeSheetId ? sheets[activeSheetId] : null;
   const rootId = activeSheet ? rootSheetId(sheets, activeSheetId) : null;
@@ -40,9 +45,30 @@ function FilterTabs() {
                   "filter-tab" + (activeSheetId === childId ? " active" : "")
                 }
               >
-                <button type="button" onClick={() => setActiveSheetId(childId)}>
-                  {child.filterOf.pattern}
-                </button>
+                {editingId === childId ? (
+                  <input
+                    type="text"
+                    className="filter-tab-label"
+                    autoFocus
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onBlur={commitEditing}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.currentTarget.blur();
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="filter-tab-label"
+                    onClick={() => setActiveSheetId(childId)}
+                    onDoubleClick={() =>
+                      startEditing(childId, child.displayName ?? child.filterOf.pattern)
+                    }
+                  >
+                    {child.displayName ?? child.filterOf.pattern}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="filter-tab-close"

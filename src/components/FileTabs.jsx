@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { useDragReorder } from "../hooks/useDragReorder";
+import { useRenameLabel } from "../hooks/useRenameLabel";
 import { ICON_SIZE_SMALL } from "../constants";
 import { rootSheetId } from "../utils/sheets";
 
@@ -11,6 +12,10 @@ function FileTabs() {
   const setActiveSheetId = useAppStore((state) => state.setActiveSheetId);
   const closeSheet = useAppStore((state) => state.closeSheet);
   const moveSheet = useAppStore((state) => state.moveSheet);
+  const renameSheet = useAppStore((state) => state.renameSheet);
+
+  const { editingId, draft, setDraft, startEditing, commitEditing } =
+    useRenameLabel(renameSheet);
 
   const activeSheet = activeSheetId ? sheets[activeSheetId] : null;
   const activeRootId = activeSheet ? rootSheetId(sheets, activeSheetId) : null;
@@ -43,20 +48,39 @@ function FileTabs() {
             (dropTarget?.item === id ? ` drag-over-${dropTarget.position}` : "")
           }
         >
-          <button
-            type="button"
-            className="file-tab-label"
-            onPointerDown={handlePointerDown(id)}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerCancel}
-            onClick={() => {
-              if (shouldIgnoreClick()) return;
-              setActiveSheetId(id);
-            }}
-          >
-            {sheets[id].filename}
-          </button>
+          {editingId === id ? (
+            <input
+              type="text"
+              className="file-tab-label"
+              autoFocus
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onBlur={commitEditing}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className="file-tab-label"
+              onPointerDown={handlePointerDown(id)}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerCancel}
+              onClick={() => {
+                if (shouldIgnoreClick()) return;
+                setActiveSheetId(id);
+              }}
+              onDoubleClick={() => {
+                if (sheets[id].derived) {
+                  startEditing(id, sheets[id].displayName ?? sheets[id].filename);
+                }
+              }}
+            >
+              {sheets[id].displayName ?? sheets[id].filename}
+            </button>
+          )}
           <button
             type="button"
             className="file-tab-close"

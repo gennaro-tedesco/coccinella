@@ -1,6 +1,7 @@
 import { ChevronLeft, ChevronRight, RotateCcw, Save, X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { useDragReorder } from "../hooks/useDragReorder";
+import { useRenameLabel } from "../hooks/useRenameLabel";
 import { ICON_SIZE_DEFAULT, ICON_SIZE_SMALL } from "../constants";
 
 function isViewModified(sheet) {
@@ -18,6 +19,11 @@ function FilteredSheetNode({
   closeFilteredSheet,
   saveSheetView,
   reloadSheetView,
+  editingId,
+  draft,
+  setDraft,
+  startEditing,
+  commitEditing,
 }) {
   const sheet = sheets[id];
   if (!sheet) return null;
@@ -27,9 +33,30 @@ function FilteredSheetNode({
       <div className={"sheet-node-row" + (id === activeSheetId ? " active" : "")}>
         <span className="sheet-tree-branch" aria-hidden="true" />
         <div className="sheet-child-content">
-          <button type="button" className="sheet-node" onClick={() => setActiveSheetId(id)}>
-            {sheet.filterOf.pattern}
-          </button>
+          {editingId === id ? (
+            <input
+              type="text"
+              className="sheet-node"
+              autoFocus
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onBlur={commitEditing}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className="sheet-node"
+              onClick={() => setActiveSheetId(id)}
+              onDoubleClick={() =>
+                startEditing(id, sheet.displayName ?? sheet.filterOf.pattern)
+              }
+            >
+              {sheet.displayName ?? sheet.filterOf.pattern}
+            </button>
+          )}
           <button
             type="button"
             className={`sheet-node-action${viewModified ? " view-change-action" : ""}`}
@@ -81,6 +108,11 @@ function FilteredSheetNode({
               closeFilteredSheet={closeFilteredSheet}
               saveSheetView={saveSheetView}
               reloadSheetView={reloadSheetView}
+              editingId={editingId}
+              draft={draft}
+              setDraft={setDraft}
+              startEditing={startEditing}
+              commitEditing={commitEditing}
             />
           ))}
         </ul>
@@ -101,6 +133,10 @@ function SheetPanel() {
   const saveSheetView = useAppStore((state) => state.saveSheetView);
   const reloadSheetView = useAppStore((state) => state.reloadSheetView);
   const moveSheet = useAppStore((state) => state.moveSheet);
+  const renameSheet = useAppStore((state) => state.renameSheet);
+
+  const { editingId, draft, setDraft, startEditing, commitEditing } =
+    useRenameLabel(renameSheet);
 
   const {
     draggedItem: draggedSheetId,
@@ -152,47 +188,66 @@ function SheetPanel() {
                   (dropTarget?.item === id ? ` drag-over-${dropTarget.position}` : "")
                 }
               >
-                <button
-                  type="button"
-                  className="sheet-node"
-                  onPointerDown={handlePointerDown(id)}
-                  onPointerMove={handlePointerMove}
-                  onPointerUp={handlePointerUp}
-                  onPointerCancel={handlePointerCancel}
-                  onClick={() => {
-                    if (shouldIgnoreClick()) return;
-                    setActiveSheetId(id);
-                  }}
-                >
-                  {sheet.filename}
-                </button>
+                {editingId === id ? (
+                  <input
+                    type="text"
+                    className="sheet-node"
+                    autoFocus
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onBlur={commitEditing}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.currentTarget.blur();
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="sheet-node"
+                    onPointerDown={handlePointerDown(id)}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                    onPointerCancel={handlePointerCancel}
+                    onClick={() => {
+                      if (shouldIgnoreClick()) return;
+                      setActiveSheetId(id);
+                    }}
+                    onDoubleClick={() => {
+                      if (sheet.derived) {
+                        startEditing(id, sheet.displayName ?? sheet.filename);
+                      }
+                    }}
+                  >
+                    {sheet.displayName ?? sheet.filename}
+                  </button>
+                )}
+                {(sheet.derived || viewModified) && (
+                  <button
+                    type="button"
+                    className={`sheet-node-action${viewModified ? " view-change-action" : ""}`}
+                    aria-label="Save file view as new file"
+                    title="Save file view as new file"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void saveSheetView(id);
+                    }}
+                  >
+                    <Save size={ICON_SIZE_SMALL} />
+                  </button>
+                )}
                 {viewModified && (
-                  <>
-                    <button
-                      type="button"
-                      className="sheet-node-action view-change-action"
-                      aria-label="Save file view as new file"
-                      title="Save file view as new file"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void saveSheetView(id);
-                      }}
-                    >
-                      <Save size={ICON_SIZE_SMALL} />
-                    </button>
-                    <button
-                      type="button"
-                      className="sheet-node-action view-change-action"
-                      aria-label="Reload original file view"
-                      title="Reload original file view"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void reloadSheetView(id);
-                      }}
-                    >
-                      <RotateCcw size={ICON_SIZE_SMALL} />
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    className="sheet-node-action view-change-action"
+                    aria-label="Reload original file view"
+                    title="Reload original file view"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void reloadSheetView(id);
+                    }}
+                  >
+                    <RotateCcw size={ICON_SIZE_SMALL} />
+                  </button>
                 )}
                 <button
                   type="button"
@@ -218,6 +273,11 @@ function SheetPanel() {
                       closeFilteredSheet={closeFilteredSheet}
                       saveSheetView={saveSheetView}
                       reloadSheetView={reloadSheetView}
+                      editingId={editingId}
+                      draft={draft}
+                      setDraft={setDraft}
+                      startEditing={startEditing}
+                      commitEditing={commitEditing}
                     />
                   ))}
                 </ul>

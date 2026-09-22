@@ -18,7 +18,7 @@ const JOIN_TYPES = [
 const AGGREGATIONS = {
   number: [
     ["mean", "Mean"],
-    ["standard_deviation", "Standard deviation"],
+    ["standard_deviation", "Stdev"],
     ["max", "Max"],
     ["min", "Min"],
     ["sum", "Sum"],
