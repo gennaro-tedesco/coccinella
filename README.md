@@ -46,8 +46,8 @@ Click columns to sort. Enter column selection model (`ctrl+` mouse click) to sor
   <summary>Filter files</summary>
 
 <br>
+
 Filter files by row and condition by entering search (and filter mode). Upon search results are highlighted and can be scrolled through (shortcut `n` and `N`). Selecting "filter" (or shortcut `"`) creates a new sheet containing only the search results, which in turn appears as child sheet of the original one in the left panel (statistics are automatically recomputed in light of the new selections). Use column selection mode (`ctrl+` mouse click) to only search within the selected columns (rather than the entire file)
-<img width="400" src="">
 
 </details>
 
@@ -55,6 +55,16 @@ Filter files by row and condition by entering search (and filter mode). Upon sea
   <summary>Go to row</summary>
 
 <br>
+
 Go to row mode with `:<row number>`, selected row is highlighted and scrolled to the top.
+
+</details>
+
+<details>
+  <summary>Data manipulation</summary>
+
+<img src="https://github.com/user-attachments/assets/80ccb0f5-3522-410e-8e98-438169e31d3c">
+
+Open the data manipulation menu with `=`. Merge, append and aggregate into pivot tables by selecting data, columns and functions.
 
 </details>
