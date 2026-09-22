@@ -115,7 +115,30 @@ export function buildTraces(config, chartData, palette, gapColor) {
         };
       });
     }
-    case "linechart":
+    case "linechart": {
+      if (grouped) {
+        return yValues.flatMap((values, valueIndex) =>
+          groupKeys.map((key, groupIndex) => {
+            const indices = [...groups[key]].sort((a, b) => {
+              const numericDifference = Number(xValues[a]) - Number(xValues[b]);
+              if (!Number.isNaN(numericDifference)) return numericDifference;
+              return String(xValues[a]).localeCompare(String(xValues[b]));
+            });
+            const colorIndex = valueIndex * groupKeys.length + groupIndex;
+            return {
+              x: indices.map((rowIndex) => xValues[rowIndex]),
+              y: indices.map((rowIndex) => values[rowIndex]),
+              type: "scatter",
+              mode: "lines+markers",
+              marker: { color: colorFor(colorIndex) },
+              line: { color: colorFor(colorIndex) },
+              name:
+                yValues.length === ONE ? key : `${config.yColumns[valueIndex]} - ${key}`,
+            };
+          }),
+        );
+      }
+    }
     case "stackedbar": {
       const indices = Array.from({ length: xValues.length }, (_, index) => index).sort(
         (a, b) => {

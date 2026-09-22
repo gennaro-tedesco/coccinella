@@ -64,6 +64,34 @@ describe("chart aggregation", () => {
     ]);
   });
 
+  it("builds a separately colored line for each time-series group", () => {
+    const traces = buildTraces(
+      { chartType: "linechart", yColumns: ["Passed"], groupColumn: "team" },
+      {
+        xValues: [2, 1, 2, 1],
+        yValues: [[20, 10, 40, 30]],
+        groupValues: ["red", "red", "blue", "blue"],
+      },
+      ["#111", "#222"],
+      "#000",
+    );
+
+    expect(traces).toMatchObject([
+      {
+        name: "red",
+        x: [1, 2],
+        y: [10, 20],
+        line: { color: "#111" },
+      },
+      {
+        name: "blue",
+        x: [1, 2],
+        y: [30, 40],
+        line: { color: "#222" },
+      },
+    ]);
+  });
+
   it("builds one bar trace for each selected stacked value", () => {
     const traces = buildTraces(
       { chartType: "stackedbar", yColumns: ["Passed", "Failed"] },

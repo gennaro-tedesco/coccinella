@@ -405,7 +405,7 @@ function ChartBuilder({ fontSize }) {
                 onToggle={() => setOpenField(openField === "values" ? null : "values")}
               />
             )}
-            {!plotType.multipleY && (
+            {(!plotType.multipleY || plotType.id === "linechart") && (
               <FieldDropdown
                 label="Group by"
                 value={config.groupColumn ?? ""}
