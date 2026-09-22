@@ -40,8 +40,6 @@ const AGGREGATIONS = {
   ],
 };
 
-const CENTERED_RESIZE_FACTOR = 2;
-
 function commonColumns(left, right) {
   const rightColumns = new Set(right?.columns ?? []);
   return (left?.columns ?? []).filter((column) => rightColumns.has(column));
@@ -398,8 +396,6 @@ function MergePanel({ onClose, initialTab }) {
   const [submitting, setSubmitting] = useState(false);
   const [openSelector, setOpenSelector] = useState(null);
   const firstSelectorRef = useRef(null);
-  const panelRef = useRef(null);
-  const resizeRef = useRef(null);
 
   useEffect(() => {
     firstSelectorRef.current?.focus();
@@ -444,37 +440,9 @@ function MergePanel({ onClose, initialTab }) {
     if (created) onClose();
   }
 
-  function handleResizePointerDown(event) {
-    const panel = panelRef.current;
-    if (!panel) return;
-    const bounds = panel.getBoundingClientRect();
-    resizeRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      width: bounds.width,
-      height: bounds.height,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    event.preventDefault();
-  }
-
-  function handleResizePointerMove(event) {
-    const resize = resizeRef.current;
-    const panel = panelRef.current;
-    if (!resize || resize.pointerId !== event.pointerId || !panel) return;
-    panel.style.width = `${Math.max(0, resize.width + ((resize.startX - event.clientX) * CENTERED_RESIZE_FACTOR))}px`;
-    panel.style.height = `${Math.max(0, resize.height + event.clientY - resize.startY)}px`;
-  }
-
-  function stopResizing(event) {
-    if (resizeRef.current?.pointerId === event.pointerId) resizeRef.current = null;
-  }
-
   return (
     <div className="fuzzy-finder-overlay merge-overlay" onMouseDown={onClose}>
       <form
-        ref={panelRef}
         className="merge-panel"
         role="dialog"
         aria-label="Dataset operations"
@@ -540,15 +508,6 @@ function MergePanel({ onClose, initialTab }) {
             {submitting ? `${TABS.find(({ id }) => id === tab).label}...` : TABS.find(({ id }) => id === tab).label}
           </button>
         </div>
-        <span
-          className="merge-resize-handle"
-          aria-hidden="true"
-          onPointerDown={handleResizePointerDown}
-          onPointerMove={handleResizePointerMove}
-          onPointerUp={stopResizing}
-          onPointerCancel={stopResizing}
-          onLostPointerCapture={stopResizing}
-        />
       </form>
     </div>
   );

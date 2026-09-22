@@ -1854,18 +1854,6 @@ button:disabled {
   box-shadow: tokens.$box-shadow-49 tokens.$box-shadow-50 tokens.$box-shadow-51 rgba(tokens.$box-shadow-52, tokens.$box-shadow-53, tokens.$box-shadow-54, tokens.$box-shadow-55);
 }
 
-.merge-resize-handle {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: tokens.$width-6;
-  height: tokens.$height-10;
-  border-bottom: tokens.$border-17 solid var(--border);
-  border-left: tokens.$border-17 solid var(--border);
-  cursor: nesw-resize;
-  touch-action: none;
-}
-
 .operation-tabs {
   display: grid;
   grid-template-columns: repeat(3, tokens.$grid-template-columns-7);
