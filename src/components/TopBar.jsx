@@ -11,6 +11,12 @@ import { THEMES, THEME_ORDER } from "../utils/themes";
 import { ICON_SIZE_MENU } from "../constants";
 import logo from "../assets/logo.png";
 
+const OPERATIONS = [
+  { id: "merge", label: "Merge" },
+  { id: "append", label: "Append" },
+  { id: "aggregate", label: "Aggregate" },
+];
+
 const SHORTCUTS = [
   ["Show shortcuts", "F1"],
   ["Open file finder", "Ctrl+p"],
@@ -32,6 +38,7 @@ const SHORTCUTS = [
 
 function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [operationsSubmenuOpen, setOperationsSubmenuOpen] = useState(false);
   const [themeSubmenuOpen, setThemeSubmenuOpen] = useState(false);
   const [shortcutsSubmenuOpen, setShortcutsSubmenuOpen] = useState(false);
   const [aboutSubmenuOpen, setAboutSubmenuOpen] = useState(false);
@@ -49,6 +56,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
   useEffect(() => {
     if (!shortcutsMenuOpen) return;
     setMenuOpen(true);
+    setOperationsSubmenuOpen(false);
     setThemeSubmenuOpen(false);
     setAboutSubmenuOpen(false);
     setShortcutsSubmenuOpen(true);
@@ -70,6 +78,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
         className="file-menu"
         onMouseLeave={() => {
           setMenuOpen(false);
+          setOperationsSubmenuOpen(false);
           setThemeSubmenuOpen(false);
           setShortcutsSubmenuOpen(false);
           setAboutSubmenuOpen(false);
@@ -81,6 +90,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
           aria-label="Menu"
           onClick={() => {
             setMenuOpen((open) => !open);
+            setOperationsSubmenuOpen(false);
             setThemeSubmenuOpen(false);
             setShortcutsSubmenuOpen(false);
             setAboutSubmenuOpen(false);
@@ -121,24 +131,50 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
                 Go to
               </button>
             </li>
-            <li>
+            <li
+              className="has-submenu"
+              onMouseEnter={() => {
+                setOperationsSubmenuOpen(true);
+                setThemeSubmenuOpen(false);
+                setShortcutsSubmenuOpen(false);
+                setAboutSubmenuOpen(false);
+              }}
+              onMouseLeave={() => setOperationsSubmenuOpen(false)}
+            >
               <button
                 type="button"
                 disabled={!canOperate}
-                onClick={() => {
-                  setMenuOpen(false);
-                  setMode("data");
-                  onOpenMerge();
-                }}
+                onClick={() => setOperationsSubmenuOpen((open) => !open)}
               >
-                Operations
+                <span>Operations</span>
+                <ChevronRight size={ICON_SIZE_MENU} />
               </button>
+              {operationsSubmenuOpen && (
+                <ul className="file-menu-dropdown submenu">
+                  {OPERATIONS.map(({ id, label }) => (
+                    <li key={id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setOperationsSubmenuOpen(false);
+                          setMode("data");
+                          onOpenMerge(id);
+                        }}
+                      >
+                        {label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
             <li className="menu-separator" />
             <li
               className="has-submenu"
               onMouseEnter={() => {
                 setThemeSubmenuOpen(true);
+                setOperationsSubmenuOpen(false);
                 setShortcutsSubmenuOpen(false);
                 setAboutSubmenuOpen(false);
               }}
@@ -175,6 +211,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
               className="has-submenu"
               onMouseEnter={() => {
                 setShortcutsSubmenuOpen(true);
+                setOperationsSubmenuOpen(false);
                 setThemeSubmenuOpen(false);
                 setAboutSubmenuOpen(false);
               }}
@@ -205,6 +242,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
               className="has-submenu"
               onMouseEnter={() => {
                 setAboutSubmenuOpen(true);
+                setOperationsSubmenuOpen(false);
                 setThemeSubmenuOpen(false);
                 setShortcutsSubmenuOpen(false);
               }}

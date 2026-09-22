@@ -378,13 +378,15 @@ function AggregateFields({ sheets, sheetOrder, state, setState, openSelector, se
   );
 }
 
-function MergePanel({ onClose }) {
+function MergePanel({ onClose, initialTab }) {
   const sheets = useAppStore((state) => state.sheets);
   const sheetOrder = useAppStore((state) => state.sheetOrder);
   const createJoinedSheet = useAppStore((state) => state.createJoinedSheet);
   const createAppendedSheet = useAppStore((state) => state.createAppendedSheet);
   const createAggregatedSheet = useAppStore((state) => state.createAggregatedSheet);
-  const [tab, setTab] = useState(sheetOrder.length === 1 ? "aggregate" : "merge");
+  const [tab, setTab] = useState(
+    initialTab ?? (sheetOrder.length === 1 ? "aggregate" : "merge")
+  );
   const [merge, setMerge] = useState({ leftId: "", rightId: "", columns: [], joinType: "inner" });
   const [appendIds, setAppendIds] = useState([]);
   const [aggregate, setAggregate] = useState({

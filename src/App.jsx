@@ -99,6 +99,7 @@ function App() {
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
   const [goToLineOpen, setGoToLineOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeTab, setMergeTab] = useState(null);
   const contentRef = useRef(null);
   const dataTableRef = useRef(null);
   const highlightedLineRef = useRef(null);
@@ -325,6 +326,7 @@ function App() {
         closeSearch();
         setGoToLineOpen(false);
         setFinder(null);
+        setMergeTab(null);
         setMergeOpen(true);
         return;
       }
@@ -665,10 +667,11 @@ function App() {
           closeSearch();
           setGoToLineOpen(true);
         }}
-        onOpenMerge={() => {
+        onOpenMerge={(tab) => {
           closeSearch();
           setGoToLineOpen(false);
           setFinder(null);
+          setMergeTab(tab ?? null);
           setMergeOpen(true);
         }}
       />
@@ -733,7 +736,9 @@ function App() {
         />
       )}
       {searchOpen && mode === "data" && activeSheetId && <SearchPanel />}
-      {mergeOpen && mode === "data" && <MergePanel onClose={() => setMergeOpen(false)} />}
+      {mergeOpen && mode === "data" && (
+        <MergePanel onClose={() => setMergeOpen(false)} initialTab={mergeTab} />
+      )}
       {errorMessage && (
         <ErrorSnackbar onClose={clearError}>{errorMessage}</ErrorSnackbar>
       )}
