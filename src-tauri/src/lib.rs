@@ -938,6 +938,7 @@ fn aggregate_dataset(
     source: JoinSource,
     aggregations: &[AggregationSpec],
     group_by: &[String],
+    pivot_table: bool,
 ) -> Result<Dataset, String> {
     if aggregations.is_empty() {
         return Err("Select at least one column to aggregate".into());
@@ -962,6 +963,18 @@ fn aggregate_dataset(
         .any(|index| aggregation_indices.contains(index))
     {
         return Err("Group-by columns cannot also be aggregated".into());
+    }
+    if pivot_table {
+        if group_indices.len() != 2 {
+            return Err(
+                "Pivot tables need exactly two group-by columns: one for rows and one for columns"
+                    .into(),
+            );
+        }
+        if aggregations.len() != 1 {
+            return Err("Pivot tables support exactly one aggregated measure".into());
+        }
+        return pivot_aggregate_dataset(&source, &aggregations[0], aggregation_indices[0], &group_indices);
     }
     let mut grouped = Vec::<(Vec<String>, Vec<RowIndex>)>::new();
     let mut positions = HashMap::<Vec<String>, usize>::new();
@@ -1026,6 +1039,93 @@ fn aggregate_dataset(
         column_types,
         source.separator,
     ))
+}
+
+fn pivot_aggregate_dataset(
+    source: &JoinSource,
+    aggregation: &AggregationSpec,
+    aggregation_index: usize,
+    group_indices: &[usize],
+) -> Result<Dataset, String> {
+    let row_index = group_indices[0];
+    let col_index = group_indices[1];
+
+    let mut cells = HashMap::<(String, String), Vec<RowIndex>>::new();
+    let mut row_keys = Vec::<String>::new();
+    let mut row_seen = HashSet::<String>::new();
+    let mut col_keys = Vec::<String>::new();
+    let mut col_seen = HashSet::<String>::new();
+
+    for row in source.order.iter().copied() {
+        let row_key = source.rows.cell(row as usize, row_index).to_owned();
+        let col_key = source.rows.cell(row as usize, col_index).to_owned();
+        if row_seen.insert(row_key.clone()) {
+            row_keys.push(row_key.clone());
+        }
+        if col_seen.insert(col_key.clone()) {
+            col_keys.push(col_key.clone());
+        }
+        cells.entry((row_key, col_key)).or_default().push(row);
+    }
+
+    sort_pivot_keys(&mut row_keys, &source.column_types[row_index]);
+    sort_pivot_keys(&mut col_keys, &source.column_types[col_index]);
+
+    let mut output_columns = Vec::with_capacity(col_keys.len() + 1);
+    output_columns.push(source.columns[row_index].clone());
+    output_columns.extend(col_keys.iter().cloned());
+
+    let mut rows = PackedRows::with_capacity(output_columns.len(), 0);
+    for row_key in &row_keys {
+        let mut fields = Vec::with_capacity(output_columns.len());
+        fields.push(row_key.clone());
+        for col_key in &col_keys {
+            let value = match cells.get(&(row_key.clone(), col_key.clone())) {
+                Some(group_rows) => {
+                    aggregate_value(source, group_rows, aggregation_index, &aggregation.function)?
+                }
+                None => String::new(),
+            };
+            fields.push(value);
+        }
+        rows.push_record(&csv::StringRecord::from(fields))?;
+    }
+
+    let mut column_types = Vec::with_capacity(output_columns.len());
+    column_types.push(source.column_types[row_index].clone());
+    let value_type = match aggregation.function.as_str() {
+        "mode" | "min" | "max" => source.column_types[aggregation_index].clone(),
+        _ => "number".to_owned(),
+    };
+    column_types.extend(col_keys.iter().map(|_| value_type.clone()));
+
+    Ok(derived_dataset(
+        output_columns,
+        rows,
+        column_types,
+        source.separator,
+    ))
+}
+
+fn sort_pivot_keys(keys: &mut [String], column_type: &str) {
+    keys.sort_by(|a, b| match (a.is_empty(), b.is_empty()) {
+        (true, true) => Ordering::Equal,
+        (true, false) => Ordering::Greater,
+        (false, true) => Ordering::Less,
+        (false, false) => match column_type {
+            "number" => a
+                .parse::<f64>()
+                .ok()
+                .zip(b.parse::<f64>().ok())
+                .map(|(a, b)| a.partial_cmp(&b).unwrap_or(Ordering::Equal))
+                .unwrap_or_else(|| a.cmp(b)),
+            "date" => parse_date(a)
+                .zip(parse_date(b))
+                .map(|(a, b)| a.cmp(&b))
+                .unwrap_or_else(|| a.cmp(b)),
+            _ => a.cmp(b),
+        },
+    });
 }
 
 fn is_number(value: &str) -> bool {
@@ -1456,11 +1556,12 @@ async fn create_aggregated_dataset(
     dataset_id: String,
     aggregations: Vec<AggregationSpec>,
     group_by: Vec<String>,
+    pivot_table: bool,
     state: State<'_, AppState>,
 ) -> Result<SheetMetadata, String> {
     let source = operation_source(&state, &dataset_id)?;
     let aggregated = tauri::async_runtime::spawn_blocking(move || {
-        aggregate_dataset(source, &aggregations, &group_by)
+        aggregate_dataset(source, &aggregations, &group_by, pivot_table)
     })
     .await
     .map_err(|error| error.to_string())??;
@@ -2211,9 +2312,13 @@ mod tests {
             },
         ];
 
-        let aggregated =
-            aggregate_dataset(source, &aggregations, &["region".into(), "team".into()])
-                .expect("aggregate dataset");
+        let aggregated = aggregate_dataset(
+            source,
+            &aggregations,
+            &["region".into(), "team".into()],
+            false,
+        )
+        .expect("aggregate dataset");
 
         assert_eq!(
             aggregated.columns,
@@ -2222,6 +2327,42 @@ mod tests {
         assert_eq!(
             owned_rows(&aggregated),
             [["North", "A", "15", "2"], ["North", "B", "5", "1"]]
+        );
+    }
+
+    #[test]
+    fn pivots_aggregated_values_into_a_crosstab() {
+        let mut source = join_source(
+            &["region", "date", "units"],
+            &[
+                &["East", "2005-02-28", "10"],
+                &["East", "2005-01-31", "5"],
+                &["West", "2005-01-31", "3"],
+                &["", "2005-01-31", "1"],
+            ],
+        );
+        source.column_types[2] = "number".into();
+        let aggregations = vec![AggregationSpec {
+            column: "units".into(),
+            function: "sum".into(),
+        }];
+
+        let pivoted = aggregate_dataset(
+            source,
+            &aggregations,
+            &["region".into(), "date".into()],
+            true,
+        )
+        .expect("pivot dataset");
+
+        assert_eq!(pivoted.columns, ["region", "2005-01-31", "2005-02-28"]);
+        assert_eq!(
+            owned_rows(&pivoted),
+            [
+                ["East", "5", "10"],
+                ["West", "3", ""],
+                ["", "1", ""],
+            ]
         );
     }
 

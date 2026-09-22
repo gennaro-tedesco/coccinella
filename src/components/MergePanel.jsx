@@ -269,6 +269,7 @@ function AggregateFields({ sheets, sheetOrder, state, setState, openSelector, se
   const sheet = state.datasetId ? sheets[state.datasetId] : null;
   const aggregatedColumns = Object.keys(state.aggregations);
   const groupColumns = sheet ? sheet.columns.filter((column) => !aggregatedColumns.includes(column)) : [];
+  const canPivot = aggregatedColumns.length === 1 && state.groupBy.length === 2;
   return (
     <>
       <div className="merge-dataset-field">
@@ -305,7 +306,11 @@ function AggregateFields({ sheets, sheetOrder, state, setState, openSelector, se
                           const aggregations = { ...state.aggregations };
                           if (selected) delete aggregations[column];
                           else aggregations[column] = options[0][0];
-                          setState({ ...state, aggregations, groupBy: state.groupBy.filter((value) => value !== column) });
+                          const groupBy = state.groupBy.filter((value) => value !== column);
+                          const pivotTable = state.pivotTable
+                            && Object.keys(aggregations).length === 1
+                            && groupBy.length === 2;
+                          setState({ ...state, aggregations, groupBy, pivotTable });
                         }}
                       />
                       <span>{column}</span>
@@ -335,12 +340,15 @@ function AggregateFields({ sheets, sheetOrder, state, setState, openSelector, se
                     <input
                       type="checkbox"
                       checked={state.groupBy.includes(column)}
-                      onChange={() => setState({
-                        ...state,
-                        groupBy: state.groupBy.includes(column)
+                      onChange={() => {
+                        const groupBy = state.groupBy.includes(column)
                           ? state.groupBy.filter((value) => value !== column)
-                          : [...state.groupBy, column],
-                      })}
+                          : [...state.groupBy, column];
+                        const pivotTable = state.pivotTable
+                          && aggregatedColumns.length === 1
+                          && groupBy.length === 2;
+                        setState({ ...state, groupBy, pivotTable });
+                      }}
                     />
                     {column}
                   </label>
@@ -355,6 +363,7 @@ function AggregateFields({ sheets, sheetOrder, state, setState, openSelector, se
           <input
             type="checkbox"
             checked={state.pivotTable}
+            disabled={!canPivot}
             onChange={(event) => setState({ ...state, pivotTable: event.target.checked })}
           />
           Display result as a pivot table
@@ -362,6 +371,9 @@ function AggregateFields({ sheets, sheetOrder, state, setState, openSelector, se
       )}
       {sheet && groupColumns.length === 0 && (
         <div className="merge-empty">Select fewer aggregate columns to make columns available for grouping</div>
+      )}
+      {sheet && groupColumns.length > 0 && !canPivot && (
+        <div className="merge-empty">Pivot tables need exactly one aggregated column and two group-by columns</div>
       )}
     </>
   );
@@ -403,7 +415,10 @@ function MergePanel({ onClose }) {
     ? merge.leftId && merge.rightId && merge.columns.length > 0
     : tab === "append"
       ? appendIds.length >= 2
-      : aggregate.datasetId && Object.keys(aggregate.aggregations).length > 0;
+      : aggregate.datasetId
+        && Object.keys(aggregate.aggregations).length > 0
+        && (!aggregate.pivotTable
+          || (Object.keys(aggregate.aggregations).length === 1 && aggregate.groupBy.length === 2));
 
   async function handleSubmit(event) {
     event.preventDefault();

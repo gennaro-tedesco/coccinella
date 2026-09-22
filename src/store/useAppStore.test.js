@@ -247,6 +247,7 @@ describe("application store dataset lifecycle", () => {
       datasetId: "root",
       aggregations,
       groupBy: ["country"],
+      pivotTable: true,
     });
     expect(created).toBe(true);
     expect(useAppStore.getState().sheets.aggregated).toMatchObject({

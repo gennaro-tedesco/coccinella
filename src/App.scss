@@ -1089,6 +1089,10 @@ body,
   background-color: color-mix(in srgb, var(--accent) tokens.$background-color-9, var(--bg-alt));
 }
 
+.data-table.pivot-table thead tr.pivot-super-header th {
+  text-align: center;
+}
+
 .th-content {
   display: flex;
   align-items: center;

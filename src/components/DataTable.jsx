@@ -53,6 +53,8 @@ function DataTable(_props, ref) {
   const tableRef = useRef(null);
   const thRefs = useRef({});
   const pendingSnapRef = useRef(null);
+  const pivotSuperHeaderRef = useRef(null);
+  const [pivotSuperHeaderHeight, setPivotSuperHeaderHeight] = useState(0);
 
   useImperativeHandle(ref, () => ({
     scrollToTop() {
@@ -158,6 +160,21 @@ function DataTable(_props, ref) {
     return () => observer.disconnect();
   }, [page]);
 
+  useEffect(() => {
+    const superHeader = pivotSuperHeaderRef.current;
+    if (!superHeader) {
+      setPivotSuperHeaderHeight(0);
+      return undefined;
+    }
+    function measure() {
+      setPivotSuperHeaderHeight(superHeader.getBoundingClientRect().height);
+    }
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(superHeader);
+    return () => observer.disconnect();
+  }, [sheet?.pivotTable, sheet?.datasetId]);
+
   const columns = useMemo(
     () =>
       (sheet?.columns ?? []).map((name) => {
@@ -168,7 +185,10 @@ function DataTable(_props, ref) {
           header: name,
           cell: (info) => {
             const value = info.getValue();
-            if (value === null || value === undefined || value === "") return value;
+            if (value === null || value === undefined || value === "") {
+              if (sheet?.pivotTable && name === sheet?.pivotRowDimension) return "(blank)";
+              return value;
+            }
             if (sheet?.columnTypes[name] === "number") {
               const number = Number(value);
               if (!Number.isNaN(number)) {
@@ -186,6 +206,8 @@ function DataTable(_props, ref) {
       sheet?.sourceColumns,
       sheet?.columnTypes,
       sheet?.columnPrecision,
+      sheet?.pivotTable,
+      sheet?.pivotRowDimension,
     ],
   );
 
@@ -284,6 +306,14 @@ function DataTable(_props, ref) {
   return (
     <table className={`data-table${sheet.pivotTable ? " pivot-table" : ""}`} ref={tableRef}>
       <thead data-source-line={SOURCE_HEADER_LINE}>
+        {sheet.pivotTable && (
+          <tr className="pivot-super-header" ref={pivotSuperHeaderRef}>
+            <th className="th-cell">{sheet.pivotMeasureLabel}</th>
+            <th className="th-cell" colSpan={table.getVisibleLeafColumns().length - 1}>
+              {sheet.pivotColumnDimension}
+            </th>
+          </tr>
+        )}
         {table.getHeaderGroups().map((headerGroup) => (
           <tr key={headerGroup.id}>
             {headerGroup.headers.map((header) => {
@@ -306,6 +336,7 @@ function DataTable(_props, ref) {
                   ref={(element) => {
                     thRefs.current[header.id] = element;
                   }}
+                  style={sheet.pivotTable ? { top: pivotSuperHeaderHeight } : undefined}
                   aria-selected={isSelected || undefined}
                   aria-sort={ariaSort}
                   onMouseEnter={() => setHoveredColumn(header.id)}

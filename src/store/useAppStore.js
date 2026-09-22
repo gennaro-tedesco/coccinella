@@ -321,6 +321,7 @@ export const useAppStore = create((set, get) => ({
         datasetId: source.datasetId,
         aggregations,
         groupBy,
+        pivotTable,
       });
     } catch (error) {
       get().showError(error);
@@ -328,6 +329,8 @@ export const useAppStore = create((set, get) => ({
     }
     set((state) => {
       const id = metadata.datasetId;
+      const [rowDimension, columnDimension] = groupBy;
+      const measure = aggregations[0];
       return {
         sheets: {
           ...state.sheets,
@@ -337,7 +340,12 @@ export const useAppStore = create((set, get) => ({
               `${pivotTable ? "Pivot" : "Aggregate"}: ${source.filename}`,
             ),
             pivotTable,
-            pivotDimensions: pivotTable ? groupBy : [],
+            pivotDimensions: pivotTable ? [rowDimension] : [],
+            pivotRowDimension: pivotTable ? rowDimension : null,
+            pivotColumnDimension: pivotTable ? columnDimension : null,
+            pivotMeasureLabel: pivotTable
+              ? `${measure.function.replace(/_/g, " ")} of ${measure.column}`
+              : null,
           },
         },
         sheetOrder: [...state.sheetOrder, id],
