@@ -16,7 +16,11 @@
 
 ## Installation
 
-TBD
+Clone the repository and
+
+```bash
+npm run tauri build
+```
 
 ## Features
 

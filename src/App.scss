@@ -1084,6 +1084,11 @@ body,
   box-shadow: inset tokens.$box-shadow-8 tokens.$box-shadow-9 var(--accent);
 }
 
+.data-table.pivot-table th.pivot-dimension {
+  color: var(--accent);
+  background-color: color-mix(in srgb, var(--accent) tokens.$background-color-9, var(--bg-alt));
+}
+
 .th-content {
   display: flex;
   align-items: center;
@@ -1257,6 +1262,11 @@ body,
 
 .data-table td.selected {
   background-color: color-mix(in srgb, var(--accent) tokens.$background-color-10, var(--bg));
+}
+
+.data-table.pivot-table td.pivot-dimension {
+  font-weight: tokens.$font-weight-6;
+  background-color: var(--highlight);
 }
 
 .data-table td.search-match {
@@ -1829,33 +1839,43 @@ button:disabled {
   padding: tokens.$padding-90;
   gap: tokens.$gap-25;
   overflow: auto;
+  scrollbar-gutter: stable;
   background-color: var(--bg-alt);
   border: tokens.$border-15 solid var(--border);
   border-radius: tokens.$border-radius-37;
   box-shadow: tokens.$box-shadow-49 tokens.$box-shadow-50 tokens.$box-shadow-51 rgba(tokens.$box-shadow-52, tokens.$box-shadow-53, tokens.$box-shadow-54, tokens.$box-shadow-55);
 }
 
-.merge-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+.operation-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, tokens.$grid-template-columns-7);
+  gap: tokens.$gap-3;
+  border-bottom: tokens.$border-bottom-3 solid var(--border);
 }
 
-.merge-header h2 {
-  margin: tokens.$margin-19;
-  font-size: tokens.$font-size-23;
-}
-
-.merge-header p {
-  margin: tokens.$margin-20 tokens.$margin-21 tokens.$margin-21;
-  color: var(--fg-dark);
-  font-size: tokens.$font-size-24;
-}
-
-.merge-close {
-  padding: tokens.$padding-91;
+.operation-tabs button {
+  padding: tokens.$padding-9 tokens.$padding-10;
   border: none;
+  border-bottom: tokens.$border-bottom-7 solid transparent;
+  border-radius: tokens.$border-radius-3;
   background: none;
+}
+
+.operation-tabs button:hover,
+.operation-tabs button.active {
+  color: var(--accent);
+  background-color: var(--highlight);
+}
+
+.operation-tabs button.active {
+  border-bottom-color: var(--accent);
+  font-weight: tokens.$font-weight-2;
+}
+
+.operation-content {
+  display: flex;
+  flex-direction: column;
+  gap: tokens.$gap-25;
 }
 
 .merge-datasets {
@@ -1877,6 +1897,7 @@ button:disabled {
 .merge-dataset-selector,
 .merge-column-selector {
   position: relative;
+  width: 100%;
 }
 
 .merge-dataset-trigger {
@@ -1919,6 +1940,105 @@ button:disabled {
   background-color: var(--bg);
   border-radius: tokens.$border-radius-38;
   text-align: center;
+}
+
+.operation-column-list {
+  display: flex;
+  flex-direction: column;
+  gap: tokens.$gap-27;
+  color: var(--fg-dark);
+  font-size: tokens.$font-size-25;
+}
+
+.operation-column-list:focus {
+  outline: none;
+}
+
+.aggregate-lists {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(tokens.$min-width-16, tokens.$grid-template-columns-7));
+  gap: tokens.$gap-26;
+}
+
+.operation-column-list > ul {
+  max-height: tokens.$max-height-3;
+  margin: tokens.$margin-22;
+  padding: tokens.$padding-8;
+  padding-right: tokens.$padding-102;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  list-style: none;
+  color: var(--fg);
+  background-color: var(--bg);
+  border: tokens.$border-15 solid var(--border);
+  border-radius: tokens.$border-radius-38;
+}
+
+.operation-column-list label.disabled {
+  color: var(--disabled);
+  cursor: not-allowed;
+}
+
+.operation-checkbox {
+  display: flex;
+  align-items: center;
+  gap: tokens.$gap-12;
+  color: var(--fg);
+  font-size: tokens.$font-size-25;
+  cursor: pointer;
+}
+
+.operation-checkbox input[type="checkbox"] {
+  position: relative;
+  flex-shrink: tokens.$flex-shrink-1;
+  width: tokens.$width-6;
+  height: tokens.$height-10;
+  margin: tokens.$margin-22;
+  padding: tokens.$padding-94;
+}
+
+.operation-checkbox input[type="checkbox"]:checked {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.operation-checkbox input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  inset: tokens.$inset-3;
+  width: tokens.$width-18;
+  height: tokens.$height-15;
+  margin: auto;
+  border: solid var(--bg-alt);
+  border-width: tokens.$border-width-1 tokens.$border-width-2 tokens.$border-width-3 tokens.$border-width-4;
+  transform: rotate(tokens.$transform-6);
+}
+
+.aggregate-column-list > li {
+  display: flex;
+  align-items: center;
+  gap: tokens.$gap-12;
+}
+
+.aggregate-column-list > li > label {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+
+.aggregate-column-list > li > label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aggregate-column-list > li > .merge-dataset-selector {
+  flex: none;
+  width: tokens.$grid-template-columns-9;
+}
+
+.aggregate-column-list > li > .merge-dataset-selector > .merge-dataset-trigger {
+  width: tokens.$grid-template-columns-9;
 }
 
 .merge-types {
@@ -2020,7 +2140,14 @@ button:disabled {
   font-weight: 600;
 }
 
+.merge-actions .merge-submit:disabled {
+  color: var(--fg-dark);
+  background-color: var(--disabled);
+  border-color: var(--disabled);
+}
+
 @media (max-width: tokens.$selector-41) {
+  .aggregate-lists,
   .merge-datasets,
   .merge-type-grid {
     grid-template-columns: tokens.$grid-template-columns-8;

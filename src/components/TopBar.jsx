@@ -16,7 +16,7 @@ const SHORTCUTS = [
   ["Open file finder", "Ctrl+p"],
   ["Go to sheet", "Ctrl+b"],
   ["Go to line", ":"],
-  ["Merge datasets", "="],
+  ["Dataset operations", "="],
   ["Toggle side panels", "z"],
   ["Previous sheet", "Ctrl+^"],
   ["Scroll left", "h"],
@@ -39,7 +39,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
   const setMode = useAppStore((state) => state.setMode);
   const openSheet = useAppStore((state) => state.openSheet);
   const activeSheetId = useAppStore((state) => state.activeSheetId);
-  const canMerge = useAppStore((state) => state.sheetOrder.length >= 2);
+  const canOperate = useAppStore((state) => state.sheetOrder.length >= 1);
   const theme = useAppStore((state) => state.theme);
   const setTheme = useAppStore((state) => state.setTheme);
   const showError = useAppStore((state) => state.showError);
@@ -124,14 +124,14 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
             <li>
               <button
                 type="button"
-                disabled={!canMerge}
+                disabled={!canOperate}
                 onClick={() => {
                   setMenuOpen(false);
                   setMode("data");
                   onOpenMerge();
                 }}
               >
-                Merge
+                Operations
               </button>
             </li>
             <li className="menu-separator" />

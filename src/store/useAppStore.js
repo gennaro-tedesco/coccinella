@@ -5,6 +5,36 @@ import { create } from "zustand";
 import { DEFAULT_COLUMN_PRECISION } from "../constants";
 import { descendantSheetIds } from "../utils/sheets";
 
+function derivedSheet(metadata, filename) {
+  const columnVisibility = {};
+  const columnPrecision = {};
+  for (const column of metadata.columns) {
+    columnVisibility[column] = true;
+    columnPrecision[column] = DEFAULT_COLUMN_PRECISION;
+  }
+  return {
+    id: metadata.datasetId,
+    filename,
+    path: null,
+    datasetId: metadata.datasetId,
+    separator: metadata.separator,
+    rowCount: metadata.rowCount,
+    columns: metadata.columns,
+    sourceColumns: metadata.columns,
+    columnVisibility,
+    columnTypes: metadata.columnTypes,
+    columnPrecision,
+    selectedColumns: [],
+    sorting: [],
+    children: [],
+    filterOf: null,
+    sizeBytes: metadata.sizeBytes,
+    nullCount: metadata.nullCount,
+    dataVersion: 0,
+    contentVersion: 0,
+  };
+}
+
 export const useAppStore = create((set, get) => ({
   mode: "data",
   setMode: (mode) => set({ mode }),
@@ -238,35 +268,76 @@ export const useAppStore = create((set, get) => ({
     }
     set((state) => {
       const id = metadata.datasetId;
-      const columnVisibility = {};
-      const columnPrecision = {};
-      for (const column of metadata.columns) {
-        columnVisibility[column] = true;
-        columnPrecision[column] = DEFAULT_COLUMN_PRECISION;
-      }
+      return {
+        sheets: {
+          ...state.sheets,
+          [id]: derivedSheet(metadata, `${left.filename} + ${right.filename}`),
+        },
+        sheetOrder: [...state.sheetOrder, id],
+        activeSheetId: id,
+        previousSheetId: state.activeSheetId,
+      };
+    });
+    return true;
+  },
+
+  createAppendedSheet: async (ids) => {
+    const sheets = get().sheets;
+    const selected = ids.map((id) => sheets[id]).filter(Boolean);
+    if (selected.length !== ids.length) return false;
+    let metadata;
+    try {
+      metadata = await invoke("create_appended_dataset", {
+        datasetIds: selected.map((sheet) => sheet.datasetId),
+      });
+    } catch (error) {
+      get().showError(error);
+      return false;
+    }
+    set((state) => {
+      const id = metadata.datasetId;
+      return {
+        sheets: {
+          ...state.sheets,
+          [id]: derivedSheet(
+            metadata,
+            `Append: ${selected.map((sheet) => sheet.filename).join(", ")}`,
+          ),
+        },
+        sheetOrder: [...state.sheetOrder, id],
+        activeSheetId: id,
+        previousSheetId: state.activeSheetId,
+      };
+    });
+    return true;
+  },
+
+  createAggregatedSheet: async (sourceId, aggregations, groupBy, pivotTable) => {
+    const source = get().sheets[sourceId];
+    if (!source) return false;
+    let metadata;
+    try {
+      metadata = await invoke("create_aggregated_dataset", {
+        datasetId: source.datasetId,
+        aggregations,
+        groupBy,
+      });
+    } catch (error) {
+      get().showError(error);
+      return false;
+    }
+    set((state) => {
+      const id = metadata.datasetId;
       return {
         sheets: {
           ...state.sheets,
           [id]: {
-            id,
-            filename: `${left.filename} + ${right.filename}`,
-            path: null,
-            datasetId: id,
-            separator: metadata.separator,
-            rowCount: metadata.rowCount,
-            columns: metadata.columns,
-            sourceColumns: metadata.columns,
-            columnVisibility,
-            columnTypes: metadata.columnTypes,
-            columnPrecision,
-            selectedColumns: [],
-            sorting: [],
-            children: [],
-            filterOf: null,
-            sizeBytes: metadata.sizeBytes,
-            nullCount: metadata.nullCount,
-            dataVersion: 0,
-            contentVersion: 0,
+            ...derivedSheet(
+              metadata,
+              `${pivotTable ? "Pivot" : "Aggregate"}: ${source.filename}`,
+            ),
+            pivotTable,
+            pivotDimensions: pivotTable ? groupBy : [],
           },
         },
         sheetOrder: [...state.sheetOrder, id],

@@ -282,7 +282,7 @@ function DataTable(_props, ref) {
     Math.max(0, sheet.rowCount - page.offset - page.rows.length) * rowHeight;
 
   return (
-    <table className="data-table" ref={tableRef}>
+    <table className={`data-table${sheet.pivotTable ? " pivot-table" : ""}`} ref={tableRef}>
       <thead data-source-line={SOURCE_HEADER_LINE}>
         {table.getHeaderGroups().map((headerGroup) => (
           <tr key={headerGroup.id}>
@@ -302,7 +302,7 @@ function DataTable(_props, ref) {
               return (
                 <th
                   key={header.id}
-                  className={`th-cell${isSelected ? " selected" : ""}`}
+                  className={`th-cell${isSelected ? " selected" : ""}${sheet.pivotDimensions?.includes(header.id) ? " pivot-dimension" : ""}`}
                   ref={(element) => {
                     thRefs.current[header.id] = element;
                   }}
@@ -391,6 +391,7 @@ function DataTable(_props, ref) {
                   isSelected && "selected",
                   isMatch && "search-match",
                   isActiveMatch && "search-match-active",
+                  sheet.pivotDimensions?.includes(cell.column.id) && "pivot-dimension",
                 ]
                   .filter(Boolean)
                   .join(" ");

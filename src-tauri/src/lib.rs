@@ -173,6 +173,13 @@ struct JoinSource {
     separator: u8,
 }
 
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AggregationSpec {
+    column: String,
+    function: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SheetMetadata {
@@ -750,6 +757,277 @@ fn join_datasets(
     })
 }
 
+fn derived_dataset(
+    columns: Vec<String>,
+    mut rows: PackedRows,
+    column_types: Vec<String>,
+    separator: u8,
+) -> Dataset {
+    rows.shrink_to_fit();
+    let view = Arc::new(
+        (0..rows.len())
+            .map(|index| RowIndex::try_from(index).expect("row limit fits in u32"))
+            .collect::<Vec<_>>(),
+    );
+    Dataset {
+        columns,
+        rows: Arc::new(rows),
+        order: Arc::clone(&view),
+        view,
+        column_types,
+        separator,
+        size_bytes: 0,
+        source_id: None,
+        filter: None,
+        sorting: Vec::new(),
+        search: None,
+        search_matches: Vec::new(),
+        sort_generation: 0,
+        search_generation: 0,
+        source_path: None,
+    }
+}
+
+fn append_datasets(sources: Vec<JoinSource>) -> Result<Dataset, String> {
+    let Some(first) = sources.first() else {
+        return Err("Select at least two datasets to append".into());
+    };
+    if sources.len() < 2 {
+        return Err("Select at least two datasets to append".into());
+    }
+    if sources.iter().any(|source| source.columns != first.columns) {
+        return Err("Appended datasets must have exactly the same columns".into());
+    }
+    let row_count = sources
+        .iter()
+        .map(|source| source.order.len())
+        .sum::<usize>();
+    if row_count > MAX_CSV_ROWS {
+        return Err(format!(
+            "Appended data exceeds the {MAX_CSV_ROWS}-row limit"
+        ));
+    }
+    if first.columns.len().saturating_mul(row_count + 1) > MAX_CSV_FIELDS {
+        return Err(format!(
+            "Appended data exceeds the {MAX_CSV_FIELDS}-field limit"
+        ));
+    }
+    let mut rows = PackedRows::with_capacity(first.columns.len(), 0);
+    for source in &sources {
+        for row_index in source.order.iter() {
+            rows.push_record(&csv::StringRecord::from(
+                (0..source.columns.len())
+                    .map(|column_index| source.rows.cell(*row_index as usize, column_index))
+                    .collect::<Vec<_>>(),
+            ))?;
+        }
+    }
+    let column_types = infer_column_types(&rows, first.columns.len());
+    Ok(derived_dataset(
+        first.columns.clone(),
+        rows,
+        column_types,
+        first.separator,
+    ))
+}
+
+fn aggregate_value(
+    source: &JoinSource,
+    rows: &[RowIndex],
+    column_index: usize,
+    function: &str,
+) -> Result<String, String> {
+    let values = rows
+        .iter()
+        .map(|row| source.rows.cell(*row as usize, column_index))
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    match function {
+        "count" => Ok(values.len().to_string()),
+        "count_distinct" => Ok(values
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>()
+            .len()
+            .to_string()),
+        "mode" => {
+            let mut counts = HashMap::<&str, usize>::new();
+            for value in values {
+                *counts.entry(value).or_default() += 1;
+            }
+            Ok(counts
+                .into_iter()
+                .max_by(|(left_value, left_count), (right_value, right_count)| {
+                    left_count
+                        .cmp(right_count)
+                        .then_with(|| right_value.cmp(left_value))
+                })
+                .map(|(value, _)| value.to_owned())
+                .unwrap_or_default())
+        }
+        "min" | "max" if source.column_types[column_index] == "number" => {
+            let numbers = values
+                .iter()
+                .map(|value| {
+                    value
+                        .parse::<f64>()
+                        .map_err(|_| format!("Invalid number: {value}"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let selected = if function == "min" {
+                numbers.into_iter().reduce(f64::min)
+            } else {
+                numbers.into_iter().reduce(f64::max)
+            };
+            Ok(selected.map(|value| value.to_string()).unwrap_or_default())
+        }
+        "min" | "max" if source.column_types[column_index] == "date" => {
+            let mut dated = values
+                .iter()
+                .map(|value| {
+                    parse_date(value)
+                        .map(|date| (date, *value))
+                        .ok_or_else(|| format!("Invalid date: {value}"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            dated.sort_by_key(|(date, _)| *date);
+            Ok(if function == "min" {
+                dated.first()
+            } else {
+                dated.last()
+            }
+            .map(|(_, value)| (*value).to_owned())
+            .unwrap_or_default())
+        }
+        "sum" | "mean" | "standard_deviation" if source.column_types[column_index] == "number" => {
+            let numbers = values
+                .iter()
+                .map(|value| {
+                    value
+                        .parse::<f64>()
+                        .map_err(|_| format!("Invalid number: {value}"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if numbers.is_empty() {
+                return Ok(String::new());
+            }
+            let sum = numbers.iter().sum::<f64>();
+            let value = match function {
+                "sum" => sum,
+                "mean" => sum / numbers.len() as f64,
+                _ => {
+                    let mean = sum / numbers.len() as f64;
+                    (numbers
+                        .iter()
+                        .map(|value| (value - mean).powi(2))
+                        .sum::<f64>()
+                        / numbers.len() as f64)
+                        .sqrt()
+                }
+            };
+            Ok(value.to_string())
+        }
+        _ => Err(format!(
+            "Aggregation {function} is not supported for {} columns",
+            source.column_types[column_index]
+        )),
+    }
+}
+
+fn aggregate_dataset(
+    source: JoinSource,
+    aggregations: &[AggregationSpec],
+    group_by: &[String],
+) -> Result<Dataset, String> {
+    if aggregations.is_empty() {
+        return Err("Select at least one column to aggregate".into());
+    }
+    let column_index = |column: &str| {
+        source
+            .columns
+            .iter()
+            .position(|candidate| candidate == column)
+            .ok_or_else(|| format!("Column not found: {column}"))
+    };
+    let group_indices = group_by
+        .iter()
+        .map(|column| column_index(column))
+        .collect::<Result<Vec<_>, _>>()?;
+    let aggregation_indices = aggregations
+        .iter()
+        .map(|spec| column_index(&spec.column))
+        .collect::<Result<Vec<_>, _>>()?;
+    if group_indices
+        .iter()
+        .any(|index| aggregation_indices.contains(index))
+    {
+        return Err("Group-by columns cannot also be aggregated".into());
+    }
+    let mut grouped = Vec::<(Vec<String>, Vec<RowIndex>)>::new();
+    let mut positions = HashMap::<Vec<String>, usize>::new();
+    if group_indices.is_empty() {
+        grouped.push((Vec::new(), Vec::new()));
+        positions.insert(Vec::new(), 0);
+    }
+    for row in source.order.iter().copied() {
+        let key = group_indices
+            .iter()
+            .map(|index| source.rows.cell(row as usize, *index).to_owned())
+            .collect::<Vec<_>>();
+        let position = match positions.get(&key) {
+            Some(position) => *position,
+            None => {
+                let position = grouped.len();
+                positions.insert(key.clone(), position);
+                grouped.push((key, Vec::new()));
+                position
+            }
+        };
+        grouped[position].1.push(row);
+    }
+    let output_columns = group_by
+        .iter()
+        .cloned()
+        .chain(
+            aggregations
+                .iter()
+                .map(|spec| format!("{} of {}", spec.function.replace('_', " "), spec.column)),
+        )
+        .collect::<Vec<_>>();
+    let mut rows = PackedRows::with_capacity(output_columns.len(), 0);
+    for (key, group_rows) in grouped {
+        let mut record = csv::StringRecord::from(key);
+        for (spec, column_index) in aggregations.iter().zip(&aggregation_indices) {
+            record.push_field(&aggregate_value(
+                &source,
+                &group_rows,
+                *column_index,
+                &spec.function,
+            )?);
+        }
+        rows.push_record(&record)?;
+    }
+    let mut column_types = group_indices
+        .iter()
+        .map(|index| source.column_types[*index].clone())
+        .collect::<Vec<_>>();
+    column_types.extend(
+        aggregations
+            .iter()
+            .zip(&aggregation_indices)
+            .map(|(spec, index)| match spec.function.as_str() {
+                "mode" | "min" | "max" => source.column_types[*index].clone(),
+                _ => "number".to_owned(),
+            }),
+    );
+    Ok(derived_dataset(
+        output_columns,
+        rows,
+        column_types,
+        source.separator,
+    ))
+}
+
 fn is_number(value: &str) -> bool {
     static NUMBER: OnceLock<Regex> = OnceLock::new();
     NUMBER
@@ -1144,6 +1422,49 @@ async fn create_joined_dataset(
     .await
     .map_err(|error| error.to_string())??;
     insert_dataset(joined, &state)
+}
+
+fn operation_source(state: &State<'_, AppState>, id: &str) -> Result<JoinSource, String> {
+    let handle = dataset(state, id)?;
+    let dataset = lock_dataset(&handle)?;
+    Ok(JoinSource {
+        columns: dataset.columns.clone(),
+        rows: Arc::clone(&dataset.rows),
+        order: Arc::clone(&dataset.order),
+        column_types: dataset.column_types.clone(),
+        separator: dataset.separator,
+    })
+}
+
+#[tauri::command]
+async fn create_appended_dataset(
+    dataset_ids: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<SheetMetadata, String> {
+    let sources = dataset_ids
+        .iter()
+        .map(|id| operation_source(&state, id))
+        .collect::<Result<Vec<_>, _>>()?;
+    let appended = tauri::async_runtime::spawn_blocking(move || append_datasets(sources))
+        .await
+        .map_err(|error| error.to_string())??;
+    insert_dataset(appended, &state)
+}
+
+#[tauri::command]
+async fn create_aggregated_dataset(
+    dataset_id: String,
+    aggregations: Vec<AggregationSpec>,
+    group_by: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<SheetMetadata, String> {
+    let source = operation_source(&state, &dataset_id)?;
+    let aggregated = tauri::async_runtime::spawn_blocking(move || {
+        aggregate_dataset(source, &aggregations, &group_by)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    insert_dataset(aggregated, &state)
 }
 
 #[tauri::command]
@@ -1710,6 +2031,8 @@ pub fn run() {
             rescan_csv_file,
             create_filtered_dataset,
             create_joined_dataset,
+            create_appended_dataset,
+            create_aggregated_dataset,
             close_dataset,
             get_rows,
             sort_dataset,
@@ -1843,6 +2166,62 @@ mod tests {
                 ["3", "", "", "Z", "right-3"],
                 ["", "", "", "N", "right-null"],
             ]
+        );
+    }
+
+    #[test]
+    fn appends_compatible_datasets_in_selection_order() {
+        let appended = append_datasets(vec![
+            join_source(&["id", "name"], &[&["1", "Ada"]]),
+            join_source(&["id", "name"], &[&["2", "Bob"], &["3", "Cam"]]),
+        ])
+        .expect("append datasets");
+
+        assert_eq!(appended.columns, ["id", "name"]);
+        assert_eq!(
+            owned_rows(&appended),
+            [["1", "Ada"], ["2", "Bob"], ["3", "Cam"]]
+        );
+        assert!(append_datasets(vec![
+            join_source(&["id", "name"], &[&["1", "Ada"]]),
+            join_source(&["name", "id"], &[&["Bob", "2"]]),
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn aggregates_numeric_columns_by_multiple_group_columns() {
+        let mut source = join_source(
+            &["region", "team", "score"],
+            &[
+                &["North", "A", "10"],
+                &["North", "A", "20"],
+                &["North", "B", "5"],
+            ],
+        );
+        source.column_types[2] = "number".into();
+        let aggregations = vec![
+            AggregationSpec {
+                column: "score".into(),
+                function: "mean".into(),
+            },
+            AggregationSpec {
+                column: "score".into(),
+                function: "count_distinct".into(),
+            },
+        ];
+
+        let aggregated =
+            aggregate_dataset(source, &aggregations, &["region".into(), "team".into()])
+                .expect("aggregate dataset");
+
+        assert_eq!(
+            aggregated.columns,
+            ["region", "team", "mean of score", "count distinct of score"]
+        );
+        assert_eq!(
+            owned_rows(&aggregated),
+            [["North", "A", "15", "2"], ["North", "B", "5", "1"]]
         );
     }
 

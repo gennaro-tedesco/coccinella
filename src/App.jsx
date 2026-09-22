@@ -299,7 +299,7 @@ function App() {
       if (
         !isEditing &&
         mode === "data" &&
-        sheetOrder.length >= 2 &&
+        sheetOrder.length >= 1 &&
         !event.ctrlKey &&
         !event.metaKey &&
         !event.altKey &&

@@ -210,4 +210,49 @@ describe("application store dataset lifecycle", () => {
       },
     });
   });
+
+  it("creates an appended dataset in the selected order", async () => {
+    useAppStore.getState().openSheet("first.csv", rootMetadata, "/tmp/first.csv");
+    useAppStore.getState().openSheet(
+      "second.csv",
+      { ...rootMetadata, datasetId: "second" },
+      "/tmp/second.csv",
+    );
+    invokeMock.mockResolvedValueOnce({ ...rootMetadata, datasetId: "appended", rowCount: 2 });
+
+    const created = await useAppStore.getState().createAppendedSheet(["second", "root"]);
+
+    expect(invokeMock).toHaveBeenCalledWith("create_appended_dataset", {
+      datasetIds: ["second", "root"],
+    });
+    expect(created).toBe(true);
+    expect(useAppStore.getState().sheets.appended.filename).toBe("Append: second.csv, first.csv");
+  });
+
+  it("creates an aggregated dataset with aggregations and groups", async () => {
+    useAppStore.getState().openSheet("people.csv", rootMetadata, "/tmp/people.csv");
+    invokeMock.mockResolvedValueOnce({
+      ...rootMetadata,
+      datasetId: "aggregated",
+      columns: ["count of name"],
+      columnTypes: { "count of name": "number" },
+    });
+    const aggregations = [{ column: "name", function: "count" }];
+
+    const created = await useAppStore
+      .getState()
+      .createAggregatedSheet("root", aggregations, ["country"], true);
+
+    expect(invokeMock).toHaveBeenCalledWith("create_aggregated_dataset", {
+      datasetId: "root",
+      aggregations,
+      groupBy: ["country"],
+    });
+    expect(created).toBe(true);
+    expect(useAppStore.getState().sheets.aggregated).toMatchObject({
+      filename: "Pivot: people.csv",
+      pivotTable: true,
+      pivotDimensions: ["country"],
+    });
+  });
 });
