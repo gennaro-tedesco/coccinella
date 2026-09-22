@@ -104,6 +104,7 @@ function App() {
   const highlightTimeoutRef = useRef(null);
   const pendingGRef = useRef(false);
   const fileScanRef = useRef(null);
+  const csvFilesRef = useRef(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -246,20 +247,27 @@ function App() {
         setFinder("files");
         if (fileScanRef.current) return;
 
-        setCsvFiles([]);
+        const hasCachedFiles = csvFilesRef.current !== null;
+        const discoveredFiles = [];
+        if (!hasCachedFiles) setCsvFiles([]);
         const onFiles = new Channel();
         onFiles.onmessage = (files) => {
-          setCsvFiles((current) => [...(current ?? []), ...files]);
+          discoveredFiles.push(...files);
+          if (!hasCachedFiles) setCsvFiles([...discoveredFiles]);
         };
         const scan = invoke("list_csv_files", { onFiles });
         fileScanRef.current = scan;
         try {
           await scan;
+          csvFilesRef.current = discoveredFiles;
+          setCsvFiles(discoveredFiles);
         } catch (error) {
-          setCsvFiles(null);
-          setFinder(null);
           showError(error);
-          await openCsvFile(openSheet);
+          if (!hasCachedFiles) {
+            setCsvFiles(null);
+            setFinder(null);
+            await openCsvFile(openSheet);
+          }
         } finally {
           fileScanRef.current = null;
         }

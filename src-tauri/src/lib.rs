@@ -119,6 +119,7 @@ struct AppState {
     next_path_token: AtomicU64,
     datasets: Mutex<DatasetStore>,
     indexed_paths: Mutex<HashMap<String, PathBuf>>,
+    file_scan_tokens: Mutex<HashSet<String>>,
     pending_open_files: Mutex<Vec<FileCandidate>>,
 }
 
@@ -1956,14 +1957,10 @@ async fn list_csv_files(
     on_files: Channel<Vec<FileCandidate>>,
 ) -> Result<(), String> {
     let home = dirs::home_dir().ok_or("Home directory not found")?;
-    app.state::<AppState>()
-        .indexed_paths
-        .lock()
-        .map_err(|error| error.to_string())?
-        .clear();
 
     tauri::async_runtime::spawn_blocking(move || {
-        discover_csv_files(&home, MAX_INDEXED_FILES, |paths| {
+        let mut next_scan_tokens = HashSet::new();
+        let result = discover_csv_files(&home, MAX_INDEXED_FILES, |paths| {
             let state = app.state::<AppState>();
             let mut indexed_paths = state
                 .indexed_paths
@@ -1978,6 +1975,7 @@ async fn list_csv_files(
                         .to_string();
                     let display_path = shorten_home_path(&path, &home);
                     indexed_paths.insert(token.clone(), path.clone());
+                    next_scan_tokens.insert(token.clone());
                     FileCandidate {
                         token,
                         path: display_path,
@@ -1986,7 +1984,27 @@ async fn list_csv_files(
                 .collect();
             drop(indexed_paths);
             on_files.send(candidates).map_err(|error| error.to_string())
-        })
+        });
+        let state = app.state::<AppState>();
+        let mut indexed_paths = state
+            .indexed_paths
+            .lock()
+            .map_err(|error| error.to_string())?;
+        let mut file_scan_tokens = state
+            .file_scan_tokens
+            .lock()
+            .map_err(|error| error.to_string())?;
+        if result.is_ok() {
+            for token in file_scan_tokens.drain() {
+                indexed_paths.remove(&token);
+            }
+            *file_scan_tokens = next_scan_tokens;
+        } else {
+            for token in next_scan_tokens {
+                indexed_paths.remove(&token);
+            }
+        }
+        result
     })
     .await
     .map_err(|error| error.to_string())?
