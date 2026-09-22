@@ -249,8 +249,8 @@ function App() {
         setFinder("files");
         const invokedAt = performance.now();
         const previousInvocation = lastFileFinderInvocationRef.current;
-        lastFileFinderInvocationRef.current = invokedAt;
         if (fileScanRef.current) return;
+        lastFileFinderInvocationRef.current = invokedAt;
 
         const hasCachedFiles =
           csvFilesRef.current !== null &&
