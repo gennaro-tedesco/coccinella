@@ -23,6 +23,7 @@ import {
   DEFAULT_FONT_SIZE,
   FALLBACK_ROW_HEIGHT_PX,
   FONT_SIZE_STEP,
+  FILE_FINDER_CACHE_WINDOW_MS,
   GO_TO_LINE_CONTEXT_ROWS,
   GO_TO_LINE_HIGHLIGHT_MS,
   GO_TO_LINE_ROW_HEIGHT_PX,
@@ -105,6 +106,7 @@ function App() {
   const pendingGRef = useRef(false);
   const fileScanRef = useRef(null);
   const csvFilesRef = useRef(null);
+  const lastFileFinderInvocationRef = useRef(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -245,9 +247,15 @@ function App() {
     async function openFileFinder() {
       try {
         setFinder("files");
+        const invokedAt = performance.now();
+        const previousInvocation = lastFileFinderInvocationRef.current;
+        lastFileFinderInvocationRef.current = invokedAt;
         if (fileScanRef.current) return;
 
-        const hasCachedFiles = csvFilesRef.current !== null;
+        const hasCachedFiles =
+          csvFilesRef.current !== null &&
+          previousInvocation !== null &&
+          invokedAt - previousInvocation <= FILE_FINDER_CACHE_WINDOW_MS;
         const discoveredFiles = [];
         if (!hasCachedFiles) setCsvFiles([]);
         const onFiles = new Channel();

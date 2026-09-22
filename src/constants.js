@@ -23,6 +23,7 @@ export const ICON_SIZE_STATUS = 18;
 export const ROW_HEIGHT_CHANGE_THRESHOLD_PX = 0.5;
 export const FUZZY_SEARCH_DEBOUNCE_MS = 150;
 export const SEARCH_DEBOUNCE_MS = 200;
+export const FILE_FINDER_CACHE_WINDOW_MS = 30000;
 export const PANEL_WIDTH_PX = 200;
 export const COLUMN_PANEL_WIDTH_PX = 220;
 export const COLLAPSED_PANEL_WIDTH_PX = 32;
