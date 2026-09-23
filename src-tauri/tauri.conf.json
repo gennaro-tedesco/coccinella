@@ -40,6 +40,10 @@
       {
         "ext": ["csv"],
         "mimeType": "text/csv"
+      },
+      {
+        "ext": ["json"],
+        "mimeType": "application/json"
       }
     ],
     "icon": [

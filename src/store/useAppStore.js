@@ -1,5 +1,5 @@
-// Owns application state for opened CSV sheets, display settings, and plots.
-// FEATURE: CSV data workspace
+// Owns application state for opened files, display settings, and plots.
+// FEATURE: Data workspace
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import { DEFAULT_COLUMN_PRECISION } from "../constants";
@@ -20,6 +20,7 @@ function derivedSheet(metadata, filename) {
   }
   return {
     id: metadata.datasetId,
+    kind: "csv",
     filename,
     derived: true,
     path: null,
@@ -58,6 +59,10 @@ export const useAppStore = create((set, get) => ({
     set((state) => ({ columnPanelOpen: !state.columnPanelOpen })),
   hoveredColumn: null,
   setHoveredColumn: (column) => set({ hoveredColumn: column }),
+  jsonNavigation: null,
+  navigateToJsonKey: (sheetId, paths, range = false) =>
+    set({ jsonNavigation: { sheetId, paths, range } }),
+  clearJsonNavigation: () => set({ jsonNavigation: null }),
 
   sheets: {},
   sheetOrder: [],
@@ -81,9 +86,16 @@ export const useAppStore = create((set, get) => ({
   searchMatchCount: 0,
   searchError: null,
   activeSearchMatch: null,
+  jsonSearchMatches: [],
   searchVersion: 0,
   openSearch: () =>
-    set({ searchOpen: true, searchQuery: "", searchActiveIndex: 0, searchError: null }),
+    set({
+      searchOpen: true,
+      searchQuery: "",
+      searchActiveIndex: 0,
+      searchError: null,
+      jsonSearchMatches: [],
+    }),
   closeSearch: () => set({ searchOpen: false }),
   setSearchQuery: (query) =>
     set({
@@ -91,6 +103,7 @@ export const useAppStore = create((set, get) => ({
       searchActiveIndex: 0,
       searchMatchCount: 0,
       activeSearchMatch: null,
+      jsonSearchMatches: [],
       searchError: null,
     }),
   setSearchIsRegex: (isRegex) =>
@@ -99,6 +112,7 @@ export const useAppStore = create((set, get) => ({
       searchActiveIndex: 0,
       searchMatchCount: 0,
       activeSearchMatch: null,
+      jsonSearchMatches: [],
     }),
   setSearchIsCaseSensitive: (isCaseSensitive) =>
     set({
@@ -106,6 +120,7 @@ export const useAppStore = create((set, get) => ({
       searchActiveIndex: 0,
       searchMatchCount: 0,
       activeSearchMatch: null,
+      jsonSearchMatches: [],
     }),
   setSearchActiveIndex: (index) => set({ searchActiveIndex: index }),
   setSearchMatchCount: (searchMatchCount) =>
@@ -114,6 +129,7 @@ export const useAppStore = create((set, get) => ({
       searchVersion: state.searchVersion + 1,
     })),
   setActiveSearchMatch: (activeSearchMatch) => set({ activeSearchMatch }),
+  setJsonSearchMatches: (jsonSearchMatches) => set({ jsonSearchMatches }),
   setSearchError: (searchError) => set({ searchError }),
 
   openSheet: (filename, metadata, path) =>
@@ -130,6 +146,7 @@ export const useAppStore = create((set, get) => ({
           ...state.sheets,
           [id]: {
             id,
+            kind: "csv",
             filename,
             path: path ?? null,
             datasetId: metadata.datasetId,
@@ -155,6 +172,26 @@ export const useAppStore = create((set, get) => ({
         previousSheetId: state.activeSheetId,
       };
     }),
+
+  openJson: (filename, id, data, sizeBytes, path) =>
+    set((state) => ({
+      sheets: {
+        ...state.sheets,
+        [id]: {
+          id,
+          kind: "json",
+          filename,
+          path: path ?? null,
+          data,
+          sizeBytes,
+          children: [],
+        },
+      },
+      sheetOrder: [...state.sheetOrder, id],
+      activeSheetId: id,
+      previousSheetId: state.activeSheetId,
+      mode: "data",
+    })),
 
   rescanSheet: (sheetId, separator, metadataList) =>
     set((state) => {
@@ -495,6 +532,7 @@ export const useAppStore = create((set, get) => ({
       return {
         activeSheetId: id,
         previousSheetId: state.activeSheetId,
+        mode: state.sheets[id].kind === "json" ? "data" : state.mode,
       };
     }),
 
@@ -506,17 +544,23 @@ export const useAppStore = create((set, get) => ({
       return {
         activeSheetId: state.previousSheetId,
         previousSheetId: state.activeSheetId,
+        mode:
+          state.sheets[state.previousSheetId].kind === "json"
+            ? "data"
+            : state.mode,
       };
     }),
 
   closeSheet: async (id) => {
     const sheet = get().sheets[id];
     if (!sheet) return;
-    try {
-      await invoke("close_dataset", { datasetId: sheet.datasetId });
-    } catch (error) {
-      get().showError(error);
-      return;
+    if (sheet.kind !== "json") {
+      try {
+        await invoke("close_dataset", { datasetId: sheet.datasetId });
+      } catch (error) {
+        get().showError(error);
+        return;
+      }
     }
     set((state) => {
       const sheetOrder = state.sheetOrder.filter((sheetId) => sheetId !== id);
@@ -540,6 +584,10 @@ export const useAppStore = create((set, get) => ({
         plotConfig,
         activeSheetId,
         previousSheetId,
+        mode:
+          activeSheetId && sheets[activeSheetId]?.kind === "json"
+            ? "data"
+            : state.mode,
       };
     });
   },

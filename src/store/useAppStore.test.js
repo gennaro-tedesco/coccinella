@@ -63,6 +63,23 @@ describe("application store dataset lifecycle", () => {
     expect(useAppStore.getState().errorMessage).toBe("close failed");
   });
 
+  it("opens and closes JSON files without invoking the CSV dataset backend", async () => {
+    useAppStore
+      .getState()
+      .openJson("data.json", "json-1", { user: { name: "Ada" } }, 32, "/tmp/data.json");
+
+    expect(useAppStore.getState().sheets["json-1"]).toMatchObject({
+      kind: "json",
+      filename: "data.json",
+      data: { user: { name: "Ada" } },
+    });
+
+    await useAppStore.getState().closeSheet("json-1");
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(useAppStore.getState().sheets).toEqual({});
+  });
+
   it("creates and recursively closes filtered descendants", async () => {
     useAppStore
       .getState()

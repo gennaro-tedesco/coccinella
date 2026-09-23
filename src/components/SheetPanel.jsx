@@ -5,6 +5,7 @@ import { useRenameLabel } from "../hooks/useRenameLabel";
 import { ICON_SIZE_DEFAULT, ICON_SIZE_SMALL } from "../constants";
 
 function isViewModified(sheet) {
+  if (sheet.kind === "json") return false;
   return (
     sheet.sorting.length > 0 ||
     sheet.columns.some((column) => sheet.columnVisibility[column] === false)

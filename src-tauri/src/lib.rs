@@ -1,5 +1,5 @@
-// Owns CSV data and exposes paged operations to the Tauri frontend.
-// FEATURE: CSV data workspace
+// Owns file data and exposes operations to the Tauri frontend.
+// FEATURE: Data workspace
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use evalexpr::{build_operator_tree, ContextWithMutableVariables, DefaultNumericTypes, HashMapContext, Value};
 use nucleo_matcher::{
@@ -8,6 +8,7 @@ use nucleo_matcher::{
 };
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
@@ -19,6 +20,7 @@ use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 
 const MAX_CSV_FILE_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_JSON_FILE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_CSV_ROWS: usize = 1_000_000;
 const MAX_CSV_FIELDS: usize = 10_000_000;
 const MAX_CSV_COLUMNS: usize = 10_000;
@@ -242,11 +244,27 @@ struct ChartData {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct OpenedSheet {
-    filename: String,
-    path: String,
-    metadata: SheetMetadata,
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum OpenedFile {
+    Csv {
+        filename: String,
+        path: String,
+        metadata: SheetMetadata,
+    },
+    Json {
+        filename: String,
+        path: String,
+        id: String,
+        data: JsonValue,
+        #[serde(rename = "sizeBytes")]
+        size_bytes: u64,
+    },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FileKind {
+    Csv,
+    Json,
 }
 
 #[derive(Serialize)]
@@ -369,12 +387,24 @@ fn validate_csv_path(path: &str) -> Result<(), String> {
     }
 }
 
+fn file_kind(path: &Path) -> Option<FileKind> {
+    match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "csv" => Some(FileKind::Csv),
+        "json" => Some(FileKind::Json),
+        _ => None,
+    }
+}
+
+fn validate_data_path(path: &str) -> Result<FileKind, String> {
+    file_kind(Path::new(path)).ok_or_else(|| "Only .csv and .json files are supported".into())
+}
+
 #[cfg(target_os = "macos")]
-fn queue_opened_csv_files(urls: &[tauri::Url], state: &AppState) -> Result<usize, String> {
+fn queue_opened_files(urls: &[tauri::Url], state: &AppState) -> Result<usize, String> {
     let paths = urls
         .iter()
         .filter_map(|url| url.to_file_path().ok())
-        .filter(|path| validate_csv_path(&path.to_string_lossy()).is_ok())
+        .filter(|path| validate_data_path(&path.to_string_lossy()).is_ok())
         .collect::<Vec<_>>();
     let mut indexed_paths = state
         .indexed_paths
@@ -487,6 +517,61 @@ async fn read_dataset_blocking(path: String, separator: u8) -> Result<Dataset, S
     tauri::async_runtime::spawn_blocking(move || read_dataset(&path, separator))
         .await
         .map_err(|error| error.to_string())?
+}
+
+fn read_json(path: &str) -> Result<(JsonValue, u64), String> {
+    let file = File::open(path).map_err(|error| error.to_string())?;
+    let size_bytes = file.metadata().map_err(|error| error.to_string())?.len();
+    if size_bytes > MAX_JSON_FILE_BYTES {
+        return Err(format!(
+            "JSON is too large: {size_bytes} bytes exceeds the {MAX_JSON_FILE_BYTES}-byte limit"
+        ));
+    }
+    let data = serde_json::from_reader(file).map_err(|error| error.to_string())?;
+    Ok((data, size_bytes))
+}
+
+async fn open_file_at_path(
+    path: PathBuf,
+    separator: u8,
+    state: &State<'_, AppState>,
+) -> Result<OpenedFile, String> {
+    let kind = validate_data_path(&path.to_string_lossy())?;
+    let path_string = path.to_string_lossy().into_owned();
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("Selected file has no valid filename")?
+        .to_owned();
+    match kind {
+        FileKind::Csv => {
+            let dataset = read_dataset_blocking(path_string.clone(), separator).await?;
+            let metadata = insert_dataset(dataset, state)?;
+            Ok(OpenedFile::Csv {
+                filename,
+                path: path_string,
+                metadata,
+            })
+        }
+        FileKind::Json => {
+            let read_path = path_string.clone();
+            let (data, size_bytes) =
+                tauri::async_runtime::spawn_blocking(move || read_json(&read_path))
+                    .await
+                    .map_err(|error| error.to_string())??;
+            let id = state
+                .next_dataset_id
+                .fetch_add(1, AtomicOrdering::Relaxed)
+                .to_string();
+            Ok(OpenedFile::Json {
+                filename,
+                path: path_string,
+                id,
+                data,
+                size_bytes,
+            })
+        }
+    }
 }
 
 fn metadata(id: &str, dataset: &Dataset) -> SheetMetadata {
@@ -1379,16 +1464,16 @@ fn commit_search(
 }
 
 #[tauri::command]
-async fn open_csv_dialog(
+async fn open_file_dialog(
     separator: String,
     app: AppHandle,
     state: State<'_, AppState>,
-) -> Result<Option<OpenedSheet>, String> {
+) -> Result<Option<OpenedFile>, String> {
     let separator = separator_byte(&separator)?;
     let file = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
-            .add_filter("CSV", &["csv"])
+            .add_filter("Data", &["csv", "json"])
             .blocking_pick_file()
     })
     .await
@@ -1397,27 +1482,15 @@ async fn open_csv_dialog(
         return Ok(None);
     };
     let path = file.into_path().map_err(|error| error.to_string())?;
-    let path_string = path.to_string_lossy().into_owned();
-    let filename = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or("Selected CSV has no valid filename")?
-        .to_owned();
-    let dataset = read_dataset_blocking(path_string.clone(), separator).await?;
-    let metadata = insert_dataset(dataset, &state)?;
-    Ok(Some(OpenedSheet {
-        filename,
-        path: path_string,
-        metadata,
-    }))
+    Ok(Some(open_file_at_path(path, separator, &state).await?))
 }
 
 #[tauri::command]
-async fn load_indexed_csv_file(
+async fn load_indexed_file(
     token: String,
     separator: String,
     state: State<'_, AppState>,
-) -> Result<OpenedSheet, String> {
+) -> Result<OpenedFile, String> {
     let path = state
         .indexed_paths
         .lock()
@@ -1425,19 +1498,7 @@ async fn load_indexed_csv_file(
         .remove(&token)
         .ok_or("File selection expired")?;
     let separator = separator_byte(&separator)?;
-    let path_string = path.to_string_lossy().into_owned();
-    let filename = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or("Indexed CSV has no valid filename")?
-        .to_owned();
-    let dataset = read_dataset_blocking(path_string.clone(), separator).await?;
-    let metadata = insert_dataset(dataset, &state)?;
-    Ok(OpenedSheet {
-        filename,
-        path: path_string,
-        metadata,
-    })
+    open_file_at_path(path, separator, &state).await
 }
 
 #[tauri::command]
@@ -2134,7 +2195,7 @@ async fn save_csv_file_dialog(
 }
 
 #[tauri::command]
-async fn list_csv_files(
+async fn list_data_files(
     app: AppHandle,
     on_files: Channel<Vec<FileCandidate>>,
 ) -> Result<(), String> {
@@ -2142,7 +2203,7 @@ async fn list_csv_files(
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut next_scan_tokens = HashSet::new();
-        let result = discover_csv_files(&home, MAX_INDEXED_FILES, |paths| {
+        let result = discover_data_files(&home, MAX_INDEXED_FILES, |paths| {
             let state = app.state::<AppState>();
             let mut indexed_paths = state
                 .indexed_paths
@@ -2200,7 +2261,7 @@ fn shorten_home_path(path: &Path, home: &Path) -> String {
     }
 }
 
-fn discover_csv_files(
+fn discover_data_files(
     home: &Path,
     max_files: usize,
     mut emit: impl FnMut(Vec<PathBuf>) -> Result<(), String>,
@@ -2231,7 +2292,7 @@ fn discover_csv_files(
                 };
                 if file_type.is_dir() {
                     directories.push_back(entry.path());
-                } else if file_type.is_file() && is_csv_path(&entry.path()) {
+                } else if file_type.is_file() && is_data_path(&entry.path()) {
                     batch.push(entry.path());
                     discovered += 1;
                     if batch.len() == FILE_DISCOVERY_BATCH_SIZE {
@@ -2264,13 +2325,12 @@ fn is_excluded_search_directory(name: &str) -> bool {
     false
 }
 
-fn is_csv_path(path: &Path) -> bool {
-    path.extension()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("csv"))
+fn is_data_path(path: &Path) -> bool {
+    file_kind(path).is_some()
 }
 
 #[tauri::command]
-fn take_opened_csv_files(state: State<'_, AppState>) -> Result<Vec<FileCandidate>, String> {
+fn take_opened_files(state: State<'_, AppState>) -> Result<Vec<FileCandidate>, String> {
     let mut pending = state
         .pending_open_files
         .lock()
@@ -2327,8 +2387,8 @@ pub fn run() {
         .manage(AppState::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            open_csv_dialog,
-            load_indexed_csv_file,
+            open_file_dialog,
+            load_indexed_file,
             rescan_csv_file,
             create_filtered_dataset,
             expression_condition_matches,
@@ -2345,8 +2405,8 @@ pub fn run() {
             get_column_stats,
             get_chart_data,
             save_csv_file_dialog,
-            list_csv_files,
-            take_opened_csv_files,
+            list_data_files,
+            take_opened_files,
             fuzzy_filter
         ])
         .build(tauri::generate_context!())
@@ -2356,14 +2416,14 @@ pub fn run() {
             if let tauri::RunEvent::Opened { urls } = event {
                 use tauri::{Emitter, Manager};
 
-                match queue_opened_csv_files(&urls, &app.state::<AppState>()) {
+                match queue_opened_files(&urls, &app.state::<AppState>()) {
                     Ok(0) => {}
                     Ok(_) => {
-                        if let Err(error) = app.emit("open-csv-files", ()) {
-                            eprintln!("failed to emit open-csv-files event: {error}");
+                        if let Err(error) = app.emit("open-files", ()) {
+                            eprintln!("failed to emit open-files event: {error}");
                         }
                     }
-                    Err(error) => eprintln!("failed to queue opened CSV files: {error}"),
+                    Err(error) => eprintln!("failed to queue opened files: {error}"),
                 }
             }
         });
@@ -2654,6 +2714,7 @@ mod tests {
         std::fs::create_dir_all(&excluded).expect("create excluded fixture directory");
         std::fs::create_dir_all(&hidden).expect("create hidden fixture directory");
         std::fs::write(root.join("root.csv"), "id\n1\n").expect("write root fixture");
+        std::fs::write(root.join("data.json"), "{}").expect("write JSON fixture");
         std::fs::write(nested.join("nested.CSV"), "id\n2\n").expect("write nested fixture");
         std::fs::write(deeper.join("deep.csv"), "id\n3\n").expect("write deep fixture");
         std::fs::write(root.join("notes.txt"), "ignored").expect("write text fixture");
@@ -2661,7 +2722,7 @@ mod tests {
         std::fs::write(hidden.join("hidden.csv"), "id\n5\n").expect("write hidden fixture");
 
         let mut batches = Vec::new();
-        discover_csv_files(&root, MAX_INDEXED_FILES, |paths| {
+        discover_data_files(&root, MAX_INDEXED_FILES, |paths| {
             batches.push(paths);
             Ok(())
         })
@@ -2673,7 +2734,27 @@ mod tests {
             .filter_map(|path| path.file_name()?.to_str().map(str::to_owned))
             .collect();
 
-        assert_eq!(names, ["root.csv", "nested.CSV", "deep.csv"]);
+        let mut root_names = names[..2].to_vec();
+        root_names.sort();
+        assert_eq!(root_names, ["data.json", "root.csv"]);
+        assert_eq!(&names[2..], ["nested.CSV", "deep.csv"]);
+    }
+
+    #[test]
+    fn reads_json_and_rejects_invalid_content() {
+        let path = std::env::temp_dir().join(format!(
+            "coccinella-json-{}-{}.json",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("json")
+        ));
+        std::fs::write(&path, r#"{"user":{"name":"Ada"}}"#).expect("write JSON fixture");
+        let (value, size_bytes) = read_json(&path.to_string_lossy()).expect("read JSON fixture");
+        assert_eq!(value["user"]["name"], "Ada");
+        assert!(size_bytes > 0);
+
+        std::fs::write(&path, "{").expect("write invalid JSON fixture");
+        assert!(read_json(&path.to_string_lossy()).is_err());
+        std::fs::remove_file(path).expect("remove JSON fixture");
     }
 
     #[test]
@@ -2689,7 +2770,7 @@ mod tests {
         }
 
         let mut batch_lengths = Vec::new();
-        discover_csv_files(&root, FILE_DISCOVERY_BATCH_SIZE + 2, |paths| {
+        discover_data_files(&root, FILE_DISCOVERY_BATCH_SIZE + 2, |paths| {
             batch_lengths.push(paths.len());
             Ok(())
         })

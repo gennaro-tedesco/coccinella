@@ -3,6 +3,11 @@ import { useAppStore } from "../store/useAppStore";
 
 function SearchPanel() {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
+  const isJson = useAppStore((state) =>
+    state.activeSheetId
+      ? state.sheets[state.activeSheetId]?.kind === "json"
+      : false,
+  );
   const query = useAppStore((state) => state.searchQuery);
   const isRegex = useAppStore((state) => state.searchIsRegex);
   const isCaseSensitive = useAppStore((state) => state.searchIsCaseSensitive);
@@ -97,18 +102,20 @@ function SearchPanel() {
       >
         ↓
       </button>
-      <button
-        type="button"
-        className="search-panel-filter"
-        disabled={!canFilter}
-        title="Filter to matching rows"
-        onClick={() => {
-          createFilteredSheet(activeSheetId, query, isRegex, isCaseSensitive);
-          closeSearch();
-        }}
-      >
-        Filter
-      </button>
+      {!isJson && (
+        <button
+          type="button"
+          className="search-panel-filter"
+          disabled={!canFilter}
+          title="Filter to matching rows"
+          onClick={() => {
+            createFilteredSheet(activeSheetId, query, isRegex, isCaseSensitive);
+            closeSearch();
+          }}
+        >
+          Filter
+        </button>
+      )}
       <button type="button" aria-label="Close search" onClick={closeSearch}>
         ✕
       </button>

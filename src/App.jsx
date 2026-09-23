@@ -1,5 +1,5 @@
 // Renders the application workspace and handles global keyboard shortcuts.
-// FEATURE: CSV data workspace
+// FEATURE: Data workspace
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -12,13 +12,16 @@ import FilterTabs from "./components/FilterTabs";
 import SearchPanel from "./components/SearchPanel";
 import DataTable from "./components/DataTable";
 import ColumnPanel from "./components/ColumnPanel";
+import JsonTree from "./components/JsonTree";
+import JsonKeysPanel from "./components/JsonKeysPanel";
 import EmptyState from "./components/EmptyState";
 import FuzzyFinder from "./components/FuzzyFinder";
 import GoToLine from "./components/GoToLine";
 import MergePanel from "./components/MergePanel";
-import { openCsvFile, openCsvFileAtPath } from "./utils/openFile";
+import { openFile, openFileAtPath } from "./utils/openFile";
 import { ErrorSnackbar } from "./components/Snackbar";
 import LazyErrorBoundary from "./components/LazyErrorBoundary";
+import { findJsonMatches } from "./utils/jsonTree";
 import {
   DEFAULT_FONT_SIZE,
   FALLBACK_ROW_HEIGHT_PX,
@@ -58,6 +61,7 @@ function App() {
   const sheetOrder = useAppStore((state) => state.sheetOrder);
   const activeSheetId = useAppStore((state) => state.activeSheetId);
   const openSheet = useAppStore((state) => state.openSheet);
+  const openJson = useAppStore((state) => state.openJson);
   const setActiveSheetId = useAppStore((state) => state.setActiveSheetId);
   const switchToPreviousSheet = useAppStore(
     (state) => state.switchToPreviousSheet,
@@ -83,6 +87,10 @@ function App() {
     (state) => state.setActiveSearchMatch,
   );
   const setSearchError = useAppStore((state) => state.setSearchError);
+  const jsonSearchMatches = useAppStore((state) => state.jsonSearchMatches);
+  const setJsonSearchMatches = useAppStore(
+    (state) => state.setJsonSearchMatches,
+  );
   const errorMessage = useAppStore((state) => state.errorMessage);
   const showError = useAppStore((state) => state.showError);
   const clearError = useAppStore((state) => state.clearError);
@@ -91,8 +99,10 @@ function App() {
   );
 
   const activeSheet = activeSheetId ? sheets[activeSheetId] : null;
+  const isJson = activeSheet?.kind === "json";
+  const csvDataMode = mode === "data" && !isJson;
   const searchMatchCount = useAppStore((state) => state.searchMatchCount);
-  const canFilterFromSearch = searchMatchCount > 0;
+  const canFilterFromSearch = !isJson && searchMatchCount > 0;
 
   const [finder, setFinder] = useState(null);
   const [csvFiles, setCsvFiles] = useState(null);
@@ -118,14 +128,14 @@ function App() {
     let unlisten;
 
     async function openPendingFiles() {
-      const candidates = await invoke("take_opened_csv_files");
+      const candidates = await invoke("take_opened_files");
       if (!active) return;
       for (const candidate of candidates) {
-        await openCsvFileAtPath(candidate, openSheet);
+        await openFileAtPath(candidate, openSheet, openJson);
       }
     }
 
-    listen("open-csv-files", () => {
+    listen("open-files", () => {
       void openPendingFiles().catch(showError);
     })
       .then((stopListening) => {
@@ -142,7 +152,7 @@ function App() {
       active = false;
       unlisten?.();
     };
-  }, [openSheet, showError]);
+  }, [openSheet, openJson, showError]);
 
   useEffect(() => {
     document.documentElement.style.fontSize = `${fontSize}px`;
@@ -156,10 +166,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (mode !== "data") setGoToLineOpen(false);
-    if (mode !== "data") setMergeOpen(false);
+    if (!csvDataMode) setGoToLineOpen(false);
+    if (!csvDataMode) setMergeOpen(false);
     pendingGRef.current = false;
-  }, [activeSheetId, mode]);
+  }, [activeSheetId, csvDataMode]);
 
   useEffect(() => {
     if (mode !== "data") closeSearch();
@@ -170,12 +180,40 @@ function App() {
     if (!activeSheet) {
       setSearchMatchCount(0);
       setActiveSearchMatch(null);
+      setJsonSearchMatches([]);
       return undefined;
     }
     setSearchMatchCount(0);
     setActiveSearchMatch(null);
     setSearchError(null);
     let timeout;
+    if (isJson) {
+      timeout = window.setTimeout(() => {
+        try {
+          const matches = findJsonMatches(
+            activeSheet.data,
+            searchQuery,
+            searchIsRegex,
+            searchIsCaseSensitive,
+          );
+          if (!cancelled) {
+            setJsonSearchMatches(matches);
+            setSearchMatchCount(matches.length);
+          }
+        } catch (error) {
+          if (!cancelled) {
+            setJsonSearchMatches([]);
+            setSearchMatchCount(0);
+            setSearchError(String(error));
+          }
+        }
+      }, searchQuery ? SEARCH_DEBOUNCE_MS : 0);
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timeout);
+      };
+    }
+    setJsonSearchMatches([]);
     invoke("invalidate_search", { datasetId: activeSheet.datasetId })
       .then(() => {
         if (cancelled) return;
@@ -207,6 +245,8 @@ function App() {
     };
   }, [
     activeSheet?.datasetId,
+    activeSheet?.data,
+    isJson,
     activeSheet?.dataVersion,
     activeSheet?.selectedColumns,
     searchQuery,
@@ -215,12 +255,19 @@ function App() {
     setSearchMatchCount,
     setActiveSearchMatch,
     setSearchError,
+    setJsonSearchMatches,
   ]);
 
   useEffect(() => {
     let cancelled = false;
     if (!activeSheet || searchMatchCount === 0) {
       setActiveSearchMatch(null);
+      return undefined;
+    }
+    if (isJson) {
+      setActiveSearchMatch(
+        jsonSearchMatches[searchActiveIndex % searchMatchCount] ?? null,
+      );
       return undefined;
     }
     invoke("get_search_match", {
@@ -238,6 +285,8 @@ function App() {
     };
   }, [
     activeSheet?.datasetId,
+    isJson,
+    jsonSearchMatches,
     searchActiveIndex,
     searchMatchCount,
     setActiveSearchMatch,
@@ -264,7 +313,7 @@ function App() {
           discoveredFiles.push(...files);
           if (!hasCachedFiles) setCsvFiles([...discoveredFiles]);
         };
-        const scan = invoke("list_csv_files", { onFiles });
+        const scan = invoke("list_data_files", { onFiles });
         fileScanRef.current = scan;
         try {
           await scan;
@@ -275,7 +324,7 @@ function App() {
           if (!hasCachedFiles) {
             setCsvFiles(null);
             setFinder(null);
-            await openCsvFile(openSheet);
+            await openFile(openSheet, openJson);
           }
         } finally {
           fileScanRef.current = null;
@@ -293,7 +342,7 @@ function App() {
       if (mergeOpen) return;
       if (
         isEditing ||
-        mode !== "data" ||
+        !csvDataMode ||
         event.key !== "g" ||
         event.ctrlKey ||
         event.metaKey ||
@@ -315,7 +364,7 @@ function App() {
 
       if (
         !isEditing &&
-        mode === "data" &&
+        csvDataMode &&
         sheetOrder.length >= 1 &&
         !event.ctrlKey &&
         !event.metaKey &&
@@ -333,7 +382,7 @@ function App() {
 
       if (
         !isEditing &&
-        mode === "data" &&
+        csvDataMode &&
         !event.ctrlKey &&
         !event.metaKey &&
         !event.altKey &&
@@ -380,7 +429,7 @@ function App() {
 
       if (
         !isEditing &&
-        mode === "data" &&
+        csvDataMode &&
         !event.ctrlKey &&
         !event.metaKey &&
         !event.altKey &&
@@ -461,7 +510,7 @@ function App() {
       }
 
       const content = contentRef.current;
-      if (!isEditing && mode === "data" && content) {
+      if (!isEditing && csvDataMode && content) {
         if (
           !event.ctrlKey &&
           !event.metaKey &&
@@ -581,7 +630,9 @@ function App() {
     sheetOrder,
     mergeOpen,
     mode,
+    csvDataMode,
     openSheet,
+    openJson,
     switchToPreviousSheet,
     toggleSheetPanel,
     toggleColumnPanel,
@@ -701,10 +752,10 @@ function App() {
           <SheetPanel />
           <div className="center">
             <FileTabs />
-            {mode === "data" && <FilterTabs />}
+            {csvDataMode && <FilterTabs />}
             <div className="content" ref={contentRef}>
               {mode === "data" ? (
-                <DataTable ref={dataTableRef} />
+                isJson ? <JsonTree /> : <DataTable ref={dataTableRef} />
               ) : (
                 <LazyErrorBoundary>
                   <Suspense fallback={<div className="chart-builder-placeholder">Loading chart tools...</div>}>
@@ -714,7 +765,11 @@ function App() {
               )}
             </div>
           </div>
-          {mode === "data" ? <ColumnPanel /> : <div className="plot-margin" />}
+          {mode === "data" ? (
+            isJson ? <JsonKeysPanel /> : <ColumnPanel />
+          ) : (
+            <div className="plot-margin" />
+          )}
         </div>
       ) : (
         <EmptyState />
@@ -727,7 +782,7 @@ function App() {
           getGroup={getPathGroup}
           onSelect={(candidate) => {
             setFinder(null);
-            void openCsvFileAtPath(candidate, openSheet).catch(showError);
+            void openFileAtPath(candidate, openSheet, openJson).catch(showError);
           }}
           onClose={() => setFinder(null)}
         />
@@ -744,7 +799,7 @@ function App() {
           onClose={() => setFinder(null)}
         />
       )}
-      {goToLineOpen && mode === "data" && activeSheetId && (
+      {goToLineOpen && csvDataMode && activeSheetId && (
         <GoToLine
           maxLine={sheets[activeSheetId].rowCount + 1}
           onGoToLine={handleGoToLine}
@@ -752,7 +807,7 @@ function App() {
         />
       )}
       {searchOpen && mode === "data" && activeSheetId && <SearchPanel />}
-      {mergeOpen && mode === "data" && (
+      {mergeOpen && csvDataMode && (
         <MergePanel onClose={() => setMergeOpen(false)} initialTab={mergeTab} />
       )}
       {errorMessage && (

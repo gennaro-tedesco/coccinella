@@ -1060,6 +1060,108 @@ body,
   color: var(--fg);
 }
 
+.json-tree,
+.json-children,
+.json-key-tree,
+.json-key-children {
+  list-style: none;
+  margin: tokens.$margin-8;
+  padding: tokens.$padding-17;
+}
+
+.json-tree {
+  min-width: max-content;
+  padding: tokens.$padding-13;
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: tokens.$json-tree-line-height;
+}
+
+.json-node-row {
+  display: flex;
+  align-items: center;
+  gap: tokens.$json-node-gap;
+  white-space: nowrap;
+}
+
+.json-node-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: tokens.$json-node-toggle-size;
+  height: tokens.$json-node-toggle-size;
+  padding: tokens.$padding-17;
+  border: none;
+  background: none;
+  color: var(--fg-dark);
+}
+
+.json-node-toggle:hover {
+  color: var(--accent);
+}
+
+.json-node-spacer {
+  flex: none;
+  width: tokens.$json-node-toggle-size;
+}
+
+.json-children {
+  margin-left: tokens.$json-node-indent;
+  padding-left: tokens.$json-node-indent;
+}
+
+.json-key-children {
+  padding-left: tokens.$json-node-indent;
+}
+
+.json-key {
+  color: var(--col-4);
+}
+
+.json-separator {
+  color: var(--fg-dark);
+}
+
+.json-string {
+  color: var(--col-2);
+}
+
+.json-number {
+  color: var(--col-7);
+}
+
+.json-boolean,
+.json-null {
+  color: var(--col-8);
+}
+
+.json-array,
+.json-object {
+  color: var(--fg-dark);
+}
+
+.json-key-name {
+  flex: 0 1 auto;
+  cursor: pointer;
+  user-select: text;
+}
+
+.json-key-name:active {
+  cursor: pointer;
+}
+
+.json-key-node > .column-row-content {
+  justify-content: flex-start;
+}
+
+.json-key-toggle {
+  display: flex;
+  flex: none;
+  opacity: tokens.$opacity-17 !important;
+  color: var(--fg-dark);
+}
+
 .data-table th,
 .data-table td {
   border-right: tokens.$border-right-1 solid var(--border);
@@ -1331,21 +1433,29 @@ body,
   background-color: var(--highlight);
 }
 
-.data-table td.search-match {
+.data-table td.search-match,
+.json-node-row.search-match {
   background-color: color-mix(in srgb, var(--col-3) tokens.$background-color-11, var(--bg));
 }
 
-.data-table td.search-match-active {
+.data-table td.search-match-active,
+.json-node-row.search-match-active {
   background-color: color-mix(in srgb, var(--col-3) tokens.$background-color-12, var(--bg));
   color: var(--bg-alt);
 }
 
-.data-table tbody tr.go-to-line-highlight td {
+.data-table tbody tr.go-to-line-highlight td,
+.json-node-row.go-to-line-highlight,
+.json-node.go-to-line-highlight,
+.json-tree.go-to-line-highlight {
   position: relative;
 }
 
 .data-table thead.go-to-line-highlight th::after,
-.data-table tbody tr.go-to-line-highlight td::after {
+.data-table tbody tr.go-to-line-highlight td::after,
+.json-node-row.go-to-line-highlight::after,
+.json-node.go-to-line-highlight::after,
+.json-tree.go-to-line-highlight::after {
   content: "";
   position: absolute;
   inset: tokens.$inset-1;
@@ -1361,7 +1471,10 @@ body,
   background-color: color-mix(in srgb, var(--accent) tokens.$background-color-13, transparent);
 }
 
-.data-table tbody tr.go-to-line-highlight td::after {
+.data-table tbody tr.go-to-line-highlight td::after,
+.json-node-row.go-to-line-highlight::after,
+.json-node.go-to-line-highlight::after,
+.json-tree.go-to-line-highlight::after {
   background-color: color-mix(in srgb, var(--accent) tokens.$background-color-14, transparent);
 }
 

@@ -6,7 +6,7 @@ import {
   ChartNoAxesCombined,
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
-import { openCsvFile } from "../utils/openFile";
+import { openFile } from "../utils/openFile";
 import { THEMES, THEME_ORDER } from "../utils/themes";
 import { ICON_SIZE_MENU } from "../constants";
 import logo from "../assets/logo.png";
@@ -47,8 +47,12 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
   const openSheet = useAppStore((state) => state.openSheet);
+  const openJson = useAppStore((state) => state.openJson);
   const activeSheetId = useAppStore((state) => state.activeSheetId);
-  const canOperate = useAppStore((state) => state.sheetOrder.length >= 1);
+  const activeFile = useAppStore((state) =>
+    state.activeSheetId ? state.sheets[state.activeSheetId] : null,
+  );
+  const canOperate = Boolean(activeFile && activeFile.kind !== "json");
   const theme = useAppStore((state) => state.theme);
   const setTheme = useAppStore((state) => state.setTheme);
   const showError = useAppStore((state) => state.showError);
@@ -68,7 +72,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
   async function handleOpen() {
     setMenuOpen(false);
     try {
-      await openCsvFile(openSheet);
+      await openFile(openSheet, openJson);
     } catch (error) {
       showError(error);
     }
@@ -123,7 +127,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
             <li>
               <button
                 type="button"
-                disabled={!activeSheetId}
+                disabled={!activeSheetId || activeFile?.kind === "json"}
                 onClick={() => {
                   setMenuOpen(false);
                   setMode("data");
@@ -286,6 +290,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
         <button
           type="button"
           className={mode === "plot" ? "active" : ""}
+          disabled={activeFile?.kind === "json"}
           aria-label="Plot view"
           aria-pressed={mode === "plot"}
           title="Plot view"

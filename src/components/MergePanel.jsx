@@ -567,7 +567,8 @@ function ExpressionFields({ sheets, sheetOrder, state, setState, openSelector, s
 
 function MergePanel({ onClose, initialTab }) {
   const sheets = useAppStore((state) => state.sheets);
-  const sheetOrder = useAppStore((state) => state.sheetOrder);
+  const allSheetIds = useAppStore((state) => state.sheetOrder);
+  const sheetOrder = allSheetIds.filter((id) => sheets[id]?.kind !== "json");
   const createJoinedSheet = useAppStore((state) => state.createJoinedSheet);
   const createAppendedSheet = useAppStore((state) => state.createAppendedSheet);
   const createAggregatedSheet = useAppStore((state) => state.createAggregatedSheet);
