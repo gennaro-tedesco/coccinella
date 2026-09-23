@@ -15,6 +15,7 @@ const OPERATIONS = [
   { id: "merge", label: "Merge" },
   { id: "append", label: "Append" },
   { id: "aggregate", label: "Aggregate" },
+  { id: "expression", label: "Expression" },
 ];
 
 const SHORTCUTS = [

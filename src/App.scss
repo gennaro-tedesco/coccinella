@@ -1856,7 +1856,7 @@ button:disabled {
 
 .operation-tabs {
   display: grid;
-  grid-template-columns: repeat(3, tokens.$grid-template-columns-7);
+  grid-template-columns: repeat(4, tokens.$grid-template-columns-7);
   gap: tokens.$gap-3;
   border-bottom: tokens.$border-bottom-3 solid var(--border);
 }
@@ -2071,6 +2071,111 @@ button:disabled {
   gap: tokens.$gap-30;
 }
 
+.expression-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(tokens.$min-width-16, tokens.$grid-template-columns-7));
+  gap: tokens.$gap-30;
+}
+
+.expression-radio-group {
+  display: flex;
+  gap: tokens.$gap-2;
+}
+
+.expression-radio {
+  display: flex;
+  align-items: center;
+  gap: tokens.$gap-12;
+  color: var(--fg);
+  font-size: tokens.$font-size-25;
+  cursor: pointer;
+}
+
+.expression-radio input[type="radio"] {
+  position: relative;
+  flex-shrink: tokens.$flex-shrink-1;
+  width: tokens.$width-6;
+  height: tokens.$height-10;
+  margin: tokens.$margin-22;
+  padding: tokens.$padding-94;
+  border-radius: tokens.$border-radius-1;
+}
+
+.expression-radio input[type="radio"]:checked {
+  border-color: var(--accent);
+}
+
+.expression-radio input[type="radio"]:checked::after {
+  content: "";
+  position: absolute;
+  inset: tokens.$inset-3;
+  width: tokens.$width-24;
+  height: tokens.$height-19;
+  margin: auto;
+  border-radius: tokens.$border-radius-1;
+  background-color: var(--accent);
+}
+
+.expression-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: tokens.$gap-27;
+  padding: tokens.$padding-93;
+  background-color: var(--bg);
+  border: tokens.$border-15 solid var(--border);
+  border-radius: tokens.$border-radius-38;
+}
+
+.expression-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--fg-dark);
+  font-size: tokens.$font-size-25;
+}
+
+.expression-calendar-header button {
+  padding: tokens.$padding-8;
+  color: var(--fg-dark);
+  border: none;
+  background: none;
+}
+
+.expression-calendar-weekdays,
+.expression-calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, tokens.$grid-template-columns-7);
+  gap: tokens.$gap-27;
+}
+
+.expression-calendar-weekdays span {
+  color: var(--fg-dark);
+  font-size: tokens.$font-size-26;
+  text-align: center;
+}
+
+.expression-calendar-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: tokens.$width-23;
+  height: tokens.$height-18;
+  padding: tokens.$padding-94;
+  color: var(--fg);
+  border: none;
+  border-radius: tokens.$border-radius-1;
+  background: none;
+}
+
+.expression-calendar-day:hover {
+  background-color: var(--highlight);
+}
+
+.expression-calendar-day.active {
+  color: var(--bg-alt);
+  background-color: var(--accent);
+}
+
 .merge-type {
   display: flex;
   flex-direction: column;
@@ -2161,7 +2266,8 @@ button:disabled {
 @media (max-width: tokens.$selector-41) {
   .aggregate-lists,
   .merge-datasets,
-  .merge-type-grid {
+  .merge-type-grid,
+  .expression-choice-grid {
     grid-template-columns: tokens.$grid-template-columns-8;
   }
 }

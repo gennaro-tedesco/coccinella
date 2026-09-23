@@ -5,6 +5,12 @@ import { create } from "zustand";
 import { DEFAULT_COLUMN_PRECISION } from "../constants";
 import { descendantSheetIds } from "../utils/sheets";
 
+function expressionConditionLabel(column, condition) {
+  if (condition.kind === "number") return `${column} ${condition.expression}`;
+  if (condition.kind === "date") return `${column} ${condition.direction} ${condition.date}`;
+  return `${column} = ${condition.value}`;
+}
+
 function derivedSheet(metadata, filename) {
   const columnVisibility = {};
   const columnPrecision = {};
@@ -261,6 +267,81 @@ export const useAppStore = create((set, get) => ({
         previousSheetId: state.activeSheetId,
       };
     });
+  },
+
+  expressionConditionMatches: async (sourceId, column, condition) => {
+    const source = get().sheets[sourceId];
+    if (!source) return false;
+    try {
+      return await invoke("expression_condition_matches", {
+        sourceId: source.datasetId,
+        column,
+        condition,
+      });
+    } catch {
+      return false;
+    }
+  },
+
+  createExpressionFilteredSheet: async (sourceId, column, condition) => {
+    const source = get().sheets[sourceId];
+    if (!source) return false;
+    let metadata;
+    try {
+      metadata = await invoke("create_expression_filtered_dataset", {
+        sourceId: source.datasetId,
+        column,
+        condition,
+      });
+    } catch (error) {
+      get().showError(error);
+      return false;
+    }
+    if (!metadata) return false;
+    set((state) => {
+      const currentSource = state.sheets[sourceId];
+      if (!currentSource) return state;
+      const id = metadata.datasetId;
+      const label = expressionConditionLabel(column, condition);
+      const child = {
+        id,
+        filename: `${source.filename} : ${label}`,
+        path: null,
+        datasetId: metadata.datasetId,
+        separator: metadata.separator,
+        rowCount: metadata.rowCount,
+        columns: metadata.columns,
+        sourceColumns: metadata.columns,
+        columnVisibility: { ...source.columnVisibility },
+        columnTypes: metadata.columnTypes,
+        columnPrecision: { ...source.columnPrecision },
+        selectedColumns: [],
+        sorting: [],
+        children: [],
+        filterOf: {
+          sourceId,
+          pattern: label,
+        },
+        sizeBytes: metadata.sizeBytes,
+        nullCount: metadata.nullCount,
+        dataVersion: 0,
+        contentVersion: 0,
+      };
+
+      return {
+        sheets: {
+          ...state.sheets,
+          [sourceId]: {
+            ...currentSource,
+            children: [...currentSource.children, id],
+          },
+          [id]: child,
+        },
+        activeSheetId: id,
+        previousSheetId: state.activeSheetId,
+      };
+    });
+    return true;
   },
 
   createJoinedSheet: async (leftId, rightId, columns, joinType) => {

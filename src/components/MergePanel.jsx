@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { ICON_SIZE_SMALL } from "../constants";
 
@@ -7,7 +7,83 @@ const TABS = [
   { id: "merge", label: "Merge" },
   { id: "append", label: "Append" },
   { id: "aggregate", label: "Aggregate" },
+  { id: "expression", label: "Expression" },
 ];
+
+const EXPRESSION_COLUMN_TYPES = ["number", "date", "boolean"];
+
+const DATE_DIRECTIONS = [
+  { id: "before", label: "Before" },
+  { id: "after", label: "After" },
+];
+
+const BOOLEAN_VALUES = [
+  { id: true, label: "True" },
+  { id: false, label: "False" },
+];
+
+const WEEKDAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+
+function toISODate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function Calendar({ value, onChange }) {
+  const [viewDate, setViewDate] = useState(() => (value ? new Date(`${value}T00:00:00`) : new Date()));
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const startOffset = (new Date(year, month, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [
+    ...Array(startOffset).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
+  ];
+
+  return (
+    <div className="expression-calendar">
+      <div className="expression-calendar-header">
+        <button
+          type="button"
+          aria-label="Previous month"
+          onClick={() => setViewDate(new Date(year, month - 1, 1))}
+        >
+          <ChevronLeft size={ICON_SIZE_SMALL} />
+        </button>
+        <span>{viewDate.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</span>
+        <button
+          type="button"
+          aria-label="Next month"
+          onClick={() => setViewDate(new Date(year, month + 1, 1))}
+        >
+          <ChevronRight size={ICON_SIZE_SMALL} />
+        </button>
+      </div>
+      <div className="expression-calendar-weekdays">
+        {WEEKDAY_LABELS.map((label) => <span key={label}>{label}</span>)}
+      </div>
+      <div className="expression-calendar-days">
+        {cells.map((day, index) => {
+          if (day === null) return <span key={`empty-${index}`} />;
+          const iso = toISODate(new Date(year, month, day));
+          return (
+            <button
+              type="button"
+              key={iso}
+              className={`expression-calendar-day${value === iso ? " active" : ""}`}
+              onClick={() => onChange(iso)}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 const JOIN_TYPES = [
   { id: "left", label: "LEFT", description: "All rows from the first dataset" },
@@ -376,12 +452,127 @@ function AggregateFields({ sheets, sheetOrder, state, setState, openSelector, se
   );
 }
 
+function ExpressionFields({ sheets, sheetOrder, state, setState, openSelector, setOpenSelector, firstSelectorRef }) {
+  const sheet = state.datasetId ? sheets[state.datasetId] : null;
+  const columns = sheet
+    ? sheet.columns.filter((column) => EXPRESSION_COLUMN_TYPES.includes(sheet.columnTypes[column]))
+    : [];
+  const columnType = sheet && state.column ? sheet.columnTypes[state.column] : null;
+
+  return (
+    <>
+      <div className="merge-dataset-field">
+        <span>Dataset</span>
+        <DatasetSelector
+          buttonRef={firstSelectorRef}
+          value={state.datasetId}
+          ids={sheetOrder}
+          sheets={sheets}
+          open={openSelector === "expression-dataset"}
+          onToggle={() => setOpenSelector(openSelector === "expression-dataset" ? null : "expression-dataset")}
+          onSelect={(datasetId) => {
+            setState({ ...state, datasetId, column: "" });
+            setOpenSelector(null);
+          }}
+        />
+      </div>
+      {sheet && columns.length === 0 && (
+        <div className="merge-empty">No number, date or boolean columns available</div>
+      )}
+      {sheet && columns.length > 0 && (
+        <div className="merge-dataset-field">
+          <span>Column</span>
+          <MenuSelector
+            value={state.column}
+            placeholder="Select a column"
+            options={columns.map((column) => ({ id: column, label: column }))}
+            open={openSelector === "expression-column"}
+            onToggle={() => setOpenSelector(openSelector === "expression-column" ? null : "expression-column")}
+            onSelect={(column) => {
+              setState({
+                ...state,
+                column,
+                numberExpression: "",
+                dateValue: "",
+                dateDirection: "before",
+                booleanValue: true,
+              });
+              setOpenSelector(null);
+            }}
+          />
+        </div>
+      )}
+      {columnType === "number" && (
+        <div className="merge-dataset-field">
+          <span>Expression</span>
+          <input
+            type="text"
+            className="merge-dataset-trigger"
+            placeholder="x > 100 && x < 200"
+            value={state.numberExpression}
+            onChange={(event) => setState({ ...state, numberExpression: event.target.value })}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck="false"
+          />
+        </div>
+      )}
+      {columnType === "date" && (
+        <>
+          <div className="merge-dataset-field">
+            <span>Date</span>
+            <Calendar
+              key={state.column}
+              value={state.dateValue}
+              onChange={(dateValue) => setState({ ...state, dateValue })}
+            />
+          </div>
+          <div className="expression-radio-group">
+            {DATE_DIRECTIONS.map((direction) => (
+              <label className="expression-radio" key={direction.id}>
+                <input
+                  type="radio"
+                  name="expression-date-direction"
+                  checked={state.dateDirection === direction.id}
+                  onChange={() => setState({ ...state, dateDirection: direction.id })}
+                />
+                {direction.label}
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+      {columnType === "boolean" && (
+        <fieldset className="merge-types">
+          <legend>Value</legend>
+          <div className="expression-choice-grid">
+            {BOOLEAN_VALUES.map((option) => (
+              <button
+                type="button"
+                key={String(option.id)}
+                className={`merge-type${state.booleanValue === option.id ? " active" : ""}`}
+                aria-pressed={state.booleanValue === option.id}
+                onClick={() => setState({ ...state, booleanValue: option.id })}
+              >
+                <strong>{option.label}</strong>
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+    </>
+  );
+}
+
 function MergePanel({ onClose, initialTab }) {
   const sheets = useAppStore((state) => state.sheets);
   const sheetOrder = useAppStore((state) => state.sheetOrder);
   const createJoinedSheet = useAppStore((state) => state.createJoinedSheet);
   const createAppendedSheet = useAppStore((state) => state.createAppendedSheet);
   const createAggregatedSheet = useAppStore((state) => state.createAggregatedSheet);
+  const createExpressionFilteredSheet = useAppStore((state) => state.createExpressionFilteredSheet);
+  const expressionConditionMatches = useAppStore((state) => state.expressionConditionMatches);
   const [tab, setTab] = useState(
     initialTab ?? (sheetOrder.length === 1 ? "aggregate" : "merge")
   );
@@ -393,6 +584,15 @@ function MergePanel({ onClose, initialTab }) {
     groupBy: [],
     pivotTable: false,
   });
+  const [expression, setExpression] = useState({
+    datasetId: sheetOrder.length === 1 ? sheetOrder[0] : "",
+    column: "",
+    numberExpression: "",
+    dateValue: "",
+    dateDirection: "before",
+    booleanValue: true,
+  });
+  const [expressionHasMatches, setExpressionHasMatches] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [openSelector, setOpenSelector] = useState(null);
   const firstSelectorRef = useRef(null);
@@ -410,14 +610,57 @@ function MergePanel({ onClose, initialTab }) {
     return () => document.removeEventListener("click", closeSelector);
   }, [openSelector]);
 
+  const expressionColumnType = expression.datasetId && expression.column
+    ? sheets[expression.datasetId]?.columnTypes[expression.column]
+    : null;
+
+  const expressionCondition = expressionColumnType === "number"
+    ? (expression.numberExpression.trim()
+      ? { kind: "number", expression: expression.numberExpression.trim() }
+      : null)
+    : expressionColumnType === "date"
+      ? (expression.dateValue
+        ? { kind: "date", date: expression.dateValue, direction: expression.dateDirection }
+        : null)
+      : expressionColumnType === "boolean"
+        ? { kind: "boolean", value: expression.booleanValue }
+        : null;
+
+  useEffect(() => {
+    if (!expression.datasetId || !expression.column || !expressionCondition) {
+      setExpressionHasMatches(false);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const matches = await expressionConditionMatches(expression.datasetId, expression.column, expressionCondition);
+      if (!cancelled) setExpressionHasMatches(matches);
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    expression.datasetId,
+    expression.column,
+    expression.numberExpression,
+    expression.dateValue,
+    expression.dateDirection,
+    expression.booleanValue,
+    expressionColumnType,
+    expressionConditionMatches,
+  ]);
+
   const canSubmit = tab === "merge"
     ? merge.leftId && merge.rightId && merge.columns.length > 0
     : tab === "append"
       ? appendIds.length >= 2
-      : aggregate.datasetId
-        && Object.keys(aggregate.aggregations).length > 0
-        && (!aggregate.pivotTable
-          || (Object.keys(aggregate.aggregations).length === 1 && aggregate.groupBy.length === 2));
+      : tab === "aggregate"
+        ? aggregate.datasetId
+          && Object.keys(aggregate.aggregations).length > 0
+          && (!aggregate.pivotTable
+            || (Object.keys(aggregate.aggregations).length === 1 && aggregate.groupBy.length === 2))
+        : Boolean(expression.datasetId && expression.column && expressionCondition && expressionHasMatches);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -428,13 +671,15 @@ function MergePanel({ onClose, initialTab }) {
       created = await createJoinedSheet(merge.leftId, merge.rightId, merge.columns, merge.joinType);
     } else if (tab === "append") {
       created = await createAppendedSheet(appendIds);
-    } else {
+    } else if (tab === "aggregate") {
       created = await createAggregatedSheet(
         aggregate.datasetId,
         Object.entries(aggregate.aggregations).map(([column, func]) => ({ column, function: func })),
         aggregate.groupBy,
         aggregate.pivotTable,
       );
+    } else {
+      created = await createExpressionFilteredSheet(expression.datasetId, expression.column, expressionCondition);
     }
     setSubmitting(false);
     if (created) onClose();
@@ -501,11 +746,25 @@ function MergePanel({ onClose, initialTab }) {
               firstSelectorRef={firstSelectorRef}
             />
           )}
+          {tab === "expression" && (
+            <ExpressionFields
+              sheets={sheets}
+              sheetOrder={sheetOrder}
+              state={expression}
+              setState={setExpression}
+              openSelector={openSelector}
+              setOpenSelector={setOpenSelector}
+              firstSelectorRef={firstSelectorRef}
+            />
+          )}
         </div>
         <div className="merge-actions">
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="submit" className="merge-submit" disabled={!canSubmit || submitting}>
-            {submitting ? `${TABS.find(({ id }) => id === tab).label}...` : TABS.find(({ id }) => id === tab).label}
+            {(() => {
+              const label = tab === "expression" ? "Apply" : TABS.find(({ id }) => id === tab).label;
+              return submitting ? `${label}...` : label;
+            })()}
           </button>
         </div>
       </form>

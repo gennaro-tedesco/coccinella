@@ -1,6 +1,7 @@
 // Owns CSV data and exposes paged operations to the Tauri frontend.
 // FEATURE: CSV data workspace
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
+use evalexpr::{build_operator_tree, ContextWithMutableVariables, DefaultNumericTypes, HashMapContext, Value};
 use nucleo_matcher::{
     pattern::{AtomKind, CaseMatching, Normalization, Pattern},
     Config as FuzzyConfig, Matcher as FuzzyMatcher, Utf32Str,
@@ -133,7 +134,7 @@ struct Dataset {
     separator: u8,
     size_bytes: u64,
     source_id: Option<String>,
-    filter: Option<FilterSpec>,
+    filter: Option<Filter>,
     sorting: Vec<SortSpec>,
     search: Option<FilterSpec>,
     search_matches: Vec<(RowIndex, ColumnIndex)>,
@@ -148,6 +149,30 @@ struct FilterSpec {
     is_regex: bool,
     is_case_sensitive: bool,
     columns: Vec<String>,
+}
+
+#[derive(Clone)]
+enum Filter {
+    Pattern(FilterSpec),
+    Expression {
+        column: String,
+        condition: ExpressionCondition,
+    },
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum DateDirection {
+    Before,
+    After,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum ExpressionCondition {
+    Number { expression: String },
+    Date { date: String, direction: DateDirection },
+    Boolean { value: bool },
 }
 
 #[derive(Clone, Deserialize)]
@@ -517,17 +542,87 @@ fn build_matcher(spec: &FilterSpec) -> Result<Option<Matcher>, String> {
     }
 }
 
-fn matching_rows(dataset: &Dataset, spec: &FilterSpec) -> Result<Vec<RowIndex>, String> {
-    let Some(matcher) = build_matcher(spec)? else {
-        return Ok(Vec::new());
-    };
-    let column_indices = matching_column_indices(dataset, spec);
-    Ok(collect_matching_rows(
-        &dataset.rows,
-        &dataset.view,
-        &matcher,
-        &column_indices,
-    ))
+fn matching_rows(dataset: &Dataset, filter: &Filter) -> Result<Vec<RowIndex>, String> {
+    match filter {
+        Filter::Pattern(spec) => {
+            let Some(matcher) = build_matcher(spec)? else {
+                return Ok(Vec::new());
+            };
+            let column_indices = matching_column_indices(dataset, spec);
+            Ok(collect_matching_rows(
+                &dataset.rows,
+                &dataset.view,
+                &matcher,
+                &column_indices,
+            ))
+        }
+        Filter::Expression { column, condition } => {
+            let column_index = dataset
+                .columns
+                .iter()
+                .position(|candidate| candidate == column)
+                .ok_or("Filtered column no longer exists")?;
+            collect_expression_matches(&dataset.rows, &dataset.view, column_index, condition)
+        }
+    }
+}
+
+fn collect_expression_matches(
+    rows: &PackedRows,
+    view: &[RowIndex],
+    column_index: usize,
+    condition: &ExpressionCondition,
+) -> Result<Vec<RowIndex>, String> {
+    match condition {
+        ExpressionCondition::Number { expression } => {
+            let tree = build_operator_tree::<DefaultNumericTypes>(expression)
+                .map_err(|error| error.to_string())?;
+            let mut context = HashMapContext::<DefaultNumericTypes>::new();
+            Ok(view
+                .iter()
+                .copied()
+                .filter(|row_index| {
+                    let cell = rows.cell(*row_index as usize, column_index).trim();
+                    let Ok(x) = cell.parse::<f64>() else {
+                        return false;
+                    };
+                    if context.set_value("x".into(), Value::from_float(x)).is_err() {
+                        return false;
+                    }
+                    tree.eval_boolean_with_context(&context).unwrap_or(false)
+                })
+                .collect())
+        }
+        ExpressionCondition::Date { date, direction } => {
+            let target = parse_date(date).ok_or("Invalid date")?;
+            Ok(view
+                .iter()
+                .copied()
+                .filter(|row_index| {
+                    let cell = rows.cell(*row_index as usize, column_index).trim();
+                    match parse_date(cell) {
+                        Some(value) => match direction {
+                            DateDirection::Before => value < target,
+                            DateDirection::After => value > target,
+                        },
+                        None => false,
+                    }
+                })
+                .collect())
+        }
+        ExpressionCondition::Boolean { value } => {
+            let expected = if *value { "true" } else { "false" };
+            Ok(view
+                .iter()
+                .copied()
+                .filter(|row_index| {
+                    rows.cell(*row_index as usize, column_index)
+                        .trim()
+                        .eq_ignore_ascii_case(expected)
+                })
+                .collect())
+        }
+    }
 }
 
 fn collect_matching_rows(
@@ -1480,7 +1575,94 @@ async fn create_filtered_dataset(
         separator,
         size_bytes: 0,
         source_id: Some(source_id),
-        filter: Some(filter),
+        filter: Some(Filter::Pattern(filter)),
+        sorting: Vec::new(),
+        search: None,
+        search_matches: Vec::new(),
+        sort_generation: 0,
+        search_generation: 0,
+        source_path: None,
+    };
+    let result = metadata(&id, &dataset);
+    datasets(&state)?.insert(id, Arc::new(Mutex::new(dataset)));
+    Ok(Some(result))
+}
+
+#[tauri::command]
+async fn expression_condition_matches(
+    source_id: String,
+    column: String,
+    condition: ExpressionCondition,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let source_handle = dataset(&state, &source_id)?;
+    let (rows, view, column_index) = {
+        let source = lock_dataset(&source_handle)?;
+        let Some(column_index) = source.columns.iter().position(|candidate| candidate == &column)
+        else {
+            return Ok(false);
+        };
+        (Arc::clone(&source.rows), Arc::clone(&source.view), column_index)
+    };
+    let has_matches = tauri::async_runtime::spawn_blocking(move || {
+        collect_expression_matches(&rows, &view, column_index, &condition)
+            .map(|matches| !matches.is_empty())
+            .unwrap_or(false)
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    Ok(has_matches)
+}
+
+#[tauri::command]
+async fn create_expression_filtered_dataset(
+    source_id: String,
+    column: String,
+    condition: ExpressionCondition,
+    state: State<'_, AppState>,
+) -> Result<Option<SheetMetadata>, String> {
+    let source_handle = dataset(&state, &source_id)?;
+    let (rows, source_view, column_index, source_columns, column_types, separator) = {
+        let source = lock_dataset(&source_handle)?;
+        let column_index = source
+            .columns
+            .iter()
+            .position(|candidate| candidate == &column)
+            .ok_or("Column not found")?;
+        (
+            Arc::clone(&source.rows),
+            Arc::clone(&source.view),
+            column_index,
+            source.columns.clone(),
+            source.column_types.clone(),
+            source.separator,
+        )
+    };
+    let rows_for_filter = Arc::clone(&rows);
+    let condition_for_filter = condition.clone();
+    let view = tauri::async_runtime::spawn_blocking(move || {
+        collect_expression_matches(&rows_for_filter, &source_view, column_index, &condition_for_filter)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    if view.is_empty() {
+        return Ok(None);
+    }
+    let id = state
+        .next_dataset_id
+        .fetch_add(1, AtomicOrdering::Relaxed)
+        .to_string();
+    let view = Arc::new(view);
+    let dataset = Dataset {
+        columns: source_columns,
+        rows,
+        order: Arc::clone(&view),
+        view,
+        column_types,
+        separator,
+        size_bytes: 0,
+        source_id: Some(source_id),
+        filter: Some(Filter::Expression { column, condition }),
         sorting: Vec::new(),
         search: None,
         search_matches: Vec::new(),
@@ -2149,6 +2331,8 @@ pub fn run() {
             load_indexed_csv_file,
             rescan_csv_file,
             create_filtered_dataset,
+            expression_condition_matches,
+            create_expression_filtered_dataset,
             create_joined_dataset,
             create_appended_dataset,
             create_aggregated_dataset,
@@ -2702,23 +2886,23 @@ mod tests {
 
         let filtered = matching_rows(
             &dataset,
-            &FilterSpec {
+            &Filter::Pattern(FilterSpec {
                 pattern: "^Ada".into(),
                 is_regex: true,
                 is_case_sensitive: true,
                 columns: Vec::new(),
-            },
+            }),
         )
         .expect("filter rows");
         assert_eq!(filtered, [0, 2]);
         let restricted = matching_rows(
             &dataset,
-            &FilterSpec {
+            &Filter::Pattern(FilterSpec {
                 pattern: "^Ada".into(),
                 is_regex: true,
                 is_case_sensitive: true,
                 columns: vec!["score".into()],
-            },
+            }),
         )
         .expect("filter selected column");
         assert!(restricted.is_empty());
@@ -2772,5 +2956,70 @@ mod tests {
             vec![(0, 0)],
         ));
         assert!(dataset.search_matches.is_empty());
+    }
+
+    fn full_view(rows: &PackedRows) -> Vec<RowIndex> {
+        (0..rows.len())
+            .map(|index| RowIndex::try_from(index).expect("test rows fit in u32"))
+            .collect()
+    }
+
+    #[test]
+    fn matches_number_expressions_against_x() {
+        let rows = packed_rows(&[&["5"], &["50"], &["150"], &["abc"]]);
+        let view = full_view(&rows);
+        let condition = ExpressionCondition::Number {
+            expression: "x > 10 && x < 200".to_owned(),
+        };
+        let matches = collect_expression_matches(&rows, &view, 0, &condition).expect("filter");
+        assert_eq!(matches, vec![1, 2]);
+    }
+
+    #[test]
+    fn matches_dates_before_and_after() {
+        let rows = packed_rows(&[&["2024-01-01"], &["2024-06-15"], &["2024-12-31"]]);
+        let view = full_view(&rows);
+        let before = ExpressionCondition::Date {
+            date: "2024-06-15".to_owned(),
+            direction: DateDirection::Before,
+        };
+        assert_eq!(
+            collect_expression_matches(&rows, &view, 0, &before).expect("filter"),
+            vec![0]
+        );
+        let after = ExpressionCondition::Date {
+            date: "2024-06-15".to_owned(),
+            direction: DateDirection::After,
+        };
+        assert_eq!(
+            collect_expression_matches(&rows, &view, 0, &after).expect("filter"),
+            vec![2]
+        );
+    }
+
+    #[test]
+    fn matches_boolean_values_case_insensitively() {
+        let rows = packed_rows(&[&["true"], &["False"], &["TRUE"]]);
+        let view = full_view(&rows);
+        let condition = ExpressionCondition::Boolean { value: true };
+        let matches = collect_expression_matches(&rows, &view, 0, &condition).expect("filter");
+        assert_eq!(matches, vec![0, 2]);
+    }
+
+    #[test]
+    fn rejects_invalid_or_non_boolean_number_expressions() {
+        let rows = packed_rows(&[&["5"]]);
+        let view = full_view(&rows);
+        let invalid = ExpressionCondition::Number {
+            expression: "x > (".to_owned(),
+        };
+        assert!(collect_expression_matches(&rows, &view, 0, &invalid).is_err());
+        let non_boolean = ExpressionCondition::Number {
+            expression: "x + 1".to_owned(),
+        };
+        assert_eq!(
+            collect_expression_matches(&rows, &view, 0, &non_boolean).expect("filter"),
+            Vec::<RowIndex>::new()
+        );
     }
 }
