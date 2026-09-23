@@ -85,7 +85,18 @@ function JsonNode({
         ) : (
           <span className="json-node-spacer" />
         )}
-        <span className="json-key">{label}</span>
+        {expandable ? (
+          <button
+            type="button"
+            className="json-key json-key-trigger"
+            aria-expanded={expanded}
+            onClick={() => setOpen((current) => !current)}
+          >
+            {label}
+          </button>
+        ) : (
+          <span className="json-key">{label}</span>
+        )}
         <span className="json-separator">:</span>
         <span className={`json-value json-${type}`}>
           {expandable ? summary : JSON.stringify(value)}

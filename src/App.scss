@@ -1119,6 +1119,17 @@ body,
   color: var(--col-4);
 }
 
+.json-key-trigger {
+  border: none;
+  background: none;
+  padding: tokens.$padding-17;
+  font: inherit;
+}
+
+.json-key-trigger:hover {
+  color: var(--accent);
+}
+
 .json-separator {
   color: var(--fg-dark);
 }
@@ -1149,6 +1160,11 @@ body,
 
 .json-key-name:active {
   cursor: pointer;
+}
+
+.json-key-structure {
+  margin-left: tokens.$json-node-gap;
+  color: var(--fg-dark);
 }
 
 .json-key-node > .column-row-content {

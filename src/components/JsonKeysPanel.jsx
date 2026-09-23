@@ -9,11 +9,15 @@ import {
 import { formatBytes } from "../utils/stats";
 import { ICON_SIZE_COMPACT, ICON_SIZE_DEFAULT } from "../constants";
 
-function KeyNode({ label, schema, schemaPath, sheet, navigate, depth = 0 }) {
-  const [open, setOpen] = useState(depth < 2);
+function KeyNode({ label, schema, schemaPath, sheet, navigate }) {
+  const [open, setOpen] = useState(false);
   const children = Object.entries(schema.children ?? {});
   if (schema.item) children.unshift([JSON_ARRAY_ITEM_PATH_SEGMENT, schema.item]);
   const expandable = children.length > 0;
+  const structure = [
+    schema.types.includes("object") && "{}",
+    schema.types.includes("array") && "[]",
+  ].filter(Boolean);
 
   return (
     <li className="column-row json-key-node">
@@ -33,6 +37,9 @@ function KeyNode({ label, schema, schemaPath, sheet, navigate, depth = 0 }) {
           }}
         >
           <span className="json-key-label">{label}</span>
+          {structure.length > 0 && (
+            <span className="json-key-structure">{structure.join(" ")}</span>
+          )}
         </button>
         {expandable && (
           <button
@@ -63,7 +70,6 @@ function KeyNode({ label, schema, schemaPath, sheet, navigate, depth = 0 }) {
               schemaPath={[...schemaPath, key]}
               sheet={sheet}
               navigate={navigate}
-              depth={depth + 1}
             />
           ))}
         </ul>
