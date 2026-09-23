@@ -1,7 +1,7 @@
 export const DEFAULT_COLUMN_PRECISION = 2;
 export const MIN_COLUMN_PRECISION = 0;
 export const MAX_COLUMN_PRECISION = 10;
-export const DEFAULT_FONT_SIZE = 14;
+export const DEFAULT_FONT_SIZE = 18;
 export const MIN_FONT_SIZE = 10;
 export const MAX_FONT_SIZE = 24;
 export const FONT_SIZE_STEP = 1;
