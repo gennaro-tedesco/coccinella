@@ -11,6 +11,7 @@ export const FALLBACK_ROW_HEIGHT_PX = 32;
 export const GO_TO_LINE_ROW_HEIGHT_PX = 29;
 export const GO_TO_LINE_CONTEXT_ROWS = 2;
 export const GO_TO_LINE_HIGHLIGHT_MS = 2000;
+export const CELL_COPY_FEEDBACK_MS = 650;
 export const COLUMN_DRAG_THRESHOLD_PX = 4;
 export const POST_DRAG_CLICK_DELAY_MS = 100;
 export const BYTES_PER_UNIT = 1024;

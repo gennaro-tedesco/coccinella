@@ -14,11 +14,12 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { Settings } from "lucide-react";
+import { Copy, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import ColumnSettings from "./ColumnSettings";
 import {
   DEFAULT_COLUMN_PRECISION,
+  CELL_COPY_FEEDBACK_MS,
   ICON_SIZE_COMPACT,
   ROW_HEIGHT_CHANGE_THRESHOLD_PX,
   SOURCE_DATA_LINE_OFFSET,
@@ -50,10 +51,12 @@ function DataTable(_props, ref) {
   const [offset, setOffset] = useState(0);
   const [page, setPage] = useState({ offset: 0, rows: [], matches: [] });
   const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT);
+  const [copiedCellKey, setCopiedCellKey] = useState(null);
   const tableRef = useRef(null);
   const thRefs = useRef({});
   const pendingSnapRef = useRef(null);
   const pivotSuperHeaderRef = useRef(null);
+  const copyFeedbackTimeoutRef = useRef(null);
   const [pivotSuperHeaderHeight, setPivotSuperHeaderHeight] = useState(0);
 
   useImperativeHandle(ref, () => ({
@@ -92,6 +95,11 @@ function DataTable(_props, ref) {
     setPage({ offset: 0, rows: [], matches: [] });
     tableRef.current?.parentElement?.scrollTo({ top: 0 });
   }, [sheet?.datasetId]);
+
+  useEffect(
+    () => () => window.clearTimeout(copyFeedbackTimeoutRef.current),
+    [],
+  );
 
   useEffect(() => {
     const scroller = tableRef.current?.parentElement;
@@ -422,17 +430,49 @@ function DataTable(_props, ref) {
                   isSelected && "selected",
                   isMatch && "search-match",
                   isActiveMatch && "search-match-active",
+                  copiedCellKey === cellKey && "copied",
                   sheet.pivotDimensions?.includes(cell.column.id) && "pivot-dimension",
                 ]
                   .filter(Boolean)
                   .join(" ");
+                const content = flexRender(
+                  cell.column.columnDef.cell,
+                  cell.getContext(),
+                );
                 return (
                   <td
                     key={cell.id}
                     className={className || undefined}
                     aria-selected={isSelected || undefined}
                   >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    <div className="cell-content">
+                      <span className="cell-value">{content}</span>
+                      <button
+                        type="button"
+                        className="cell-copy-trigger"
+                        aria-label={`Copy ${cell.column.id} cell`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          const value =
+                            event.currentTarget.parentElement?.textContent ?? "";
+                          void navigator.clipboard
+                            .writeText(value)
+                            .then(() => {
+                              window.clearTimeout(
+                                copyFeedbackTimeoutRef.current,
+                              );
+                              setCopiedCellKey(cellKey);
+                              copyFeedbackTimeoutRef.current = window.setTimeout(
+                                () => setCopiedCellKey(null),
+                                CELL_COPY_FEEDBACK_MS,
+                              );
+                            })
+                            .catch(showError);
+                        }}
+                      >
+                        <Copy size={ICON_SIZE_COMPACT} />
+                      </button>
+                    </div>
                   </td>
                 );
               })}

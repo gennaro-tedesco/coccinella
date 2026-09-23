@@ -271,6 +271,7 @@ body,
 
 .top-bar {
   position: relative;
+  z-index: tokens.$z-index-9;
   display: flex;
   align-items: center;
   padding: tokens.$padding-3 tokens.$padding-4 tokens.$padding-5 tokens.$padding-6;
@@ -1258,6 +1259,61 @@ body,
   padding: tokens.$padding-56 tokens.$padding-57;
   border-bottom: tokens.$border-bottom-5 solid var(--border);
   background-color: var(--bg);
+}
+
+.cell-content {
+  position: relative;
+}
+
+.cell-copy-trigger {
+  position: absolute;
+  top: tokens.$top-9;
+  right: tokens.$right-5;
+  transform: translateY(tokens.$transform-5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: tokens.$padding-103;
+  border: none;
+  border-radius: tokens.$border-radius-41;
+  background-color: inherit;
+  color: inherit;
+  opacity: tokens.$opacity-16;
+  pointer-events: none;
+}
+
+.data-table td:hover .cell-copy-trigger,
+.cell-copy-trigger:focus-visible {
+  opacity: tokens.$opacity-17;
+  pointer-events: auto;
+}
+
+.cell-copy-trigger:hover {
+  color: var(--accent);
+}
+
+.data-table td.copied .cell-value,
+.data-table td.copied .cell-copy-trigger {
+  color: var(--accent);
+  animation: cell-copy-feedback tokens.$animation-duration-2 ease-in-out;
+}
+
+@keyframes cell-copy-feedback {
+  #{tokens.$selector-42},
+  #{tokens.$selector-44} {
+    opacity: tokens.$opacity-17;
+  }
+
+  #{tokens.$selector-43} {
+    opacity: tokens.$opacity-18;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .data-table td.copied .cell-value,
+  .data-table td.copied .cell-copy-trigger {
+    animation: none;
+  }
 }
 
 .data-table .virtual-spacer td {
