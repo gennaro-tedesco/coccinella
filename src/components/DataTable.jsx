@@ -453,10 +453,8 @@ function DataTable(_props, ref) {
                         aria-label={`Copy ${cell.column.id} cell`}
                         onClick={(event) => {
                           event.stopPropagation();
-                          const value =
-                            event.currentTarget.parentElement?.textContent ?? "";
                           void navigator.clipboard
-                            .writeText(value)
+                            .writeText(String(cell.getValue() ?? ""))
                             .then(() => {
                               window.clearTimeout(
                                 copyFeedbackTimeoutRef.current,

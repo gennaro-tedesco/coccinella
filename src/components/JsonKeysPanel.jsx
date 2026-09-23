@@ -4,7 +4,6 @@ import { useAppStore } from "../store/useAppStore";
 import {
   buildJsonKeyTree,
   JSON_ARRAY_ITEM_PATH_SEGMENT,
-  resolveJsonNavigationTargets,
 } from "../utils/jsonTree";
 import { formatBytes } from "../utils/stats";
 import { ICON_SIZE_COMPACT, ICON_SIZE_DEFAULT } from "../constants";
@@ -26,13 +25,7 @@ function KeyNode({ label, schema, schemaPath, sheet, navigate }) {
           type="button"
           className="column-name json-key-name"
           onClick={() => {
-            const targets = resolveJsonNavigationTargets(
-              sheet.data,
-              schemaPath,
-            );
-            if (targets.paths.length > 0) {
-              navigate(sheet.id, targets.paths, targets.range);
-            }
+            navigate(sheet.id, schemaPath);
             if (expandable) setOpen((current) => !current);
           }}
         >

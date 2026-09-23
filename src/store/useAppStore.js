@@ -2,7 +2,10 @@
 // FEATURE: Data workspace
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
-import { DEFAULT_COLUMN_PRECISION } from "../constants";
+import {
+  DEFAULT_COLUMN_PRECISION,
+  EXPRESSION_NO_MATCHES_MESSAGE,
+} from "../constants";
 import { descendantSheetIds } from "../utils/sheets";
 
 function expressionConditionLabel(column, condition) {
@@ -60,8 +63,8 @@ export const useAppStore = create((set, get) => ({
   hoveredColumn: null,
   setHoveredColumn: (column) => set({ hoveredColumn: column }),
   jsonNavigation: null,
-  navigateToJsonKey: (sheetId, paths, range = false) =>
-    set({ jsonNavigation: { sheetId, paths, range } }),
+  navigateToJsonKey: (sheetId, schemaPath) =>
+    set({ jsonNavigation: { sheetId, schemaPath } }),
   clearJsonNavigation: () => set({ jsonNavigation: null }),
 
   sheets: {},
@@ -309,15 +312,11 @@ export const useAppStore = create((set, get) => ({
   expressionConditionMatches: async (sourceId, column, condition) => {
     const source = get().sheets[sourceId];
     if (!source) return false;
-    try {
-      return await invoke("expression_condition_matches", {
-        sourceId: source.datasetId,
-        column,
-        condition,
-      });
-    } catch {
-      return false;
-    }
+    return invoke("expression_condition_matches", {
+      sourceId: source.datasetId,
+      column,
+      condition,
+    });
   },
 
   createExpressionFilteredSheet: async (sourceId, column, condition) => {
@@ -334,7 +333,10 @@ export const useAppStore = create((set, get) => ({
       get().showError(error);
       return false;
     }
-    if (!metadata) return false;
+    if (!metadata) {
+      get().showError(EXPRESSION_NO_MATCHES_MESSAGE);
+      return false;
+    }
     set((state) => {
       const currentSource = state.sheets[sourceId];
       if (!currentSource) return state;

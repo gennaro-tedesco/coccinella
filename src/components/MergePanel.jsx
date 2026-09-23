@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
-import { ICON_SIZE_SMALL } from "../constants";
+import { EXPRESSION_NO_MATCHES_MESSAGE, ICON_SIZE_SMALL, SEARCH_DEBOUNCE_MS } from "../constants";
 
 const TABS = [
   { id: "merge", label: "Merge" },
   { id: "append", label: "Append" },
   { id: "aggregate", label: "Aggregate" },
-  { id: "expression", label: "Expression" },
+  { id: "expression", label: "Expression", submitLabel: "Apply" },
 ];
 
 const EXPRESSION_COLUMN_TYPES = ["number", "date", "boolean"];
@@ -452,7 +452,7 @@ function AggregateFields({ sheets, sheetOrder, state, setState, openSelector, se
   );
 }
 
-function ExpressionFields({ sheets, sheetOrder, state, setState, openSelector, setOpenSelector, firstSelectorRef }) {
+function ExpressionFields({ sheets, sheetOrder, state, setState, message, openSelector, setOpenSelector, firstSelectorRef }) {
   const sheet = state.datasetId ? sheets[state.datasetId] : null;
   const columns = sheet
     ? sheet.columns.filter((column) => EXPRESSION_COLUMN_TYPES.includes(sheet.columnTypes[column]))
@@ -561,6 +561,7 @@ function ExpressionFields({ sheets, sheetOrder, state, setState, openSelector, s
           </div>
         </fieldset>
       )}
+      {message && <div className="merge-empty">{message}</div>}
     </>
   );
 }
@@ -593,7 +594,7 @@ function MergePanel({ onClose, initialTab }) {
     dateDirection: "before",
     booleanValue: true,
   });
-  const [expressionHasMatches, setExpressionHasMatches] = useState(false);
+  const [expressionCheck, setExpressionCheck] = useState({ key: null, hasMatches: false, error: null });
   const [submitting, setSubmitting] = useState(false);
   const [openSelector, setOpenSelector] = useState(null);
   const firstSelectorRef = useRef(null);
@@ -627,30 +628,31 @@ function MergePanel({ onClose, initialTab }) {
         ? { kind: "boolean", value: expression.booleanValue }
         : null;
 
+  const expressionCheckKey = expression.datasetId && expression.column && expressionCondition
+    ? JSON.stringify([expression.datasetId, expression.column, expressionCondition])
+    : null;
+  const expressionChecked = expressionCheckKey !== null && expressionCheck.key === expressionCheckKey;
+  const expressionMessage = expressionChecked
+    ? expressionCheck.error ?? (expressionCheck.hasMatches ? null : EXPRESSION_NO_MATCHES_MESSAGE)
+    : null;
+
   useEffect(() => {
-    if (!expression.datasetId || !expression.column || !expressionCondition) {
-      setExpressionHasMatches(false);
-      return undefined;
-    }
+    if (!expressionCheckKey) return undefined;
     let cancelled = false;
-    const timer = setTimeout(async () => {
-      const matches = await expressionConditionMatches(expression.datasetId, expression.column, expressionCondition);
-      if (!cancelled) setExpressionHasMatches(matches);
-    }, 250);
+    const timer = setTimeout(() => {
+      expressionConditionMatches(expression.datasetId, expression.column, expressionCondition)
+        .then((hasMatches) => {
+          if (!cancelled) setExpressionCheck({ key: expressionCheckKey, hasMatches, error: null });
+        })
+        .catch((error) => {
+          if (!cancelled) setExpressionCheck({ key: expressionCheckKey, hasMatches: false, error: String(error) });
+        });
+    }, SEARCH_DEBOUNCE_MS);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [
-    expression.datasetId,
-    expression.column,
-    expression.numberExpression,
-    expression.dateValue,
-    expression.dateDirection,
-    expression.booleanValue,
-    expressionColumnType,
-    expressionConditionMatches,
-  ]);
+  }, [expressionCheckKey, expressionConditionMatches]);
 
   const canSubmit = tab === "merge"
     ? merge.leftId && merge.rightId && merge.columns.length > 0
@@ -661,7 +663,7 @@ function MergePanel({ onClose, initialTab }) {
           && Object.keys(aggregate.aggregations).length > 0
           && (!aggregate.pivotTable
             || (Object.keys(aggregate.aggregations).length === 1 && aggregate.groupBy.length === 2))
-        : Boolean(expression.datasetId && expression.column && expressionCondition && expressionHasMatches);
+        : Boolean(expressionChecked && expressionCheck.hasMatches);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -753,6 +755,7 @@ function MergePanel({ onClose, initialTab }) {
               sheetOrder={sheetOrder}
               state={expression}
               setState={setExpression}
+              message={expressionMessage}
               openSelector={openSelector}
               setOpenSelector={setOpenSelector}
               firstSelectorRef={firstSelectorRef}
@@ -763,7 +766,8 @@ function MergePanel({ onClose, initialTab }) {
           <button type="button" onClick={onClose}>Cancel</button>
           <button type="submit" className="merge-submit" disabled={!canSubmit || submitting}>
             {(() => {
-              const label = tab === "expression" ? "Apply" : TABS.find(({ id }) => id === tab).label;
+              const activeTab = TABS.find(({ id }) => id === tab);
+              const label = activeTab.submitLabel ?? activeTab.label;
               return submitting ? `${label}...` : label;
             })()}
           </button>

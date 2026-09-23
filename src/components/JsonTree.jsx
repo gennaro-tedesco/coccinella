@@ -1,82 +1,37 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
-import { GO_TO_LINE_HIGHLIGHT_MS, ICON_SIZE_COMPACT } from "../constants";
+import {
+  encodedAncestorPaths,
+  encodedRowSchemaPath,
+  flattenJsonTree,
+  JSON_ARRAY_ITEM_PATH_SEGMENT,
+  JSON_ROOT_PATH,
+  resolveJsonNavigationPath,
+} from "../utils/jsonTree";
+import {
+  FALLBACK_ROW_HEIGHT_PX,
+  GO_TO_LINE_HIGHLIGHT_MS,
+  ICON_SIZE_COMPACT,
+  JSON_TREE_OVERSCAN_ROWS,
+  ROW_HEIGHT_CHANGE_THRESHOLD_PX,
+} from "../constants";
 
-function valueType(value) {
-  if (value === null) return "null";
-  if (Array.isArray(value)) return "array";
-  return typeof value;
-}
+const NO_OVERRIDES = new Map();
 
-function pathIsAncestor(path, targetPath) {
+function JsonRow({ row, className, onToggle, children }) {
+  const summary = row.type === "array" ? `${row.size} items` : `${row.size} keys`;
   return (
-    path.length < targetPath.length &&
-    path.every((segment, index) => segment === targetPath[index])
-  );
-}
-
-function pathsMatch(path, targetPath) {
-  return (
-    path.length === targetPath.length &&
-    path.every((segment, index) => segment === targetPath[index])
-  );
-}
-
-function JsonNode({
-  label,
-  value,
-  path,
-  navigationPaths,
-  navigationRange,
-  searchMatchPaths,
-  activeSearchPath,
-  depth = 0,
-}) {
-  const [open, setOpen] = useState(depth < 2);
-  const type = valueType(value);
-  const entries =
-    type === "array"
-      ? value.map((item, index) => [index, item])
-      : type === "object"
-        ? Object.entries(value)
-        : null;
-  const expandable = entries !== null;
-  const forcedOpen =
-    navigationPaths.length > 0 &&
-    navigationPaths.some(
-      (navigationPath) =>
-        pathIsAncestor(path, navigationPath) ||
-        (navigationRange && pathsMatch(path, navigationPath)),
-    );
-  useEffect(() => {
-    if (forcedOpen) setOpen(true);
-  }, [forcedOpen]);
-  const expanded = open || forcedOpen;
-  const summary =
-    type === "array"
-      ? `${entries.length} items`
-      : `${entries?.length ?? 0} keys`;
-  const encodedPath = JSON.stringify(path);
-  const rowClassName = [
-    "json-node-row",
-    searchMatchPaths.has(encodedPath) && "search-match",
-    activeSearchPath && pathsMatch(path, activeSearchPath) && "search-match-active",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  return (
-    <li className="json-node">
-      <div className={rowClassName} data-json-path={encodedPath}>
-        {expandable ? (
+    <li className="json-node" style={{ "--json-depth": row.depth }}>
+      <div className={className}>
+        {row.expandable ? (
           <button
             type="button"
             className="json-node-toggle"
-            aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`}
-            onClick={() => setOpen((current) => !current)}
+            aria-label={`${row.expanded ? "Collapse" : "Expand"} ${row.label}`}
+            onClick={onToggle}
           >
-            {expanded ? (
+            {row.expanded ? (
               <ChevronDown size={ICON_SIZE_COMPACT} />
             ) : (
               <ChevronRight size={ICON_SIZE_COMPACT} />
@@ -85,48 +40,41 @@ function JsonNode({
         ) : (
           <span className="json-node-spacer" />
         )}
-        {expandable ? (
+        {row.expandable ? (
           <button
             type="button"
             className="json-key json-key-trigger"
-            aria-expanded={expanded}
-            onClick={() => setOpen((current) => !current)}
+            aria-expanded={row.expanded}
+            onClick={onToggle}
           >
-            {label}
+            {row.label}
           </button>
         ) : (
-          <span className="json-key">{label}</span>
+          <span className="json-key">{row.label}</span>
         )}
         <span className="json-separator">:</span>
-        <span className={`json-value json-${type}`}>
-          {expandable ? summary : JSON.stringify(value)}
+        <span className={`json-value json-${row.type}`}>
+          {row.expandable ? summary : JSON.stringify(row.value)}
         </span>
       </div>
-      {expandable && expanded && entries.length > 0 && (
-        <ul className="json-children">
-          {entries.map(([key, child]) => (
-            <JsonNode
-              key={key}
-              label={String(key)}
-              value={child}
-              path={[...path, key]}
-              navigationPaths={navigationPaths}
-              navigationRange={navigationRange}
-              searchMatchPaths={searchMatchPaths}
-              activeSearchPath={activeSearchPath}
-              depth={depth + 1}
-            />
-          ))}
-        </ul>
-      )}
+      {children}
     </li>
   );
+}
+
+function treeScrollGeometry(tree) {
+  const scroller = tree?.closest(".content");
+  if (!scroller) return null;
+  const treeTop =
+    tree.getBoundingClientRect().top -
+    scroller.getBoundingClientRect().top +
+    scroller.scrollTop;
+  return { scroller, treeTop };
 }
 
 function JsonTree() {
   const treeRef = useRef(null);
   const highlightTimeoutRef = useRef(null);
-  const highlightedNodesRef = useRef([]);
   const sheet = useAppStore((state) =>
     state.activeSheetId ? state.sheets[state.activeSheetId] : null,
   );
@@ -134,135 +82,237 @@ function JsonTree() {
   const clearNavigation = useAppStore((state) => state.clearJsonNavigation);
   const searchMatches = useAppStore((state) => state.jsonSearchMatches);
   const activeSearchMatch = useAppStore((state) => state.activeSearchMatch);
-  const navigationPaths =
-    navigation?.sheetId === sheet?.id ? navigation.paths : [];
-  const navigationRange = Boolean(
-    navigation?.sheetId === sheet?.id && navigation.range,
-  );
   const activeSearchPath = activeSearchMatch?.path ?? null;
-  const focusPaths =
-    navigationPaths.length > 0
-      ? navigationPaths
-      : activeSearchPath
-        ? [activeSearchPath]
-        : [];
+  const [openState, setOpenState] = useState({ sheetId: null, overrides: NO_OVERRIDES });
+  const [pendingFocus, setPendingFocus] = useState(null);
+  const [highlight, setHighlight] = useState(null);
+  const [firstVisibleRow, setFirstVisibleRow] = useState(0);
+  const [viewportRows, setViewportRows] = useState(0);
+  const [rowHeight, setRowHeight] = useState(FALLBACK_ROW_HEIGHT_PX);
+  const sheetId = sheet?.kind === "json" ? sheet.id : null;
+  const overrides = openState.sheetId === sheetId ? openState.overrides : NO_OVERRIDES;
+  const rows = useMemo(
+    () => (sheetId ? flattenJsonTree(sheet.data, overrides) : []),
+    [sheetId, sheet?.data, overrides],
+  );
   const searchMatchPaths = useMemo(
     () => new Set(searchMatches.map((match) => JSON.stringify(match.path))),
     [searchMatches],
   );
+  const activeSearchEncodedPath = activeSearchPath ? JSON.stringify(activeSearchPath) : null;
 
-  useEffect(() => {
-    if (navigationPaths.length === 0) return undefined;
-    const frame = window.requestAnimationFrame(() => {
-      const targets = navigationPaths
-        .map((path) => {
-          const encodedPath = JSON.stringify(path);
-          const targetRow =
-            path.length === 0
-              ? treeRef.current
-              : treeRef.current?.querySelector(
-                  `[data-json-path="${CSS.escape(encodedPath)}"]`,
-                );
-          return navigationRange && path.length > 0
-            ? targetRow?.closest(".json-node")
-            : targetRow;
-        })
-        .filter(Boolean);
-      const scroller = treeRef.current?.closest(".content");
-      if (targets.length === 0 || !scroller) return;
-      const firstTarget = targets[0];
-      const scrollTop =
-        scroller.scrollTop +
-        firstTarget.getBoundingClientRect().top -
-        scroller.getBoundingClientRect().top;
-      scroller.scrollTo({ top: Math.max(0, scrollTop), behavior: "smooth" });
-      window.clearTimeout(highlightTimeoutRef.current);
-      for (const node of highlightedNodesRef.current) {
-        node.classList.remove("go-to-line-highlight");
-        node.style.removeProperty("--go-to-line-highlight-duration");
-      }
-      for (const target of targets) {
-        target.style.setProperty(
-          "--go-to-line-highlight-duration",
-          `${GO_TO_LINE_HIGHLIGHT_MS}ms`,
-        );
-        void target.offsetWidth;
-        target.classList.add("go-to-line-highlight");
-      }
-      highlightedNodesRef.current = targets;
-      highlightTimeoutRef.current = window.setTimeout(() => {
-        for (const target of targets) {
-          target.classList.remove("go-to-line-highlight");
-          target.style.removeProperty("--go-to-line-highlight-duration");
+  function updateOverrides(update) {
+    setOpenState((current) => {
+      const next = new Map(current.sheetId === sheetId ? current.overrides : NO_OVERRIDES);
+      update(next);
+      return { sheetId, overrides: next };
+    });
+  }
+
+  function expandAncestors(paths, includeSelf) {
+    updateOverrides((next) => {
+      for (const path of paths) {
+        for (const encodedPath of encodedAncestorPaths(path, includeSelf)) {
+          next.set(encodedPath, true);
         }
-        highlightedNodesRef.current = [];
-      }, GO_TO_LINE_HIGHLIGHT_MS);
-      clearNavigation();
+      }
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [navigationPaths, navigationRange, clearNavigation]);
+  }
 
   useEffect(() => {
-    if (!activeSearchPath) return undefined;
-    const frame = window.requestAnimationFrame(() => {
-      const encodedPath = JSON.stringify(activeSearchPath);
-      const target = treeRef.current?.querySelector(
-        `[data-json-path="${CSS.escape(encodedPath)}"]`,
-      );
-      const scroller = treeRef.current?.closest(".content");
-      if (!target || !scroller) return;
-      const scrollTop =
-        scroller.scrollTop +
-        target.getBoundingClientRect().top -
-        scroller.getBoundingClientRect().top;
-      scroller.scrollTo({ top: Math.max(0, scrollTop), behavior: "smooth" });
+    if (!navigation || navigation.sheetId !== sheetId) return;
+    clearNavigation();
+    const { schemaPath } = navigation;
+    const range = schemaPath.at(-1) === JSON_ARRAY_ITEM_PATH_SEGMENT;
+    const firstPath = resolveJsonNavigationPath(sheet.data, schemaPath);
+    if (!firstPath) return;
+    expandAncestors([firstPath], range);
+    setPendingFocus({
+      target: JSON.stringify(firstPath),
+      highlight: {
+        schemaPath: JSON.stringify(range ? schemaPath.slice(0, -1) : schemaPath),
+        range,
+      },
     });
-    return () => window.cancelAnimationFrame(frame);
+  }, [navigation, sheetId, clearNavigation]);
+
+  useEffect(() => {
+    if (!activeSearchPath) return;
+    expandAncestors([activeSearchPath], false);
+    setPendingFocus({ target: JSON.stringify(activeSearchPath), highlight: null });
   }, [activeSearchPath]);
 
   useEffect(() => {
-    return () => {
-      window.clearTimeout(highlightTimeoutRef.current);
-      for (const node of highlightedNodesRef.current) {
-        node.classList.remove("go-to-line-highlight");
-        node.style.removeProperty("--go-to-line-highlight-duration");
-      }
-    };
-  }, []);
-  if (!sheet || sheet.kind !== "json") return null;
+    if (!pendingFocus) return;
+    setPendingFocus(null);
+    const geometry = treeScrollGeometry(treeRef.current);
+    const index = pendingFocus.target === JSON_ROOT_PATH
+      ? 0
+      : rows.findIndex((row) => row.encodedPath === pendingFocus.target);
+    if (!geometry || index < 0) return;
+    geometry.scroller.scrollTo({
+      top: Math.max(0, geometry.treeTop + index * rowHeight),
+      behavior: "smooth",
+    });
+    if (!pendingFocus.highlight) return;
+    setHighlight((current) => ({
+      ...pendingFocus.highlight,
+      generation: (current?.generation ?? 0) + 1,
+    }));
+    window.clearTimeout(highlightTimeoutRef.current);
+    highlightTimeoutRef.current = window.setTimeout(
+      () => setHighlight(null),
+      GO_TO_LINE_HIGHLIGHT_MS,
+    );
+  }, [pendingFocus, rows, rowHeight]);
 
-  const rootType = valueType(sheet.data);
-  const entries =
-    rootType === "array"
-      ? sheet.data.map((item, index) => [index, item])
-      : rootType === "object"
-        ? Object.entries(sheet.data)
-        : null;
+  useEffect(() => () => window.clearTimeout(highlightTimeoutRef.current), []);
+
+  useEffect(() => {
+    const tree = treeRef.current;
+    const scroller = tree?.closest(".content");
+    if (!scroller) return undefined;
+    function updateWindow() {
+      const geometry = treeScrollGeometry(tree);
+      setFirstVisibleRow(
+        Math.floor(Math.max(0, scroller.scrollTop - geometry.treeTop) / rowHeight),
+      );
+      setViewportRows(Math.ceil(scroller.clientHeight / rowHeight));
+    }
+    updateWindow();
+    scroller.addEventListener("scroll", updateWindow, { passive: true });
+    const observer = new ResizeObserver(updateWindow);
+    observer.observe(scroller);
+    return () => {
+      scroller.removeEventListener("scroll", updateWindow);
+      observer.disconnect();
+    };
+  }, [sheetId, rowHeight]);
+
+  const windowStart = Math.min(
+    rows.length,
+    Math.max(0, firstVisibleRow - JSON_TREE_OVERSCAN_ROWS),
+  );
+  const windowEnd = Math.min(
+    rows.length,
+    firstVisibleRow + viewportRows + JSON_TREE_OVERSCAN_ROWS,
+  );
+
+  useEffect(() => {
+    const row = treeRef.current?.querySelector(".json-node");
+    if (!row) return undefined;
+    function measure() {
+      const measured = row.getBoundingClientRect().height;
+      setRowHeight((current) =>
+        measured && Math.abs(measured - current) > ROW_HEIGHT_CHANGE_THRESHOLD_PX
+          ? measured
+          : current,
+      );
+    }
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [rows, windowStart]);
+
+  const subtreeEnds = useMemo(() => new Map(), [rows]);
+
+  if (!sheetId) return null;
+
+  function matchesHighlight(rowIndex) {
+    return encodedRowSchemaPath(rows, rowIndex) === highlight.schemaPath;
+  }
+
+  function subtreeEnd(start) {
+    if (!subtreeEnds.has(start)) {
+      let end = start + 1;
+      while (end < rows.length && rows[end].depth > rows[start].depth) end += 1;
+      subtreeEnds.set(start, end);
+    }
+    return subtreeEnds.get(start);
+  }
+
+  const highlightsTree = Boolean(highlight?.range && highlight.schemaPath === JSON_ROOT_PATH);
+  const rangeAnchors = new Map();
+  if (highlight?.range && !highlightsTree) {
+    const addRange = (start, anchor) => {
+      rangeAnchors.set(anchor, [
+        ...(rangeAnchors.get(anchor) ?? []),
+        { start, end: subtreeEnd(start), depth: rows[start].depth, anchor },
+      ]);
+    };
+    for (
+      let ancestor = rows[windowStart]?.parent ?? -1;
+      ancestor >= 0;
+      ancestor = rows[ancestor].parent
+    ) {
+      if (matchesHighlight(ancestor)) addRange(ancestor, windowStart);
+    }
+    for (let rowIndex = windowStart; rowIndex < windowEnd; rowIndex += 1) {
+      if (matchesHighlight(rowIndex)) addRange(rowIndex, rowIndex);
+    }
+  }
+
+  const visibleRows = [];
+  for (let rowIndex = windowStart; rowIndex < windowEnd; rowIndex += 1) {
+    const row = rows[rowIndex];
+    const highlighted = Boolean(
+      highlight && !highlight.range && matchesHighlight(rowIndex),
+    );
+    const className = [
+      "json-node-row",
+      searchMatchPaths.has(row.encodedPath) && "search-match",
+      row.encodedPath === activeSearchEncodedPath && "search-match-active",
+      highlighted && "go-to-line-highlight",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    visibleRows.push(
+      <JsonRow
+        key={highlighted ? `${highlight.generation}:${row.encodedPath}` : row.encodedPath}
+        row={row}
+        className={className}
+        onToggle={() =>
+          updateOverrides((next) => next.set(row.encodedPath, !row.expanded))
+        }
+      >
+        {rangeAnchors.get(rowIndex)?.map((range) => (
+          <div
+            key={`${highlight.generation}:${range.start}`}
+            className="json-range-highlight go-to-line-highlight"
+            aria-hidden="true"
+            style={{
+              "--json-depth": range.depth,
+              height: (range.end - range.anchor) * rowHeight,
+            }}
+          />
+        ))}
+      </JsonRow>,
+    );
+  }
 
   return (
-    <ul className="json-tree" ref={treeRef} data-json-path={JSON.stringify([])}>
-      {entries?.length > 0 ? (
-        entries.map(([key, value]) => (
-          <JsonNode
-            key={key}
-            label={String(key)}
-            value={value}
-            path={[key]}
-            navigationPaths={focusPaths}
-            navigationRange={navigationRange}
-            searchMatchPaths={searchMatchPaths}
-            activeSearchPath={activeSearchPath}
-          />
-        ))
-      ) : (
-        <JsonNode
-          label="value"
-          value={sheet.data}
-          path={[]}
-          navigationPaths={focusPaths}
-          navigationRange={navigationRange}
-          searchMatchPaths={searchMatchPaths}
-          activeSearchPath={activeSearchPath}
+    <ul
+      className="json-tree"
+      ref={treeRef}
+      style={{ "--go-to-line-highlight-duration": `${GO_TO_LINE_HIGHLIGHT_MS}ms` }}
+    >
+      {windowStart > 0 && (
+        <li className="virtual-spacer" aria-hidden="true" style={{ height: windowStart * rowHeight }} />
+      )}
+      {highlightsTree && (
+        <li
+          key={highlight.generation}
+          className="json-tree-highlight go-to-line-highlight"
+          aria-hidden="true"
+        />
+      )}
+      {visibleRows}
+      {windowEnd < rows.length && (
+        <li
+          className="virtual-spacer"
+          aria-hidden="true"
+          style={{ height: (rows.length - windowEnd) * rowHeight }}
         />
       )}
     </ul>

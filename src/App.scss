@@ -1061,7 +1061,6 @@ body,
 }
 
 .json-tree,
-.json-children,
 .json-key-tree,
 .json-key-children {
   list-style: none;
@@ -1070,10 +1069,11 @@ body,
 }
 
 .json-tree {
+  position: relative;
   min-width: max-content;
   padding: tokens.$padding-13;
   color: var(--fg);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: tokens.$font-family-monospace;
   line-height: tokens.$json-tree-line-height;
 }
 
@@ -1106,9 +1106,26 @@ body,
   width: tokens.$json-node-toggle-size;
 }
 
-.json-children {
-  margin-left: tokens.$json-node-indent;
-  padding-left: tokens.$json-node-indent;
+.json-node {
+  position: relative;
+  padding-left: calc(var(--json-depth) * #{tokens.$json-node-depth-indent});
+}
+
+.json-range-highlight,
+.json-tree-highlight {
+  position: absolute;
+  z-index: tokens.$z-index-2;
+  pointer-events: none;
+}
+
+.json-range-highlight {
+  top: tokens.$inset-1;
+  right: tokens.$inset-1;
+  left: calc(var(--json-depth) * #{tokens.$json-node-depth-indent});
+}
+
+.json-tree-highlight {
+  inset: tokens.$inset-1;
 }
 
 .json-key-children {
@@ -1461,17 +1478,15 @@ body,
 }
 
 .data-table tbody tr.go-to-line-highlight td,
-.json-node-row.go-to-line-highlight,
-.json-node.go-to-line-highlight,
-.json-tree.go-to-line-highlight {
+.json-node-row.go-to-line-highlight {
   position: relative;
 }
 
 .data-table thead.go-to-line-highlight th::after,
 .data-table tbody tr.go-to-line-highlight td::after,
 .json-node-row.go-to-line-highlight::after,
-.json-node.go-to-line-highlight::after,
-.json-tree.go-to-line-highlight::after {
+.json-range-highlight.go-to-line-highlight::after,
+.json-tree-highlight.go-to-line-highlight::after {
   content: "";
   position: absolute;
   inset: tokens.$inset-1;
@@ -1489,8 +1504,8 @@ body,
 
 .data-table tbody tr.go-to-line-highlight td::after,
 .json-node-row.go-to-line-highlight::after,
-.json-node.go-to-line-highlight::after,
-.json-tree.go-to-line-highlight::after {
+.json-range-highlight.go-to-line-highlight::after,
+.json-tree-highlight.go-to-line-highlight::after {
   background-color: color-mix(in srgb, var(--accent) tokens.$background-color-14, transparent);
 }
 
@@ -2041,7 +2056,8 @@ button:disabled {
 
 .operation-tabs {
   display: grid;
-  grid-template-columns: repeat(4, tokens.$grid-template-columns-7);
+  grid-auto-flow: column;
+  grid-auto-columns: tokens.$grid-template-columns-7;
   gap: tokens.$gap-3;
   border-bottom: tokens.$border-bottom-3 solid var(--border);
 }

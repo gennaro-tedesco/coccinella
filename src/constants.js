@@ -33,3 +33,6 @@ export const COLUMN_DROP_MIDPOINT_DIVISOR = 2;
 export const FULL_SIZE_PERCENT = "100%";
 export const SOURCE_HEADER_LINE = 1;
 export const SOURCE_DATA_LINE_OFFSET = 2;
+export const EXPRESSION_NO_MATCHES_MESSAGE = "No rows match this condition";
+export const JSON_DEFAULT_EXPANDED_DEPTH = 2;
+export const JSON_TREE_OVERSCAN_ROWS = 20;

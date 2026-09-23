@@ -21,7 +21,7 @@ import MergePanel from "./components/MergePanel";
 import { openFile, openFileAtPath } from "./utils/openFile";
 import { ErrorSnackbar } from "./components/Snackbar";
 import LazyErrorBoundary from "./components/LazyErrorBoundary";
-import { findJsonMatches } from "./utils/jsonTree";
+import { useJsonSearchWorker } from "./hooks/useJsonSearchWorker";
 import {
   DEFAULT_FONT_SIZE,
   FALLBACK_ROW_HEIGHT_PX,
@@ -97,6 +97,7 @@ function App() {
   const createFilteredSheet = useAppStore(
     (state) => state.createFilteredSheet,
   );
+  const searchJson = useJsonSearchWorker();
 
   const activeSheet = activeSheetId ? sheets[activeSheetId] : null;
   const isJson = activeSheet?.kind === "json";
@@ -188,26 +189,31 @@ function App() {
     setSearchError(null);
     let timeout;
     if (isJson) {
+      if (!searchQuery) {
+        setJsonSearchMatches([]);
+        return undefined;
+      }
       timeout = window.setTimeout(() => {
-        try {
-          const matches = findJsonMatches(
-            activeSheet.data,
-            searchQuery,
-            searchIsRegex,
-            searchIsCaseSensitive,
-          );
-          if (!cancelled) {
-            setJsonSearchMatches(matches);
-            setSearchMatchCount(matches.length);
-          }
-        } catch (error) {
-          if (!cancelled) {
-            setJsonSearchMatches([]);
-            setSearchMatchCount(0);
-            setSearchError(String(error));
-          }
-        }
-      }, searchQuery ? SEARCH_DEBOUNCE_MS : 0);
+        searchJson(
+          activeSheet.data,
+          searchQuery,
+          searchIsRegex,
+          searchIsCaseSensitive,
+        )
+          .then((matches) => {
+            if (!cancelled) {
+              setJsonSearchMatches(matches);
+              setSearchMatchCount(matches.length);
+            }
+          })
+          .catch((error) => {
+            if (!cancelled) {
+              setJsonSearchMatches([]);
+              setSearchMatchCount(0);
+              setSearchError(String(error));
+            }
+          });
+      }, SEARCH_DEBOUNCE_MS);
       return () => {
         cancelled = true;
         window.clearTimeout(timeout);
@@ -256,6 +262,7 @@ function App() {
     setActiveSearchMatch,
     setSearchError,
     setJsonSearchMatches,
+    searchJson,
   ]);
 
   useEffect(() => {

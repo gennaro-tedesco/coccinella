@@ -1,7 +1,10 @@
 // Owns file data and exposes operations to the Tauri frontend.
 // FEATURE: Data workspace
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
-use evalexpr::{build_operator_tree, ContextWithMutableVariables, DefaultNumericTypes, HashMapContext, Value};
+use evalexpr::{
+    build_operator_tree, ContextWithMutableVariables, DefaultNumericTypes, HashMapContext, Node,
+    Operator, Value,
+};
 use nucleo_matcher::{
     pattern::{AtomKind, CaseMatching, Normalization, Pattern},
     Config as FuzzyConfig, Matcher as FuzzyMatcher, Utf32Str,
@@ -12,6 +15,7 @@ use serde_json::Value as JsonValue;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
@@ -520,14 +524,16 @@ async fn read_dataset_blocking(path: String, separator: u8) -> Result<Dataset, S
 }
 
 fn read_json(path: &str) -> Result<(JsonValue, u64), String> {
-    let file = File::open(path).map_err(|error| error.to_string())?;
+    let mut file = File::open(path).map_err(|error| error.to_string())?;
     let size_bytes = file.metadata().map_err(|error| error.to_string())?.len();
     if size_bytes > MAX_JSON_FILE_BYTES {
         return Err(format!(
             "JSON is too large: {size_bytes} bytes exceeds the {MAX_JSON_FILE_BYTES}-byte limit"
         ));
     }
-    let data = serde_json::from_reader(file).map_err(|error| error.to_string())?;
+    let mut bytes = Vec::with_capacity(size_bytes as usize);
+    file.read_to_end(&mut bytes).map_err(|error| error.to_string())?;
+    let data = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
     Ok((data, size_bytes))
 }
 
@@ -642,12 +648,61 @@ fn matching_rows(dataset: &Dataset, filter: &Filter) -> Result<Vec<RowIndex>, St
             ))
         }
         Filter::Expression { column, condition } => {
-            let column_index = dataset
+            let Some(column_index) = dataset
                 .columns
                 .iter()
                 .position(|candidate| candidate == column)
-                .ok_or("Filtered column no longer exists")?;
+            else {
+                return Ok(Vec::new());
+            };
             collect_expression_matches(&dataset.rows, &dataset.view, column_index, condition)
+        }
+    }
+}
+
+fn convert_int_constants_to_floats(node: &mut Node<DefaultNumericTypes>) {
+    if let Operator::Const { value } = node.operator_mut() {
+        if let Value::Int(int) = *value {
+            *value = Value::from_float(int as f64);
+        }
+    }
+    for child in node.children_mut() {
+        convert_int_constants_to_floats(child);
+    }
+}
+
+type CellMatcher = Box<dyn FnMut(&str) -> bool>;
+
+fn expression_cell_matcher(condition: &ExpressionCondition) -> Result<CellMatcher, String> {
+    match condition {
+        ExpressionCondition::Number { expression } => {
+            let mut tree = build_operator_tree::<DefaultNumericTypes>(expression)
+                .map_err(|error| error.to_string())?;
+            convert_int_constants_to_floats(&mut tree);
+            let mut context = HashMapContext::<DefaultNumericTypes>::new();
+            Ok(Box::new(move |cell| {
+                let Ok(x) = cell.parse::<f64>() else {
+                    return false;
+                };
+                if context.set_value("x".into(), Value::from_float(x)).is_err() {
+                    return false;
+                }
+                tree.eval_boolean_with_context(&context).unwrap_or(false)
+            }))
+        }
+        ExpressionCondition::Date { date, direction } => {
+            let target = parse_date(date).ok_or("Invalid date")?;
+            let direction = *direction;
+            Ok(Box::new(move |cell| {
+                parse_date(cell).is_some_and(|value| match direction {
+                    DateDirection::Before => value < target,
+                    DateDirection::After => value > target,
+                })
+            }))
+        }
+        ExpressionCondition::Boolean { value } => {
+            let expected = if *value { "true" } else { "false" };
+            Ok(Box::new(move |cell| cell.eq_ignore_ascii_case(expected)))
         }
     }
 }
@@ -658,56 +713,24 @@ fn collect_expression_matches(
     column_index: usize,
     condition: &ExpressionCondition,
 ) -> Result<Vec<RowIndex>, String> {
-    match condition {
-        ExpressionCondition::Number { expression } => {
-            let tree = build_operator_tree::<DefaultNumericTypes>(expression)
-                .map_err(|error| error.to_string())?;
-            let mut context = HashMapContext::<DefaultNumericTypes>::new();
-            Ok(view
-                .iter()
-                .copied()
-                .filter(|row_index| {
-                    let cell = rows.cell(*row_index as usize, column_index).trim();
-                    let Ok(x) = cell.parse::<f64>() else {
-                        return false;
-                    };
-                    if context.set_value("x".into(), Value::from_float(x)).is_err() {
-                        return false;
-                    }
-                    tree.eval_boolean_with_context(&context).unwrap_or(false)
-                })
-                .collect())
-        }
-        ExpressionCondition::Date { date, direction } => {
-            let target = parse_date(date).ok_or("Invalid date")?;
-            Ok(view
-                .iter()
-                .copied()
-                .filter(|row_index| {
-                    let cell = rows.cell(*row_index as usize, column_index).trim();
-                    match parse_date(cell) {
-                        Some(value) => match direction {
-                            DateDirection::Before => value < target,
-                            DateDirection::After => value > target,
-                        },
-                        None => false,
-                    }
-                })
-                .collect())
-        }
-        ExpressionCondition::Boolean { value } => {
-            let expected = if *value { "true" } else { "false" };
-            Ok(view
-                .iter()
-                .copied()
-                .filter(|row_index| {
-                    rows.cell(*row_index as usize, column_index)
-                        .trim()
-                        .eq_ignore_ascii_case(expected)
-                })
-                .collect())
-        }
-    }
+    let mut matches_cell = expression_cell_matcher(condition)?;
+    Ok(view
+        .iter()
+        .copied()
+        .filter(|row_index| matches_cell(rows.cell(*row_index as usize, column_index).trim()))
+        .collect())
+}
+
+fn has_expression_match(
+    rows: &PackedRows,
+    view: &[RowIndex],
+    column_index: usize,
+    condition: &ExpressionCondition,
+) -> Result<bool, String> {
+    let mut matches_cell = expression_cell_matcher(condition)?;
+    Ok(view
+        .iter()
+        .any(|row_index| matches_cell(rows.cell(*row_index as usize, column_index).trim())))
 }
 
 fn collect_matching_rows(
@@ -1539,9 +1562,21 @@ async fn rescan_csv_file(
         sort_rows_blocking(Arc::clone(&root.rows), Arc::clone(&root.view), columns).await?,
     );
     let mut replacements = vec![(dataset_id.clone(), Arc::clone(&root_handle), root.clone())];
-    for (child_id, handle, filter, sorting) in children {
+    let filters = children
+        .iter()
+        .map(|(_, _, filter, _)| filter.clone().ok_or("Filtered dataset is missing its filter"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let (root, views) = tauri::async_runtime::spawn_blocking(move || {
+        let views = filters
+            .iter()
+            .map(|filter| matching_rows(&root, filter))
+            .collect::<Result<Vec<_>, String>>();
+        (root, views)
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    for ((child_id, handle, filter, sorting), view) in children.into_iter().zip(views?) {
         let filter = filter.ok_or("Filtered dataset is missing its filter")?;
-        let view = matching_rows(&root, &filter)?;
         let view = Arc::new(view);
         let mut child = Dataset {
             columns: root.columns.clone(),
@@ -1665,14 +1700,11 @@ async fn expression_condition_matches(
         };
         (Arc::clone(&source.rows), Arc::clone(&source.view), column_index)
     };
-    let has_matches = tauri::async_runtime::spawn_blocking(move || {
-        collect_expression_matches(&rows, &view, column_index, &condition)
-            .map(|matches| !matches.is_empty())
-            .unwrap_or(false)
+    tauri::async_runtime::spawn_blocking(move || {
+        has_expression_match(&rows, &view, column_index, &condition)
     })
     .await
-    .map_err(|error| error.to_string())?;
-    Ok(has_matches)
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -2267,10 +2299,13 @@ fn discover_data_files(
     mut emit: impl FnMut(Vec<PathBuf>) -> Result<(), String>,
 ) -> Result<(), String> {
     let mut directories = VecDeque::from([home.to_path_buf()]);
-    let mut discovered = 0;
+    let mut discovered_csv = 0;
+    let mut discovered_json = 0;
     let mut batch = Vec::with_capacity(FILE_DISCOVERY_BATCH_SIZE);
+    let budgets_exhausted =
+        |csv: usize, json: usize| csv == max_files && json == max_files;
 
-    while !directories.is_empty() && discovered < max_files {
+    while !directories.is_empty() && !budgets_exhausted(discovered_csv, discovered_json) {
         let directories_at_depth = directories.len();
         for _ in 0..directories_at_depth {
             let directory = directories
@@ -2292,18 +2327,27 @@ fn discover_data_files(
                 };
                 if file_type.is_dir() {
                     directories.push_back(entry.path());
-                } else if file_type.is_file() && is_data_path(&entry.path()) {
-                    batch.push(entry.path());
-                    discovered += 1;
+                } else if file_type.is_file() {
+                    let path = entry.path();
+                    let discovered = match file_kind(&path) {
+                        Some(FileKind::Csv) => &mut discovered_csv,
+                        Some(FileKind::Json) => &mut discovered_json,
+                        None => continue,
+                    };
+                    if *discovered == max_files {
+                        continue;
+                    }
+                    *discovered += 1;
+                    batch.push(path);
                     if batch.len() == FILE_DISCOVERY_BATCH_SIZE {
                         emit(std::mem::take(&mut batch))?;
                     }
-                    if discovered == max_files {
+                    if budgets_exhausted(discovered_csv, discovered_json) {
                         break;
                     }
                 }
             }
-            if discovered == max_files {
+            if budgets_exhausted(discovered_csv, discovered_json) {
                 break;
             }
         }
@@ -2323,10 +2367,6 @@ fn is_excluded_search_directory(name: &str) -> bool {
         return true;
     }
     false
-}
-
-fn is_data_path(path: &Path) -> bool {
-    file_kind(path).is_some()
 }
 
 #[tauri::command]
@@ -2781,6 +2821,33 @@ mod tests {
         assert_eq!(batch_lengths, [FILE_DISCOVERY_BATCH_SIZE, 2]);
     }
 
+    #[test]
+    fn json_files_do_not_consume_the_csv_discovery_budget() {
+        let root = std::env::temp_dir().join(format!(
+            "coccinella-discovery-budget-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("files")
+        ));
+        let nested = root.join("nested");
+        std::fs::create_dir_all(&nested).expect("create fixture directory");
+        for index in 0..3 {
+            std::fs::write(root.join(format!("{index}.json")), "{}").expect("write JSON fixture");
+        }
+        std::fs::write(nested.join("deep.csv"), "id\n1\n").expect("write CSV fixture");
+
+        let mut paths = Vec::new();
+        discover_data_files(&root, 2, |batch| {
+            paths.extend(batch);
+            Ok(())
+        })
+        .expect("discover fixture files");
+        std::fs::remove_dir_all(&root).expect("remove fixture directory");
+
+        let kinds: Vec<_> = paths.iter().filter_map(|path| file_kind(path)).collect();
+        assert_eq!(kinds.iter().filter(|kind| **kind == FileKind::Json).count(), 2);
+        assert_eq!(kinds.iter().filter(|kind| **kind == FileKind::Csv).count(), 1);
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn excludes_macos_protected_directories() {
@@ -2987,6 +3054,15 @@ mod tests {
         )
         .expect("filter selected column");
         assert!(restricted.is_empty());
+        let missing_column = matching_rows(
+            &dataset,
+            &Filter::Expression {
+                column: "removed".into(),
+                condition: ExpressionCondition::Boolean { value: true },
+            },
+        )
+        .expect("filter missing column");
+        assert!(missing_column.is_empty());
 
         let columns = sort_columns(&dataset, &dataset.sorting);
         dataset.order = Arc::new(sort_rows(&dataset.rows, &dataset.view, &columns));
@@ -3054,6 +3130,30 @@ mod tests {
         };
         let matches = collect_expression_matches(&rows, &view, 0, &condition).expect("filter");
         assert_eq!(matches, vec![1, 2]);
+    }
+
+    #[test]
+    fn matches_number_equality_and_modulo_expressions() {
+        let rows = packed_rows(&[&["5"], &["10"], &["10.0"], &["15"], &["10.5"]]);
+        let view = full_view(&rows);
+        let matches_for = |expression: &str| {
+            let condition = ExpressionCondition::Number {
+                expression: expression.to_owned(),
+            };
+            collect_expression_matches(&rows, &view, 0, &condition).expect("filter")
+        };
+        assert_eq!(matches_for("x == 10"), vec![1, 2]);
+        assert_eq!(matches_for("x != 10"), vec![0, 3, 4]);
+        assert_eq!(matches_for("x % 2 == 0"), vec![1, 2]);
+        assert_eq!(matches_for("x == 10.5"), vec![4]);
+        let condition = ExpressionCondition::Number {
+            expression: "x == 15".to_owned(),
+        };
+        assert_eq!(has_expression_match(&rows, &view, 0, &condition), Ok(true));
+        let invalid = ExpressionCondition::Number {
+            expression: "x > (".to_owned(),
+        };
+        assert!(has_expression_match(&rows, &view, 0, &invalid).is_err());
     }
 
     #[test]
