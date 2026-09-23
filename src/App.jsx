@@ -425,6 +425,21 @@ function App() {
       }
 
       if (
+        event.metaKey &&
+        !event.ctrlKey &&
+        !event.shiftKey &&
+        !event.altKey &&
+        /^Digit[1-9]$/.test(event.code)
+      ) {
+        const sheetId = sheetOrder[Number(event.code.at(-1)) - 1];
+        if (sheetId) {
+          event.preventDefault();
+          setActiveSheetId(sheetId);
+        }
+        return;
+      }
+
+      if (
         !isEditing &&
         event.ctrlKey &&
         !event.metaKey &&
@@ -563,7 +578,7 @@ function App() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
-    sheetOrder.length,
+    sheetOrder,
     mergeOpen,
     mode,
     openSheet,
@@ -573,6 +588,7 @@ function App() {
     openSearch,
     closeSearch,
     openShortcutsMenu,
+    setActiveSheetId,
     activeSheetId,
     searchOpen,
     searchQuery,

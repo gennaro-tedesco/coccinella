@@ -24,6 +24,7 @@ const SHORTCUTS = [
   ["Go to line", ":"],
   ["Dataset operations", "="],
   ["Toggle side panels", "z"],
+  ["Go to tab", "Cmd+1-9"],
   ["Previous sheet", "Ctrl+^"],
   ["Scroll left", "h"],
   ["Scroll down", "j"],
