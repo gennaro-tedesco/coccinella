@@ -1169,6 +1169,49 @@ body,
   color: var(--fg-dark);
 }
 
+.json-copy-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: tokens.$padding-103;
+  border: none;
+  border-radius: tokens.$border-radius-41;
+  background: none;
+  color: var(--fg-dark);
+  opacity: tokens.$opacity-16;
+  pointer-events: none;
+}
+
+.json-node-row:hover .json-copy-trigger,
+.json-copy-trigger:focus-visible {
+  opacity: tokens.$opacity-17;
+  pointer-events: auto;
+}
+
+.json-copy-trigger:hover {
+  color: var(--accent);
+}
+
+.json-node-row.copied .json-value,
+.json-node-row.copied .json-copy-trigger,
+.json-node-row.copied-subtree .json-key,
+.json-node-row.copied-subtree .json-separator,
+.json-node-row.copied-subtree .json-value {
+  color: var(--accent);
+  animation: cell-copy-feedback tokens.$animation-duration-2 ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .json-node-row.copied .json-value,
+  .json-node-row.copied .json-copy-trigger,
+  .json-node-row.copied-subtree .json-key,
+  .json-node-row.copied-subtree .json-separator,
+  .json-node-row.copied-subtree .json-value {
+    animation: none;
+  }
+}
+
 .json-key-name {
   flex: 0 1 auto;
   cursor: pointer;

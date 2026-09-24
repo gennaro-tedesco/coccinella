@@ -36,3 +36,4 @@ export const SOURCE_DATA_LINE_OFFSET = 2;
 export const EXPRESSION_NO_MATCHES_MESSAGE = "No rows match this condition";
 export const JSON_DEFAULT_EXPANDED_DEPTH = 2;
 export const JSON_TREE_OVERSCAN_ROWS = 20;
+export const JSON_COPY_INDENT = 2;

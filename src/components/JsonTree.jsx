@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import {
   encodedAncestorPaths,
@@ -10,16 +10,22 @@ import {
   resolveJsonNavigationPath,
 } from "../utils/jsonTree";
 import {
+  CELL_COPY_FEEDBACK_MS,
   FALLBACK_ROW_HEIGHT_PX,
   GO_TO_LINE_HIGHLIGHT_MS,
   ICON_SIZE_COMPACT,
+  JSON_COPY_INDENT,
   JSON_TREE_OVERSCAN_ROWS,
   ROW_HEIGHT_CHANGE_THRESHOLD_PX,
 } from "../constants";
 
 const NO_OVERRIDES = new Map();
 
-function JsonRow({ row, className, onToggle, children }) {
+function jsonCopyText(value) {
+  return typeof value === "string" ? value : JSON.stringify(value, null, JSON_COPY_INDENT);
+}
+
+function JsonRow({ row, className, onToggle, onCopy, children }) {
   const summary = row.type === "array" ? `${row.size} items` : `${row.size} keys`;
   return (
     <li className="json-node" style={{ "--json-depth": row.depth }}>
@@ -56,6 +62,14 @@ function JsonRow({ row, className, onToggle, children }) {
         <span className={`json-value json-${row.type}`}>
           {row.expandable ? summary : JSON.stringify(row.value)}
         </span>
+        <button
+          type="button"
+          className="json-copy-trigger"
+          aria-label={`Copy ${row.label}`}
+          onClick={onCopy}
+        >
+          <Copy size={ICON_SIZE_COMPACT} />
+        </button>
       </div>
       {children}
     </li>
@@ -80,6 +94,9 @@ function JsonTree() {
   );
   const navigation = useAppStore((state) => state.jsonNavigation);
   const clearNavigation = useAppStore((state) => state.clearJsonNavigation);
+  const showError = useAppStore((state) => state.showError);
+  const copyFeedbackTimeoutRef = useRef(null);
+  const [copiedPath, setCopiedPath] = useState(null);
   const searchMatches = useAppStore((state) => state.jsonSearchMatches);
   const activeSearchMatch = useAppStore((state) => state.activeSearchMatch);
   const activeSearchPath = activeSearchMatch?.path ?? null;
@@ -166,7 +183,13 @@ function JsonTree() {
     );
   }, [pendingFocus, rows, rowHeight]);
 
-  useEffect(() => () => window.clearTimeout(highlightTimeoutRef.current), []);
+  useEffect(
+    () => () => {
+      window.clearTimeout(highlightTimeoutRef.current);
+      window.clearTimeout(copyFeedbackTimeoutRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     const tree = treeRef.current;
@@ -253,6 +276,12 @@ function JsonTree() {
     }
   }
 
+  const copiedIndex = copiedPath
+    ? rows.findIndex((row) => row.encodedPath === copiedPath)
+    : -1;
+  const copiedSubtreeEnd =
+    copiedIndex >= 0 && rows[copiedIndex].expandable ? subtreeEnd(copiedIndex) : copiedIndex;
+
   const visibleRows = [];
   for (let rowIndex = windowStart; rowIndex < windowEnd; rowIndex += 1) {
     const row = rows[rowIndex];
@@ -264,6 +293,8 @@ function JsonTree() {
       searchMatchPaths.has(row.encodedPath) && "search-match",
       row.encodedPath === activeSearchEncodedPath && "search-match-active",
       highlighted && "go-to-line-highlight",
+      row.encodedPath === copiedPath && "copied",
+      rowIndex >= copiedIndex && rowIndex < copiedSubtreeEnd && "copied-subtree",
     ]
       .filter(Boolean)
       .join(" ");
@@ -275,6 +306,19 @@ function JsonTree() {
         onToggle={() =>
           updateOverrides((next) => next.set(row.encodedPath, !row.expanded))
         }
+        onCopy={() => {
+          void navigator.clipboard
+            .writeText(jsonCopyText(row.value))
+            .then(() => {
+              window.clearTimeout(copyFeedbackTimeoutRef.current);
+              setCopiedPath(row.encodedPath);
+              copyFeedbackTimeoutRef.current = window.setTimeout(
+                () => setCopiedPath(null),
+                CELL_COPY_FEEDBACK_MS,
+              );
+            })
+            .catch(showError);
+        }}
       >
         {rangeAnchors.get(rowIndex)?.map((range) => (
           <div
