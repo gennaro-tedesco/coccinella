@@ -17,13 +17,13 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use tauri::{ipc::Channel, AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 
-const MAX_CSV_FILE_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_CSV_FILE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_JSON_FILE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_CSV_ROWS: usize = 1_000_000;
 const MAX_CSV_FIELDS: usize = 10_000_000;
@@ -32,6 +32,9 @@ const TYPE_INFERENCE_ROWS: usize = 10_000;
 const MAX_CHART_POINTS: usize = 100_000;
 const MAX_INDEXED_FILES: usize = 1_000;
 const FILE_DISCOVERY_BATCH_SIZE: usize = 50;
+const LOAD_PROGRESS_INTERVAL_BYTES: u64 = 1024 * 1024;
+const ESTIMATED_MEMORY_MULTIPLIER: u64 = 2;
+const FILE_LOADING_CANCELLED: &str = "File loading cancelled";
 const EXCLUDED_SEARCH_DIRECTORIES: [&str; 5] = [
     "Library",
     "Applications",
@@ -139,6 +142,7 @@ struct AppState {
     indexed_paths: Mutex<HashMap<String, PathBuf>>,
     file_scan_tokens: Mutex<HashSet<String>>,
     pending_open_files: Mutex<Vec<FileCandidate>>,
+    active_loads: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
 #[derive(Clone)]
@@ -287,6 +291,45 @@ enum FileKind {
 struct FileCandidate {
     token: String,
     path: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LoadProgress {
+    operation_id: String,
+    filename: String,
+    bytes_read: u64,
+    total_bytes: u64,
+    estimated_memory_bytes: u64,
+}
+
+struct LoadControl {
+    operation_id: String,
+    filename: String,
+    cancelled: Arc<AtomicBool>,
+    on_progress: Channel<LoadProgress>,
+    last_reported_bytes: u64,
+}
+
+impl LoadControl {
+    fn report(&mut self, bytes_read: u64, total_bytes: u64, force: bool) -> Result<(), String> {
+        if self.cancelled.load(AtomicOrdering::Relaxed) {
+            return Err(FILE_LOADING_CANCELLED.into());
+        }
+        if force
+            || bytes_read.saturating_sub(self.last_reported_bytes) >= LOAD_PROGRESS_INTERVAL_BYTES
+        {
+            let _ = self.on_progress.send(LoadProgress {
+                operation_id: self.operation_id.clone(),
+                filename: self.filename.clone(),
+                bytes_read,
+                total_bytes,
+                estimated_memory_bytes: total_bytes.saturating_mul(ESTIMATED_MEMORY_MULTIPLIER),
+            });
+            self.last_reported_bytes = bytes_read;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Serialize)]
@@ -503,14 +546,38 @@ fn validated_columns(headers: &csv::StringRecord) -> Result<Vec<String>, String>
         .collect()
 }
 
-fn read_dataset(path: &str, separator: u8) -> Result<Dataset, String> {
+fn format_binary_bytes(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = KIB * 1024;
+    const GIB: u64 = MIB * 1024;
+    if bytes >= GIB {
+        format!("{:.1} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.1} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.1} KiB", bytes as f64 / KIB as f64)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+fn read_dataset_controlled(
+    path: &str,
+    separator: u8,
+    mut control: Option<&mut LoadControl>,
+) -> Result<Dataset, String> {
     validate_delimited_path(path)?;
     let file = File::open(path).map_err(|error| error.to_string())?;
     let size_bytes = file.metadata().map_err(|error| error.to_string())?.len();
     if size_bytes > MAX_CSV_FILE_BYTES {
         return Err(format!(
-            "CSV is too large: {size_bytes} bytes exceeds the {MAX_CSV_FILE_BYTES}-byte limit"
+            "Delimited file is too large: {} exceeds the {} limit",
+            format_binary_bytes(size_bytes),
+            format_binary_bytes(MAX_CSV_FILE_BYTES)
         ));
+    }
+    if let Some(control) = control.as_deref_mut() {
+        control.report(0, size_bytes, true)?;
     }
     let mut reader = csv::ReaderBuilder::new()
         .delimiter(separator)
@@ -526,6 +593,9 @@ fn read_dataset(path: &str, separator: u8) -> Result<Dataset, String> {
         .read_record(&mut record)
         .map_err(|error| error.to_string())?
     {
+        if let Some(control) = control.as_deref_mut() {
+            control.report(reader.position().byte(), size_bytes, false)?;
+        }
         if rows.len() >= MAX_CSV_ROWS {
             return Err(format!("CSV exceeds the {MAX_CSV_ROWS}-row limit"));
         }
@@ -534,6 +604,9 @@ fn read_dataset(path: &str, separator: u8) -> Result<Dataset, String> {
             return Err(format!("CSV exceeds the {MAX_CSV_FIELDS}-field limit"));
         }
         rows.push_record(&record)?;
+    }
+    if let Some(control) = control.as_deref_mut() {
+        control.report(size_bytes, size_bytes, true)?;
     }
     let column_types = infer_column_types(&rows, columns.len());
     let view = (0..rows.len())
@@ -560,15 +633,32 @@ fn read_dataset(path: &str, separator: u8) -> Result<Dataset, String> {
     })
 }
 
+fn read_dataset(path: &str, separator: u8) -> Result<Dataset, String> {
+    read_dataset_controlled(path, separator, None)
+}
+
+fn read_tsv_dataset_controlled(
+    path: &str,
+    control: Option<&mut LoadControl>,
+) -> Result<Dataset, String> {
+    let field_count = |separator| -> Result<usize, String> {
+        let file = File::open(path).map_err(|error| error.to_string())?;
+        let mut reader = csv::ReaderBuilder::new()
+            .delimiter(separator)
+            .from_reader(file);
+        Ok(reader.headers().map_err(|error| error.to_string())?.len())
+    };
+    let separator = if field_count(b'\t')? > 1 || field_count(b' ')? <= 1 {
+        b'\t'
+    } else {
+        b' '
+    };
+    read_dataset_controlled(path, separator, control)
+}
+
+#[cfg(test)]
 fn read_tsv_dataset(path: &str) -> Result<Dataset, String> {
-    match read_dataset(path, b'\t') {
-        Ok(tab_dataset) if tab_dataset.columns.len() > 1 => Ok(tab_dataset),
-        Ok(tab_dataset) => match read_dataset(path, b' ') {
-            Ok(space_dataset) if space_dataset.columns.len() > 1 => Ok(space_dataset),
-            _ => Ok(tab_dataset),
-        },
-        Err(_) => read_dataset(path, b' '),
-    }
+    read_tsv_dataset_controlled(path, None)
 }
 
 async fn read_dataset_blocking(path: String, separator: u8) -> Result<Dataset, String> {
@@ -577,12 +667,58 @@ async fn read_dataset_blocking(path: String, separator: u8) -> Result<Dataset, S
         .map_err(|error| error.to_string())?
 }
 
+async fn read_opened_dataset_blocking(
+    path: String,
+    separator: u8,
+    operation_id: String,
+    on_progress: Channel<LoadProgress>,
+    state: &State<'_, AppState>,
+) -> Result<Dataset, String> {
+    let cancelled = Arc::new(AtomicBool::new(false));
+    state
+        .active_loads
+        .lock()
+        .map_err(|error| error.to_string())?
+        .insert(operation_id.clone(), Arc::clone(&cancelled));
+    let cleanup_id = operation_id.clone();
+    let is_tsv = is_tsv_path(&path);
+    let filename = Path::new(&path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(&path)
+        .to_owned();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut control = LoadControl {
+            operation_id,
+            filename,
+            cancelled,
+            on_progress,
+            last_reported_bytes: 0,
+        };
+        if is_tsv {
+            read_tsv_dataset_controlled(&path, Some(&mut control))
+        } else {
+            read_dataset_controlled(&path, separator, Some(&mut control))
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    state
+        .active_loads
+        .lock()
+        .map_err(|error| error.to_string())?
+        .remove(&cleanup_id);
+    result
+}
+
 fn read_json(path: &str) -> Result<(JsonValue, u64), String> {
     let mut file = File::open(path).map_err(|error| error.to_string())?;
     let size_bytes = file.metadata().map_err(|error| error.to_string())?.len();
     if size_bytes > MAX_JSON_FILE_BYTES {
         return Err(format!(
-            "JSON is too large: {size_bytes} bytes exceeds the {MAX_JSON_FILE_BYTES}-byte limit"
+            "JSON is too large: {} exceeds the {} limit",
+            format_binary_bytes(size_bytes),
+            format_binary_bytes(MAX_JSON_FILE_BYTES)
         ));
     }
     let mut bytes = Vec::with_capacity(size_bytes as usize);
@@ -594,6 +730,8 @@ fn read_json(path: &str) -> Result<(JsonValue, u64), String> {
 async fn open_file_at_path(
     path: PathBuf,
     separator: u8,
+    operation_id: String,
+    on_progress: Channel<LoadProgress>,
     state: &State<'_, AppState>,
 ) -> Result<OpenedFile, String> {
     let kind = validate_data_path(&path.to_string_lossy())?;
@@ -605,14 +743,14 @@ async fn open_file_at_path(
         .to_owned();
     match kind {
         FileKind::Csv => {
-            let dataset = if is_tsv_path(&path_string) {
-                let read_path = path_string.clone();
-                tauri::async_runtime::spawn_blocking(move || read_tsv_dataset(&read_path))
-                    .await
-                    .map_err(|error| error.to_string())??
-            } else {
-                read_dataset_blocking(path_string.clone(), separator).await?
-            };
+            let dataset = read_opened_dataset_blocking(
+                path_string.clone(),
+                separator,
+                operation_id,
+                on_progress,
+                state,
+            )
+            .await?;
             let metadata = insert_dataset(dataset, state)?;
             Ok(OpenedFile::Csv {
                 filename,
@@ -1549,6 +1687,16 @@ fn parse_date(value: &str) -> Option<NaiveDate> {
                 .find_map(|format| NaiveDateTime::parse_from_str(value, format).ok())
                 .map(|date_time| date_time.date())
         })
+        .or_else(|| NaiveDate::parse_from_str(value, "%d/%m/%Y").ok())
+        .or_else(|| {
+            let timestamp = value.parse::<i64>().ok()?;
+            let date_time = if value.trim_start_matches('-').len() > 10 {
+                DateTime::from_timestamp_millis(timestamp)
+            } else {
+                DateTime::from_timestamp(timestamp, 0)
+            }?;
+            Some(date_time.date_naive())
+        })
 }
 
 fn sort_columns(dataset: &Dataset, sorting: &[SortSpec]) -> Vec<(usize, SortSpec)> {
@@ -1676,6 +1824,8 @@ fn commit_search(
 #[tauri::command]
 async fn open_file_dialog(
     separator: String,
+    operation_id: String,
+    on_progress: Channel<LoadProgress>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Option<OpenedFile>, String> {
@@ -1692,13 +1842,17 @@ async fn open_file_dialog(
         return Ok(None);
     };
     let path = file.into_path().map_err(|error| error.to_string())?;
-    Ok(Some(open_file_at_path(path, separator, &state).await?))
+    Ok(Some(
+        open_file_at_path(path, separator, operation_id, on_progress, &state).await?,
+    ))
 }
 
 #[tauri::command]
 async fn load_indexed_file(
     token: String,
     separator: String,
+    operation_id: String,
+    on_progress: Channel<LoadProgress>,
     state: State<'_, AppState>,
 ) -> Result<OpenedFile, String> {
     let path = state
@@ -1708,7 +1862,20 @@ async fn load_indexed_file(
         .remove(&token)
         .ok_or("File selection expired")?;
     let separator = separator_byte(&separator)?;
-    open_file_at_path(path, separator, &state).await
+    open_file_at_path(path, separator, operation_id, on_progress, &state).await
+}
+
+#[tauri::command]
+fn cancel_file_load(operation_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(cancelled) = state
+        .active_loads
+        .lock()
+        .map_err(|error| error.to_string())?
+        .get(&operation_id)
+    {
+        cancelled.store(true, AtomicOrdering::Relaxed);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -2706,6 +2873,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_file_dialog,
             load_indexed_file,
+            cancel_file_load,
             rescan_csv_file,
             create_filtered_dataset,
             expression_condition_matches,
@@ -3081,6 +3249,62 @@ mod tests {
     }
 
     #[test]
+    fn formats_file_sizes_with_binary_units() {
+        assert_eq!(format_binary_bytes(512), "512 B");
+        assert_eq!(format_binary_bytes(64 * 1024), "64.0 KiB");
+        assert_eq!(format_binary_bytes(512 * 1024 * 1024), "512.0 MiB");
+        assert_eq!(format_binary_bytes(1024 * 1024 * 1024), "1.0 GiB");
+    }
+
+    #[test]
+    #[ignore = "generates a large fixture; set COCCINELLA_BENCHMARK_MIB to choose its size"]
+    fn benchmarks_large_csv_loading() {
+        use std::io::Write as _;
+
+        let target_mib = std::env::var("COCCINELLA_BENCHMARK_MIB")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(256)
+            .min(MAX_CSV_FILE_BYTES / (1024 * 1024));
+        let target_bytes = target_mib * 1024 * 1024;
+        let path = std::env::temp_dir().join(format!(
+            "coccinella-benchmark-{}-{target_mib}.csv",
+            std::process::id()
+        ));
+        let file = File::create(&path).expect("create benchmark fixture");
+        let mut writer = std::io::BufWriter::new(file);
+        writer
+            .write_all(b"id,payload\n")
+            .expect("write benchmark header");
+        let payload = "x".repeat(2048);
+        let mut bytes_written = 11_u64;
+        let mut row = 0_u64;
+        while bytes_written < target_bytes {
+            let line = format!("{row},{payload}\n");
+            writer
+                .write_all(line.as_bytes())
+                .expect("write benchmark row");
+            bytes_written += line.len() as u64;
+            row += 1;
+        }
+        writer.flush().expect("flush benchmark fixture");
+
+        let started = std::time::Instant::now();
+        let dataset =
+            read_dataset(path.to_str().expect("UTF-8 path"), b',').expect("load benchmark fixture");
+        let elapsed = started.elapsed();
+        std::fs::remove_file(path).expect("remove benchmark fixture");
+
+        assert_eq!(dataset.rows.len() as u64, row);
+        eprintln!(
+            "loaded {} in {:.2?} ({:.1} MiB/s)",
+            format_binary_bytes(bytes_written),
+            elapsed,
+            bytes_written as f64 / (1024.0 * 1024.0) / elapsed.as_secs_f64()
+        );
+    }
+
+    #[test]
     fn rejects_duplicate_headers() {
         let path = std::env::temp_dir().join(format!(
             "coccinella-duplicate-headers-{}.csv",
@@ -3124,6 +3348,16 @@ mod tests {
 
         let rows = packed_rows(&[&["2026-09-17T10:30:00"], &["2026-09-18T11:45:00Z"]]);
         assert_eq!(infer_column_types(&rows, 1), ["date"]);
+    }
+
+    #[test]
+    fn parses_supported_date_formats_and_unix_timestamps() {
+        let expected = NaiveDate::from_ymd_opt(2026, 9, 17);
+
+        assert_eq!(parse_date("17/09/2026"), expected);
+        assert_eq!(parse_date("1789603200"), expected);
+        assert_eq!(parse_date("1789603200000"), expected);
+        assert!(parse_date("09/17/2026").is_none());
     }
 
     #[test]

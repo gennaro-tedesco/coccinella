@@ -30,6 +30,32 @@ describe("application store dataset lifecycle", () => {
     useAppStore.setState(initialState, true);
   });
 
+  it("cancels the active file load and ignores stale cleanup", async () => {
+    const progress = {
+      operationId: "load-1",
+      filename: "large.csv",
+      bytesRead: 1024,
+      totalBytes: 2048,
+      estimatedMemoryBytes: 4096,
+    };
+    useAppStore.getState().setFileLoadProgress(progress);
+    invokeMock.mockResolvedValueOnce(undefined);
+
+    await useAppStore.getState().cancelFileLoad();
+    useAppStore.getState().clearFileLoadProgress("stale-load");
+
+    expect(invokeMock).toHaveBeenCalledWith("cancel_file_load", {
+      operationId: "load-1",
+    });
+    expect(useAppStore.getState().fileLoadProgress).toEqual({
+      ...progress,
+      cancelling: true,
+    });
+
+    useAppStore.getState().clearFileLoadProgress("load-1");
+    expect(useAppStore.getState().fileLoadProgress).toBeNull();
+  });
+
   it("removes child sheets and plot state when the root closes", async () => {
     const store = useAppStore.getState();
     store.openSheet("people.csv", rootMetadata, "/tmp/people.csv");

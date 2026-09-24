@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { DEFAULT_COLUMN_PRECISION } from "../constants";
 import { useAppStore } from "../store/useAppStore";
+import { DEFAULT_DATE_FORMAT } from "../utils/columnTypes";
+import { formatDateValue } from "../utils/dateFormats";
 
 function StatRow({ label, value }) {
   return (
@@ -15,6 +17,7 @@ function StatRow({ label, value }) {
 function ColumnStats({ sheet, column }) {
   const type = sheet.columnTypes[column];
   const precision = sheet.columnPrecision[column] ?? DEFAULT_COLUMN_PRECISION;
+  const dateFormat = sheet.columnDateFormats?.[column] ?? DEFAULT_DATE_FORMAT;
   const showError = useAppStore((state) => state.showError);
   const hasStats = type !== "string" && type !== "uuid";
   const [stats, setStats] = useState(undefined);
@@ -60,8 +63,8 @@ function ColumnStats({ sheet, column }) {
   if (stats.type === "date") {
     return (
       <div className="column-stats">
-        <StatRow label="Min" value={stats.min} />
-        <StatRow label="Max" value={stats.max} />
+        <StatRow label="Min" value={formatDateValue(stats.min, dateFormat)} />
+        <StatRow label="Max" value={formatDateValue(stats.max, dateFormat)} />
       </div>
     );
   }

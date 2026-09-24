@@ -4,7 +4,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, FunnelPlus } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
-import { COLUMN_TYPES } from "../utils/columnTypes";
+import {
+  COLUMN_TYPES,
+  DATE_FORMATS,
+  DEFAULT_DATE_FORMAT,
+} from "../utils/columnTypes";
 import ColumnStats from "./ColumnStats";
 import {
   BLANK_VALUE_LABEL,
@@ -151,6 +155,43 @@ function DistinctValuesMenu({ sheet, column }) {
   );
 }
 
+function DateFormatMenu({ sheet, column }) {
+  const [open, setOpen] = useState(false);
+  const setColumnDateFormat = useAppStore((state) => state.setColumnDateFormat);
+  const format = sheet.columnDateFormats?.[column] ?? DEFAULT_DATE_FORMAT;
+  const selected = DATE_FORMATS.find((candidate) => candidate.value === format);
+
+  return (
+    <div
+      className="has-submenu"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button type="button" className="type-selector-trigger">
+        {selected?.label ?? format}
+      </button>
+      {open && (
+        <ul className="file-menu-dropdown submenu date-formats-submenu">
+          {DATE_FORMATS.map((candidate) => (
+            <li key={candidate.value}>
+              <button
+                type="button"
+                className={candidate.value === format ? "active" : ""}
+                onClick={() => {
+                  setColumnDateFormat(sheet.id, column, candidate.value);
+                  setOpen(false);
+                }}
+              >
+                {candidate.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ColumnSettings({ sheet, column, minWidth }) {
   const setColumnPrecision = useAppStore((state) => state.setColumnPrecision);
   const type = sheet.columnTypes[column];
@@ -172,6 +213,12 @@ function ColumnSettings({ sheet, column, minWidth }) {
         <div className="column-settings-row">
           <span>Values</span>
           <DistinctValuesMenu sheet={sheet} column={column} />
+        </div>
+      )}
+      {type === "date" && (
+        <div className="column-settings-row">
+          <span>Parsing</span>
+          <DateFormatMenu sheet={sheet} column={column} />
         </div>
       )}
       {type === "number" && (

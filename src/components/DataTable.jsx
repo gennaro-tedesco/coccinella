@@ -14,6 +14,8 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
+import { formatDateValue } from "../utils/dateFormats";
+import { DEFAULT_DATE_FORMAT } from "../utils/columnTypes";
 import { Copy, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import ColumnSettings from "./ColumnSettings";
@@ -207,6 +209,12 @@ function DataTable(_props, ref) {
                 );
               }
             }
+            if (sheet?.columnTypes[name] === "date") {
+              return formatDateValue(
+                value,
+                sheet?.columnDateFormats?.[name] ?? DEFAULT_DATE_FORMAT,
+              );
+            }
             return value;
           },
         };
@@ -216,6 +224,7 @@ function DataTable(_props, ref) {
       sheet?.sourceColumns,
       sheet?.columnTypes,
       sheet?.columnPrecision,
+      sheet?.columnDateFormats,
       sheet?.pivotTable,
       sheet?.pivotRowDimension,
     ],

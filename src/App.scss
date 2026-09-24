@@ -371,6 +371,10 @@ body,
   overflow: auto;
 }
 
+.file-menu-dropdown.date-formats-submenu {
+  min-width: tokens.$min-width-2;
+}
+
 .distinct-values-submenu li button {
   display: flex;
   justify-content: space-between;
@@ -1952,6 +1956,30 @@ button:disabled {
 .fuzzy-finder-match {
   color: var(--accent);
   font-weight: tokens.$font-weight-2;
+}
+
+.file-load-overlay {
+  z-index: tokens.$z-index-6;
+}
+
+.file-load-dialog {
+  width: tokens.$width-25;
+  padding: tokens.$padding-104;
+  gap: tokens.$gap-33;
+}
+
+.file-load-dialog progress {
+  width: 100%;
+  height: tokens.$height-20;
+  accent-color: var(--accent);
+}
+
+.file-load-details {
+  display: flex;
+  justify-content: space-between;
+  gap: tokens.$gap-34;
+  color: var(--fg-dark);
+  font-size: tokens.$font-size-27;
 }
 
 .snackbar {

@@ -39,6 +39,7 @@ function derivedSheet(metadata, filename) {
     sourceColumns: metadata.columns,
     columnVisibility,
     columnTypes: metadata.columnTypes,
+    columnDateFormats: {},
     columnPrecision,
     selectedColumns: [],
     sorting: [],
@@ -81,6 +82,24 @@ export const useAppStore = create((set, get) => ({
   showError: (error) =>
     set({ errorMessage: error instanceof Error ? error.message : String(error) }),
   clearError: () => set({ errorMessage: null }),
+  fileLoadProgress: null,
+  setFileLoadProgress: (fileLoadProgress) => set({ fileLoadProgress }),
+  clearFileLoadProgress: (operationId) =>
+    set((state) =>
+      state.fileLoadProgress?.operationId === operationId
+        ? { fileLoadProgress: null }
+        : state,
+    ),
+  cancelFileLoad: async () => {
+    const progress = get().fileLoadProgress;
+    if (!progress || progress.cancelling) return;
+    set({ fileLoadProgress: { ...progress, cancelling: true } });
+    try {
+      await invoke("cancel_file_load", { operationId: progress.operationId });
+    } catch (error) {
+      get().showError(error);
+    }
+  },
 
   shortcutsMenuOpen: false,
   openShortcutsMenu: () => set({ shortcutsMenuOpen: true }),
@@ -164,6 +183,7 @@ export const useAppStore = create((set, get) => ({
             sourceColumns: metadata.columns,
             columnVisibility,
             columnTypes: metadata.columnTypes,
+            columnDateFormats: {},
             columnPrecision,
             selectedColumns: [],
             sorting: [],
@@ -223,6 +243,7 @@ export const useAppStore = create((set, get) => ({
           sourceColumns: metadata.columns,
           columnVisibility,
           columnTypes: metadata.columnTypes,
+          columnDateFormats: {},
           columnPrecision,
           selectedColumns:
             metadata.datasetId === sheetId ? [] : existing.selectedColumns,
@@ -282,6 +303,7 @@ export const useAppStore = create((set, get) => ({
         sourceColumns: metadata.columns,
         columnVisibility: { ...source.columnVisibility },
         columnTypes: metadata.columnTypes,
+        columnDateFormats: { ...source.columnDateFormats },
         columnPrecision: { ...source.columnPrecision },
         selectedColumns: [],
         sorting: [],
@@ -358,6 +380,7 @@ export const useAppStore = create((set, get) => ({
         sourceColumns: metadata.columns,
         columnVisibility: { ...source.columnVisibility },
         columnTypes: metadata.columnTypes,
+        columnDateFormats: { ...source.columnDateFormats },
         columnPrecision: { ...source.columnPrecision },
         selectedColumns: [],
         sorting: [],
@@ -820,6 +843,20 @@ export const useAppStore = create((set, get) => ({
           [sheetId]: {
             ...sheet,
             columnTypes: { ...sheet.columnTypes, [column]: type },
+          },
+        },
+      };
+    }),
+
+  setColumnDateFormat: (sheetId, column, format) =>
+    set((state) => {
+      const sheet = state.sheets[sheetId];
+      return {
+        sheets: {
+          ...state.sheets,
+          [sheetId]: {
+            ...sheet,
+            columnDateFormats: { ...sheet.columnDateFormats, [column]: format },
           },
         },
       };

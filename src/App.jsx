@@ -21,6 +21,7 @@ import MergePanel from "./components/MergePanel";
 import { openFile, openFileAtPath } from "./utils/openFile";
 import { ErrorSnackbar } from "./components/Snackbar";
 import LazyErrorBoundary from "./components/LazyErrorBoundary";
+import FileLoadOverlay from "./components/FileLoadOverlay";
 import { useJsonSearchWorker } from "./hooks/useJsonSearchWorker";
 import {
   DEFAULT_FONT_SIZE,
@@ -817,6 +818,7 @@ function App() {
       {mergeOpen && csvDataMode && (
         <MergePanel onClose={() => setMergeOpen(false)} initialTab={mergeTab} />
       )}
+      <FileLoadOverlay />
       {errorMessage && (
         <ErrorSnackbar onClose={clearError}>{errorMessage}</ErrorSnackbar>
       )}
