@@ -371,6 +371,23 @@ body,
   overflow: auto;
 }
 
+.distinct-values-submenu li button {
+  display: flex;
+  justify-content: space-between;
+  gap: tokens.$gap-17;
+}
+
+.distinct-values-submenu .shortcut-item button {
+  width: auto;
+  padding: tokens.$padding-50 tokens.$padding-51;
+  color: var(--accent);
+}
+
+.distinct-values-submenu li button.excluded {
+  opacity: tokens.$opacity-12;
+  text-decoration: line-through;
+}
+
 .file-menu-dropdown.shortcuts-submenu {
   min-width: tokens.$min-width-2;
 }

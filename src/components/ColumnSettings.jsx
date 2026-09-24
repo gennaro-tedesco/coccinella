@@ -59,11 +59,32 @@ function TypeSelector({ sheet, column }) {
 function DistinctValuesMenu({ sheet, column }) {
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState(undefined);
+  const [excluded, setExcluded] = useState([]);
   const showError = useAppStore((state) => state.showError);
+  const createExpressionFilteredSheet = useAppStore(
+    (state) => state.createExpressionFilteredSheet,
+  );
+  const excludedValues = new Set(excluded);
 
   useEffect(() => {
     setValues(undefined);
+    setExcluded([]);
   }, [sheet.datasetId, sheet.contentVersion, column]);
+
+  const applyExclusion = () => {
+    createExpressionFilteredSheet(sheet.id, column, {
+      kind: "excluded",
+      values: excluded,
+    });
+    setExcluded([]);
+  };
+
+  const toggleValue = (value) =>
+    setExcluded((current) =>
+      current.includes(value)
+        ? current.filter((excludedValue) => excludedValue !== value)
+        : [...current, value],
+    );
 
   useEffect(() => {
     if (!open || values !== undefined) return undefined;
@@ -91,12 +112,30 @@ function DistinctValuesMenu({ sheet, column }) {
       </button>
       {open && values && (
         <ul className="file-menu-dropdown submenu distinct-values-submenu">
-          <li className="shortcut-item">{values.total} distinct</li>
+          <li className="shortcut-item">
+            {values.total} distinct
+            {excluded.length > 0 && (
+              <button
+                type="button"
+                className="type-selector-trigger"
+                onClick={applyExclusion}
+              >
+                filter
+              </button>
+            )}
+          </li>
           <li className="menu-separator" />
           {values.values.map(({ value, count }) => (
-            <li key={value} className="stat-row">
-              <span className="stat-value">{value || BLANK_VALUE_LABEL}</span>
-              <span className="stat-label">{count}</span>
+            <li key={value}>
+              <button
+                type="button"
+                className={excludedValues.has(value) ? "excluded" : ""}
+                aria-pressed={!excludedValues.has(value)}
+                onClick={() => toggleValue(value)}
+              >
+                <span className="stat-value">{value || BLANK_VALUE_LABEL}</span>
+                <span className="stat-label">{count}</span>
+              </button>
             </li>
           ))}
         </ul>

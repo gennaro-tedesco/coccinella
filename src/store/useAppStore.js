@@ -3,6 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import {
+  BLANK_VALUE_LABEL,
   DEFAULT_COLUMN_PRECISION,
   EXPRESSION_NO_MATCHES_MESSAGE,
 } from "../constants";
@@ -11,6 +12,10 @@ import { descendantSheetIds } from "../utils/sheets";
 function expressionConditionLabel(column, condition) {
   if (condition.kind === "number") return `${column} ${condition.expression}`;
   if (condition.kind === "date") return `${column} ${condition.direction} ${condition.date}`;
+  if (condition.kind === "excluded") {
+    const values = condition.values.map((value) => value || BLANK_VALUE_LABEL);
+    return `${column} not in ${values.join(", ")}`;
+  }
   return `${column} = ${condition.value}`;
 }
 
