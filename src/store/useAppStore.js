@@ -12,9 +12,9 @@ import { descendantSheetIds } from "../utils/sheets";
 function expressionConditionLabel(column, condition) {
   if (condition.kind === "number") return `${column} ${condition.expression}`;
   if (condition.kind === "date") return `${column} ${condition.direction} ${condition.date}`;
-  if (condition.kind === "excluded") {
+  if (condition.kind === "included") {
     const values = condition.values.map((value) => value || BLANK_VALUE_LABEL);
-    return `${column} not in ${values.join(", ")}`;
+    return `${column} in ${values.join(", ")}`;
   }
   return `${column} = ${condition.value}`;
 }

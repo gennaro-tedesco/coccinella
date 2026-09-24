@@ -190,7 +190,7 @@ enum ExpressionCondition {
     Number { expression: String },
     Date { date: String, direction: DateDirection },
     Boolean { value: bool },
-    Excluded { values: Vec<String> },
+    Included { values: Vec<String> },
 }
 
 #[derive(Clone, Deserialize)]
@@ -728,12 +728,12 @@ fn expression_cell_matcher(condition: &ExpressionCondition) -> Result<CellMatche
             let expected = if *value { "true" } else { "false" };
             Ok(Box::new(move |cell| cell.eq_ignore_ascii_case(expected)))
         }
-        ExpressionCondition::Excluded { values } => {
-            let excluded = values
+        ExpressionCondition::Included { values } => {
+            let included = values
                 .iter()
                 .map(|value| value.trim().to_owned())
                 .collect::<HashSet<_>>();
-            Ok(Box::new(move |cell| !excluded.contains(cell)))
+            Ok(Box::new(move |cell| included.contains(cell)))
         }
     }
 }
@@ -3555,14 +3555,14 @@ mod tests {
     }
 
     #[test]
-    fn keeps_rows_whose_value_is_not_excluded() {
+    fn keeps_only_rows_whose_value_is_included() {
         let rows = packed_rows(&[&["red"], &["blue"], &[""], &["green"], &["red"]]);
         let view = full_view(&rows);
-        let condition = ExpressionCondition::Excluded {
+        let condition = ExpressionCondition::Included {
             values: vec!["red".to_owned(), "".to_owned()],
         };
         let matches = collect_expression_matches(&rows, &view, 0, &condition).expect("filter");
-        assert_eq!(matches, vec![1, 3]);
+        assert_eq!(matches, vec![0, 2, 4]);
     }
 
     #[test]
