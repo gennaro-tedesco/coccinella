@@ -365,6 +365,12 @@ body,
   margin: tokens.$margin-5;
 }
 
+.column-panel .file-menu-dropdown.submenu {
+  top: tokens.$top-1;
+  left: tokens.$left-1;
+  right: tokens.$right-3;
+}
+
 .file-menu-dropdown.distinct-values-submenu {
   max-width: tokens.$max-width-2;
   max-height: tokens.$max-height-1;
@@ -1415,6 +1421,31 @@ body,
 
 .column-settings-row:first-child {
   margin-top: tokens.$margin-top-3;
+}
+
+.column-panel .column-settings-popover {
+  left: auto;
+  right: tokens.$right-3;
+}
+
+.column-row:has(.column-settings-layer) .th-settings-trigger {
+  anchor-name: --column-settings-anchor;
+}
+
+.column-settings-layer {
+  position-anchor: --column-settings-anchor;
+  inset: auto;
+  top: anchor(bottom);
+  right: anchor(right);
+  margin: tokens.$margin-1;
+  padding: tokens.$padding-15;
+  border: none;
+  background: none;
+  overflow: visible;
+}
+
+.column-panel .column-settings-row .has-submenu {
+  position: static;
 }
 
 .type-selector {

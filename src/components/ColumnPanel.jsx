@@ -330,7 +330,17 @@ function ColumnPanel() {
               </button>
             </div>
             {openSettingsColumn === column && (
-              <ColumnSettings sheet={sheet} column={column} />
+              <div
+                popover="manual"
+                className="column-settings-layer"
+                ref={(layer) => {
+                  if (layer && !layer.matches(":popover-open")) {
+                    layer.showPopover();
+                  }
+                }}
+              >
+                <ColumnSettings sheet={sheet} column={column} openOnClick />
+              </div>
             )}
           </li>
         ))}

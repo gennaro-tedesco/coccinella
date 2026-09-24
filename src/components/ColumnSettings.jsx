@@ -18,6 +18,14 @@ import {
   ICON_SIZE_SMALL,
 } from "../constants";
 
+function submenuTriggerProps(openOnClick, setOpen) {
+  if (openOnClick) return {};
+  return {
+    onMouseEnter: () => setOpen(true),
+    onMouseLeave: () => setOpen(false),
+  };
+}
+
 function TypeSelector({ sheet, column }) {
   const [open, setOpen] = useState(false);
   const setColumnType = useAppStore((state) => state.setColumnType);
@@ -60,7 +68,7 @@ function TypeSelector({ sheet, column }) {
   );
 }
 
-function DistinctValuesMenu({ sheet, column }) {
+function DistinctValuesMenu({ sheet, column, openOnClick }) {
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState(undefined);
   const [included, setIncluded] = useState([]);
@@ -111,12 +119,12 @@ function DistinctValuesMenu({ sheet, column }) {
   }, [open, values, sheet.datasetId, column, showError]);
 
   return (
-    <div
-      className="has-submenu"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
-      <button type="button" className="type-selector-trigger">
+    <div className="has-submenu" {...submenuTriggerProps(openOnClick, setOpen)}>
+      <button
+        type="button"
+        className="type-selector-trigger"
+        onClick={openOnClick ? () => setOpen((o) => !o) : undefined}
+      >
         distinct
       </button>
       {open && values && (
@@ -155,19 +163,19 @@ function DistinctValuesMenu({ sheet, column }) {
   );
 }
 
-function DateFormatMenu({ sheet, column }) {
+function DateFormatMenu({ sheet, column, openOnClick }) {
   const [open, setOpen] = useState(false);
   const setColumnDateFormat = useAppStore((state) => state.setColumnDateFormat);
   const format = sheet.columnDateFormats?.[column] ?? DEFAULT_DATE_FORMAT;
   const selected = DATE_FORMATS.find((candidate) => candidate.value === format);
 
   return (
-    <div
-      className="has-submenu"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
-      <button type="button" className="type-selector-trigger">
+    <div className="has-submenu" {...submenuTriggerProps(openOnClick, setOpen)}>
+      <button
+        type="button"
+        className="type-selector-trigger"
+        onClick={openOnClick ? () => setOpen((o) => !o) : undefined}
+      >
         {selected?.label ?? format}
       </button>
       {open && (
@@ -192,7 +200,7 @@ function DateFormatMenu({ sheet, column }) {
   );
 }
 
-function ColumnSettings({ sheet, column, minWidth }) {
+function ColumnSettings({ sheet, column, minWidth, openOnClick = false }) {
   const setColumnPrecision = useAppStore((state) => state.setColumnPrecision);
   const type = sheet.columnTypes[column];
   const precision = sheet.columnPrecision[column] ?? DEFAULT_COLUMN_PRECISION;
@@ -212,13 +220,21 @@ function ColumnSettings({ sheet, column, minWidth }) {
       {hasDistinct && (
         <div className="column-settings-row">
           <span>Values</span>
-          <DistinctValuesMenu sheet={sheet} column={column} />
+          <DistinctValuesMenu
+            sheet={sheet}
+            column={column}
+            openOnClick={openOnClick}
+          />
         </div>
       )}
       {type === "date" && (
         <div className="column-settings-row">
           <span>Parsing</span>
-          <DateFormatMenu sheet={sheet} column={column} />
+          <DateFormatMenu
+            sheet={sheet}
+            column={column}
+            openOnClick={openOnClick}
+          />
         </div>
       )}
       {type === "number" && (
