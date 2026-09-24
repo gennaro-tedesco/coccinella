@@ -38,3 +38,4 @@ export const JSON_DEFAULT_EXPANDED_DEPTH = 2;
 export const JSON_TREE_OVERSCAN_ROWS = 20;
 export const JSON_COPY_INDENT = 2;
 export const BLANK_VALUE_LABEL = "(blank)";
+export const PLOT_MODE_BAR_BUTTONS = [["toImage", "zoom2d", "pan2d", "autoScale2d"]];

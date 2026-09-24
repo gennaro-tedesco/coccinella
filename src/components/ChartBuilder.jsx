@@ -18,7 +18,7 @@ import Scatter from "plotly.js/lib/scatter";
 import createPlotlyComponent from "react-plotly.js/factory";
 import { useAppStore } from "../store/useAppStore";
 import { THEMES } from "../utils/themes";
-import { FULL_SIZE_PERCENT, ICON_SIZE_DEFAULT } from "../constants";
+import { FULL_SIZE_PERCENT, ICON_SIZE_DEFAULT, PLOT_MODE_BAR_BUTTONS } from "../constants";
 import { buildTraces } from "../utils/chart";
 
 Plotly.register([Bar, Box, Histogram, Scatter]);
@@ -536,6 +536,7 @@ function ChartBuilder({ fontSize }) {
                   zerolinecolor: theme.border,
                 },
               }}
+              config={{ displaylogo: false, modeBarButtons: PLOT_MODE_BAR_BUTTONS }}
               useResizeHandler
               style={{ width: FULL_SIZE_PERCENT, height: FULL_SIZE_PERCENT }}
             />
