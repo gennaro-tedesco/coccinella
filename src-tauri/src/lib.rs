@@ -11,7 +11,7 @@ use nucleo_matcher::{
 };
 use regex::{Regex, RegexBuilder};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+use serde_json::value::RawValue;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
@@ -59,6 +59,7 @@ type ColumnIndex = u32;
 
 #[derive(Clone)]
 struct PackedRows {
+    prefix: Option<Arc<PackedRows>>,
     data: String,
     cell_offsets: Vec<u32>,
     row_offsets: Vec<u32>,
@@ -68,11 +69,16 @@ struct PackedRows {
 impl PackedRows {
     fn with_capacity(column_count: usize, data_capacity: usize) -> Self {
         Self {
+            prefix: None,
             data: String::with_capacity(data_capacity),
             cell_offsets: vec![0],
             row_offsets: vec![0],
             column_count,
         }
+    }
+
+    fn prefix_column_count(&self) -> usize {
+        self.prefix.as_ref().map_or(0, |prefix| prefix.column_count)
     }
 
     fn push_record(&mut self, record: &csv::StringRecord) -> Result<(), String> {
@@ -108,14 +114,18 @@ impl PackedRows {
     }
 
     fn cell(&self, row_index: usize, column_index: usize) -> &str {
-        let cell_index = row_index * self.column_count + column_index;
+        let prefix_column_count = self.prefix_column_count();
+        if let Some(prefix) = self.prefix.as_ref().filter(|_| column_index < prefix_column_count) {
+            return prefix.cell(row_index, column_index);
+        }
+        let cell_index = row_index * self.column_count + column_index - prefix_column_count;
         let start = self.cell_offsets[cell_index] as usize;
         let end = self.cell_offsets[cell_index + 1] as usize;
         &self.data[start..end]
     }
 
     fn row_owned(&self, row_index: usize) -> Vec<String> {
-        (0..self.column_count)
+        (0..self.prefix_column_count() + self.column_count)
             .map(|column_index| self.cell(row_index, column_index).to_owned())
             .collect()
     }
@@ -275,7 +285,7 @@ enum OpenedFile {
         filename: String,
         path: String,
         id: String,
-        data: JsonValue,
+        data: Box<RawValue>,
         #[serde(rename = "sizeBytes")]
         size_bytes: u64,
     },
@@ -381,7 +391,7 @@ struct DistinctValues {
 
 enum Matcher {
     Regex(Regex),
-    Plain(String, bool),
+    Plain(String),
 }
 
 enum SortKeys {
@@ -417,8 +427,7 @@ impl Matcher {
     fn is_match(&self, value: &str) -> bool {
         match self {
             Self::Regex(regex) => regex.is_match(value),
-            Self::Plain(pattern, true) => value.contains(pattern),
-            Self::Plain(pattern, false) => value.to_lowercase().contains(pattern),
+            Self::Plain(pattern) => value.contains(pattern),
         }
     }
 }
@@ -711,7 +720,7 @@ async fn read_opened_dataset_blocking(
     result
 }
 
-fn read_json(path: &str) -> Result<(JsonValue, u64), String> {
+fn read_json(path: &str) -> Result<(Box<RawValue>, u64), String> {
     let mut file = File::open(path).map_err(|error| error.to_string())?;
     let size_bytes = file.metadata().map_err(|error| error.to_string())?.len();
     if size_bytes > MAX_JSON_FILE_BYTES {
@@ -721,9 +730,9 @@ fn read_json(path: &str) -> Result<(JsonValue, u64), String> {
             format_binary_bytes(MAX_JSON_FILE_BYTES)
         ));
     }
-    let mut bytes = Vec::with_capacity(size_bytes as usize);
-    file.read_to_end(&mut bytes).map_err(|error| error.to_string())?;
-    let data = serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    let mut text = String::with_capacity(size_bytes as usize);
+    file.read_to_string(&mut text).map_err(|error| error.to_string())?;
+    let data = RawValue::from_string(text).map_err(|error| error.to_string())?;
     Ok((data, size_bytes))
 }
 
@@ -815,21 +824,20 @@ fn build_matcher(spec: &FilterSpec) -> Result<Option<Matcher>, String> {
     if spec.pattern.is_empty() {
         return Ok(None);
     }
-    if spec.is_regex {
-        RegexBuilder::new(&spec.pattern)
-            .case_insensitive(!spec.is_case_sensitive)
-            .build()
-            .map(Matcher::Regex)
-            .map(Some)
-            .map_err(|error| error.to_string())
-    } else {
-        let pattern = if spec.is_case_sensitive {
-            spec.pattern.clone()
-        } else {
-            spec.pattern.to_lowercase()
-        };
-        Ok(Some(Matcher::Plain(pattern, spec.is_case_sensitive)))
+    if !spec.is_regex && spec.is_case_sensitive {
+        return Ok(Some(Matcher::Plain(spec.pattern.clone())));
     }
+    let pattern = if spec.is_regex {
+        spec.pattern.clone()
+    } else {
+        regex::escape(&spec.pattern)
+    };
+    RegexBuilder::new(&pattern)
+        .case_insensitive(!spec.is_case_sensitive)
+        .build()
+        .map(Matcher::Regex)
+        .map(Some)
+        .map_err(|error| error.to_string())
 }
 
 fn matching_rows(dataset: &Dataset, filter: &Filter) -> Result<Vec<RowIndex>, String> {
@@ -1310,20 +1318,37 @@ fn add_expression_column(
     let variables = (0..referenced.len())
         .map(|index| format!("{COLUMN_VARIABLE_PREFIX}{index}"))
         .collect::<Vec<_>>();
-    let mut context = HashMapContext::<DefaultNumericTypes>::new();
-    let mut rows = PackedRows::with_capacity(column_count, 0);
-    let mut result_type = None;
+    let (prefix, carried_columns, carried_bytes) = match &source.rows.prefix {
+        Some(prefix) => (
+            Arc::clone(prefix),
+            prefix.column_count..source.columns.len(),
+            source.rows.data.len(),
+        ),
+        None => (
+            Arc::clone(&source.rows),
+            source.columns.len()..source.columns.len(),
+            0,
+        ),
+    };
+    let mut in_view = vec![false; source.rows.len()];
     for row_index in source.order.iter() {
-        let row = *row_index as usize;
-        let mut inputs_are_numbers = true;
-        for (variable, column_index) in variables.iter().zip(&referenced) {
-            let Ok(value) = source.rows.cell(row, *column_index).trim().parse::<f64>() else {
-                inputs_are_numbers = false;
-                break;
-            };
-            context
-                .set_value(variable.clone(), Value::from_float(value))
-                .map_err(|error| error.to_string())?;
+        in_view[*row_index as usize] = true;
+    }
+    let mut context = HashMapContext::<DefaultNumericTypes>::new();
+    let mut rows = PackedRows::with_capacity(carried_columns.len() + 1, carried_bytes);
+    let mut result_type = None;
+    for (row, is_in_view) in in_view.into_iter().enumerate() {
+        let mut inputs_are_numbers = is_in_view;
+        if is_in_view {
+            for (variable, column_index) in variables.iter().zip(&referenced) {
+                let Ok(value) = source.rows.cell(row, *column_index).trim().parse::<f64>() else {
+                    inputs_are_numbers = false;
+                    break;
+                };
+                context
+                    .set_value(variable.clone(), Value::from_float(value))
+                    .map_err(|error| error.to_string())?;
+            }
         }
         let value = if inputs_are_numbers {
             let (value, value_type) = match tree
@@ -1348,16 +1373,35 @@ fn add_expression_column(
             String::new()
         };
         rows.push_fields(
-            (0..source.columns.len())
+            carried_columns
+                .clone()
                 .map(|column_index| source.rows.cell(row, column_index))
                 .chain(std::iter::once(value.as_str())),
         )?;
     }
+    rows.shrink_to_fit();
+    rows.prefix = Some(prefix);
     let mut columns = source.columns.clone();
     columns.push(name.to_owned());
     let mut column_types = source.column_types.clone();
     column_types.push(result_type.unwrap_or("number").to_owned());
-    Ok(derived_dataset(columns, rows, column_types, source.separator))
+    Ok(Dataset {
+        columns,
+        rows: Arc::new(rows),
+        view: Arc::clone(&source.order),
+        order: source.order,
+        column_types,
+        separator: source.separator,
+        size_bytes: 0,
+        source_id: None,
+        filter: None,
+        sorting: Vec::new(),
+        search: None,
+        search_matches: Vec::new(),
+        sort_generation: 0,
+        search_generation: 0,
+        source_path: None,
+    })
 }
 
 fn aggregate_value(
@@ -3411,6 +3455,7 @@ mod tests {
         ));
         std::fs::write(&path, r#"{"user":{"name":"Ada"}}"#).expect("write JSON fixture");
         let (value, size_bytes) = read_json(&path.to_string_lossy()).expect("read JSON fixture");
+        let value = serde_json::from_str::<serde_json::Value>(value.get()).expect("parse raw JSON");
         assert_eq!(value["user"]["name"], "Ada");
         assert!(size_bytes > 0);
 
@@ -3804,6 +3849,70 @@ mod tests {
         assert!(add_expression_column(source(), "a", "$a + 1", &number_columns).is_err());
         assert!(add_expression_column(source(), "c", "$a +", &number_columns).is_err());
         assert!(add_expression_column(source(), " ", "$a", &number_columns).is_err());
+    }
+
+    #[test]
+    fn added_columns_share_source_storage_and_keep_the_source_order() {
+        let mut source = join_source(&["a", "b"], &[&["1", "x"], &["2", "y"], &["3", "z"]]);
+        source.order = Arc::new(vec![2, 0]);
+        let source_rows = Arc::clone(&source.rows);
+        let number_columns = vec!["a".to_owned()];
+        let first = add_expression_column(source, "c", "$a * 10", &number_columns)
+            .expect("add first column");
+        assert!(Arc::ptr_eq(
+            first.rows.prefix.as_ref().expect("shared prefix"),
+            &source_rows
+        ));
+        assert_eq!(first.rows.column_count, 1);
+        assert_eq!(owned_rows(&first), [["3", "z", "30"], ["1", "x", "10"]]);
+
+        let second_source = JoinSource {
+            columns: first.columns.clone(),
+            rows: Arc::clone(&first.rows),
+            order: Arc::clone(&first.order),
+            column_types: first.column_types.clone(),
+            separator: first.separator,
+        };
+        let number_columns = vec!["a".to_owned(), "c".to_owned()];
+        let second = add_expression_column(second_source, "d", "$c + $a", &number_columns)
+            .expect("add second column");
+        assert!(Arc::ptr_eq(
+            second.rows.prefix.as_ref().expect("shared prefix"),
+            &source_rows
+        ));
+        assert_eq!(second.rows.column_count, 2);
+        assert_eq!(
+            owned_rows(&second),
+            [["3", "z", "30", "33"], ["1", "x", "10", "11"]]
+        );
+    }
+
+    #[test]
+    fn plain_case_insensitive_matching_treats_pattern_literally() {
+        let matcher = build_matcher(&FilterSpec {
+            pattern: "a.D".into(),
+            is_regex: false,
+            is_case_sensitive: false,
+            columns: Vec::new(),
+        })
+        .expect("build matcher")
+        .expect("non-empty matcher");
+        assert!(matcher.is_match("XA.dY"));
+        assert!(!matcher.is_match("abd"));
+    }
+
+    #[test]
+    fn opened_json_is_serialized_verbatim() {
+        let data = RawValue::from_string(r#"{"user":{"name":"Ada"}}"#.into()).expect("raw JSON");
+        let opened = OpenedFile::Json {
+            filename: "a.json".into(),
+            path: "/a.json".into(),
+            id: "1".into(),
+            data,
+            size_bytes: 1,
+        };
+        let serialized = serde_json::to_string(&opened).expect("serialize opened file");
+        assert!(serialized.contains(r#""data":{"user":{"name":"Ada"}}"#));
     }
 
     #[test]

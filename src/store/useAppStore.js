@@ -19,6 +19,14 @@ function expressionConditionLabel(column, condition) {
   return `${column} = ${condition.value}`;
 }
 
+function closeDatasets(sheets, id) {
+  return Promise.all(
+    [id, ...descendantSheetIds(sheets, id)].map((sheetId) =>
+      invoke("close_dataset", { datasetId: sheets[sheetId].datasetId }),
+    ),
+  );
+}
+
 function derivedSheet(metadata, filename) {
   const columnVisibility = {};
   const columnPrecision = {};
@@ -535,12 +543,31 @@ export const useAppStore = create((set, get) => ({
     }
     set((state) => {
       const id = metadata.datasetId;
+      const sheet = derivedSheet(metadata, `${source.filename} + ${name.trim()}`);
+      const parentId = source.filterOf?.sourceId;
+      const parent = parentId ? state.sheets[parentId] : null;
+      if (!parent) {
+        return {
+          sheets: { ...state.sheets, [id]: sheet },
+          sheetOrder: [...state.sheetOrder, id],
+          activeSheetId: id,
+          previousSheetId: state.activeSheetId,
+        };
+      }
+      const children = [...parent.children];
+      children.splice(children.indexOf(sourceId) + 1, 0, id);
       return {
         sheets: {
           ...state.sheets,
-          [id]: derivedSheet(metadata, `${source.filename} + ${name.trim()}`),
+          [parentId]: { ...parent, children },
+          [id]: {
+            ...sheet,
+            filterOf: {
+              sourceId: parentId,
+              pattern: `${source.displayName ?? source.filterOf.pattern} + ${name.trim()}`,
+            },
+          },
         },
-        sheetOrder: [...state.sheetOrder, id],
         activeSheetId: id,
         previousSheetId: state.activeSheetId,
       };
@@ -552,7 +579,7 @@ export const useAppStore = create((set, get) => ({
     const child = get().sheets[id];
     if (!child?.filterOf) return;
     try {
-      await invoke("close_dataset", { datasetId: child.datasetId });
+      await closeDatasets(get().sheets, id);
     } catch (error) {
       get().showError(error);
       return;
@@ -616,7 +643,7 @@ export const useAppStore = create((set, get) => ({
     if (!sheet) return;
     if (sheet.kind !== "json") {
       try {
-        await invoke("close_dataset", { datasetId: sheet.datasetId });
+        await closeDatasets(get().sheets, id);
       } catch (error) {
         get().showError(error);
         return;

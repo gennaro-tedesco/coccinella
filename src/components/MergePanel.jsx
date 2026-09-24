@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { EXPRESSION_NO_MATCHES_MESSAGE, ICON_SIZE_SMALL, SEARCH_DEBOUNCE_MS } from "../constants";
+import { sheetIdsWithDescendants } from "../utils/sheets";
 
 const TABS = [
   { id: "merge", label: "Merge" },
@@ -567,7 +568,6 @@ function ExpressionFields({ sheets, sheetOrder, state, setState, message, openSe
             role="tab"
             aria-selected={state.mode === id}
             className={state.mode === id ? "active" : ""}
-            disabled={id === "add" && numberColumns.length === 0}
             onClick={() => {
               setState({ ...state, mode: id });
               setOpenSelector(null);
@@ -592,13 +592,15 @@ function ExpressionFields({ sheets, sheetOrder, state, setState, message, openSe
               datasetId,
               column: "",
               columnExpression: "",
-              mode: numberColumnsOf(sheets[datasetId]).length > 0 ? state.mode : "filter",
             });
             setOpenSelector(null);
           }}
         />
       </div>
-      {sheet && state.mode === "add" && (
+      {sheet && state.mode === "add" && numberColumns.length === 0 && (
+        <div className="merge-empty">No number columns available</div>
+      )}
+      {sheet && state.mode === "add" && numberColumns.length > 0 && (
         <>
           <div className="merge-dataset-field">
             <span>Column name</span>
@@ -926,7 +928,7 @@ function MergePanel({ onClose, initialTab }) {
           <OperationPane active={tab === "expression"}>
             <ExpressionFields
               sheets={sheets}
-              sheetOrder={sheetOrder}
+              sheetOrder={sheetIdsWithDescendants(sheets, sheetOrder)}
               state={expression}
               setState={setExpression}
               message={expressionMessage}

@@ -342,4 +342,36 @@ describe("application store dataset lifecycle", () => {
     expect(created).toBe(true);
     expect(useAppStore.getState().sheets.computed.filename).toBe("prices.csv + double");
   });
+
+  it("nests a column added to a filtered sheet next to its source", async () => {
+    useAppStore.getState().openSheet("people.csv", rootMetadata, "/tmp/people.csv");
+    invokeMock.mockResolvedValueOnce(childMetadata);
+    await useAppStore.getState().createFilteredSheet("root", "Ada", false, false);
+    invokeMock.mockResolvedValueOnce({ ...rootMetadata, datasetId: "other" });
+    await useAppStore.getState().createFilteredSheet("root", "Bob", false, false);
+    invokeMock.mockResolvedValueOnce({ ...rootMetadata, datasetId: "computed" });
+
+    const created = await useAppStore.getState().createColumnSheet("child", "double", "$name");
+
+    expect(created).toBe(true);
+    expect(useAppStore.getState()).toMatchObject({
+      sheetOrder: ["root"],
+      activeSheetId: "computed",
+      sheets: {
+        root: { children: ["child", "computed", "other"] },
+        computed: { filterOf: { sourceId: "root", pattern: "Ada + double" } },
+      },
+    });
+
+    invokeMock.mockReset();
+    await useAppStore.getState().closeSheet("root");
+
+    expect(invokeMock.mock.calls.map(([, args]) => args.datasetId).sort()).toEqual([
+      "child",
+      "computed",
+      "other",
+      "root",
+    ]);
+    expect(useAppStore.getState().sheets).toEqual({});
+  });
 });

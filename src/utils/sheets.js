@@ -6,6 +6,13 @@ export function rootSheetId(sheets, id) {
   return rootId;
 }
 
+export function sheetIdsWithDescendants(sheets, ids) {
+  return ids.flatMap((id) => [
+    id,
+    ...sheetIdsWithDescendants(sheets, sheets[id]?.children ?? []),
+  ]);
+}
+
 export function descendantSheetIds(sheets, id) {
   const descendants = [];
   const pending = [...(sheets[id]?.children ?? [])];
