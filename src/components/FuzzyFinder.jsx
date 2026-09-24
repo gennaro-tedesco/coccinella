@@ -57,6 +57,8 @@ function FuzzyFinder({ placeholder, items, getLabel, getGroup, onSelect, onClose
   const [matches, setMatches] = useState(items);
   const [indicesByLabel, setIndicesByLabel] = useState(new Map());
   const inputRef = useRef(null);
+  const activeItemRef = useRef(null);
+  const keyboardNavigationRef = useRef(false);
   const showError = useAppStore((state) => state.showError);
 
   useEffect(() => {
@@ -110,6 +112,12 @@ function FuzzyFinder({ placeholder, items, getLabel, getGroup, onSelect, onClose
     setActiveIndex(0);
   }, [query]);
 
+  useEffect(() => {
+    if (!keyboardNavigationRef.current) return;
+    keyboardNavigationRef.current = false;
+    activeItemRef.current?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex]);
+
   const groups = useMemo(() => {
     if (!getGroup) return null;
     const byGroup = new Map();
@@ -139,10 +147,14 @@ function FuzzyFinder({ placeholder, items, getLabel, getGroup, onSelect, onClose
       onClose();
     } else if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActiveIndex((index) => Math.min(index + 1, matches.length - 1));
+      const nextIndex = Math.min(activeIndex + 1, matches.length - 1);
+      keyboardNavigationRef.current = nextIndex !== activeIndex;
+      setActiveIndex(nextIndex);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActiveIndex((index) => Math.max(index - 1, 0));
+      const nextIndex = Math.max(activeIndex - 1, 0);
+      keyboardNavigationRef.current = nextIndex !== activeIndex;
+      setActiveIndex(nextIndex);
     } else if (event.key === "Enter") {
       event.preventDefault();
       if (matches[activeIndex]) onSelect(matches[activeIndex]);
@@ -156,9 +168,13 @@ function FuzzyFinder({ placeholder, items, getLabel, getGroup, onSelect, onClose
     const displayText = labelOverride ?? label;
     return (
       <button
+        ref={index === activeIndex ? activeItemRef : null}
         type="button"
         className={"fuzzy-finder-item" + (index === activeIndex ? " active" : "")}
-        onMouseEnter={() => setActiveIndex(index)}
+        onMouseEnter={() => {
+          keyboardNavigationRef.current = false;
+          setActiveIndex(index);
+        }}
         onClick={() => onSelect(item)}
       >
         {renderHighlighted(displayText, offset, indices)}
