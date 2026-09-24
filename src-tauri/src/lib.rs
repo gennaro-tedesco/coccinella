@@ -151,6 +151,7 @@ struct AppState {
     datasets: Mutex<DatasetStore>,
     indexed_paths: Mutex<HashMap<String, PathBuf>>,
     file_scan_tokens: Mutex<HashSet<String>>,
+    previous_file_scan_tokens: Mutex<HashSet<String>>,
     pending_open_files: Mutex<Vec<FileCandidate>>,
     active_loads: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
@@ -1903,7 +1904,8 @@ async fn load_indexed_file(
         .indexed_paths
         .lock()
         .map_err(|error| error.to_string())?
-        .remove(&token)
+        .get(&token)
+        .cloned()
         .ok_or("File selection expired")?;
     let separator = separator_byte(&separator)?;
     open_file_at_path(path, separator, operation_id, on_progress, &state).await
@@ -2757,10 +2759,15 @@ async fn list_data_files(
             .file_scan_tokens
             .lock()
             .map_err(|error| error.to_string())?;
+        let mut previous_file_scan_tokens = state
+            .previous_file_scan_tokens
+            .lock()
+            .map_err(|error| error.to_string())?;
         if result.is_ok() {
-            for token in file_scan_tokens.drain() {
+            for token in previous_file_scan_tokens.drain() {
                 indexed_paths.remove(&token);
             }
+            *previous_file_scan_tokens = std::mem::take(&mut *file_scan_tokens);
             *file_scan_tokens = next_scan_tokens;
         } else {
             for token in next_scan_tokens {
