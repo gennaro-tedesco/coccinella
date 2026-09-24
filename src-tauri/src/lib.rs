@@ -312,6 +312,12 @@ enum ColumnStats {
     },
 }
 
+#[derive(Serialize)]
+struct DistinctValue {
+    value: String,
+    count: usize,
+}
+
 enum Matcher {
     Regex(Regex),
     Plain(String, bool),
@@ -2002,6 +2008,80 @@ async fn get_search_match(
         }))
 }
 
+fn column_view(
+    state: &State<'_, AppState>,
+    dataset_id: &str,
+    column: &str,
+) -> Result<(Arc<PackedRows>, Arc<Vec<RowIndex>>, usize), String> {
+    let handle = dataset(state, dataset_id)?;
+    let dataset = lock_dataset(&handle)?;
+    let column_index = dataset
+        .columns
+        .iter()
+        .position(|name| name == column)
+        .ok_or("Column not found")?;
+    Ok((
+        Arc::clone(&dataset.rows),
+        Arc::clone(&dataset.view),
+        column_index,
+    ))
+}
+
+fn distinct_values(
+    rows: &PackedRows,
+    view: &[RowIndex],
+    column_index: usize,
+) -> Vec<DistinctValue> {
+    let mut frequencies = HashMap::<&str, usize>::new();
+    for row_index in view {
+        *frequencies
+            .entry(rows.cell(*row_index as usize, column_index))
+            .or_default() += 1;
+    }
+    let mut values = frequencies
+        .into_iter()
+        .map(|(value, count)| DistinctValue {
+            value: value.to_owned(),
+            count,
+        })
+        .collect::<Vec<_>>();
+    values.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.value.cmp(&right.value))
+    });
+    values
+}
+
+fn longest_value(rows: &PackedRows, view: &[RowIndex], column_index: usize) -> String {
+    view.iter()
+        .map(|row_index| rows.cell(*row_index as usize, column_index))
+        .max_by_key(|value| value.chars().count())
+        .unwrap_or_default()
+        .to_owned()
+}
+
+#[tauri::command]
+async fn get_distinct_values(
+    dataset_id: String,
+    column: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<DistinctValue>, String> {
+    let (rows, view, column_index) = column_view(&state, &dataset_id, &column)?;
+    Ok(distinct_values(&rows, &view, column_index))
+}
+
+#[tauri::command]
+async fn get_longest_value(
+    dataset_id: String,
+    column: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let (rows, view, column_index) = column_view(&state, &dataset_id, &column)?;
+    Ok(longest_value(&rows, &view, column_index))
+}
+
 #[tauri::command]
 async fn get_column_stats(
     dataset_id: String,
@@ -2009,20 +2089,7 @@ async fn get_column_stats(
     column_type: String,
     state: State<'_, AppState>,
 ) -> Result<Option<ColumnStats>, String> {
-    let handle = dataset(&state, &dataset_id)?;
-    let (rows, view, column_index) = {
-        let dataset = lock_dataset(&handle)?;
-        let column_index = dataset
-            .columns
-            .iter()
-            .position(|name| name == &column)
-            .ok_or("Column not found")?;
-        (
-            Arc::clone(&dataset.rows),
-            Arc::clone(&dataset.view),
-            column_index,
-        )
-    };
+    let (rows, view, column_index) = column_view(&state, &dataset_id, &column)?;
     let values = view
         .iter()
         .map(|row_index| rows.cell(*row_index as usize, column_index))
@@ -2443,6 +2510,8 @@ pub fn run() {
             search_dataset,
             get_search_match,
             get_column_stats,
+            get_distinct_values,
+            get_longest_value,
             get_chart_data,
             save_csv_file_dialog,
             list_data_files,
@@ -2570,6 +2639,36 @@ mod tests {
                 ["", "", "", "N", "right-null"],
             ]
         );
+    }
+
+    #[test]
+    fn counts_distinct_values_in_view_by_descending_frequency() {
+        let rows = packed_rows(&[&["b"], &["a"], &["b"], &[""], &["c"], &["a"], &["b"]]);
+        let view = vec![0, 1, 2, 3, 4, 5];
+
+        let values = distinct_values(&rows, &view, 0)
+            .into_iter()
+            .map(|distinct| (distinct.value, distinct.count))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            values,
+            [
+                ("a".to_owned(), 2),
+                ("b".to_owned(), 2),
+                ("".to_owned(), 1),
+                ("c".to_owned(), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn finds_longest_value_in_view_by_character_count() {
+        let rows = packed_rows(&[&["short"], &["ééééééé"], &["longest value"]]);
+
+        assert_eq!(longest_value(&rows, &[0, 1, 2], 0), "longest value");
+        assert_eq!(longest_value(&rows, &[0, 1], 0), "ééééééé");
+        assert_eq!(longest_value(&rows, &[], 0), "");
     }
 
     #[test]

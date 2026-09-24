@@ -602,6 +602,34 @@ export const useAppStore = create((set, get) => ({
       },
     })),
 
+  setColumnWidth: (sheetId, column, width) =>
+    set((state) => {
+      const sheet = state.sheets[sheetId];
+      if (!sheet) return state;
+      return {
+        sheets: {
+          ...state.sheets,
+          [sheetId]: {
+            ...sheet,
+            columnWidths: { ...sheet.columnWidths, [column]: width },
+          },
+        },
+      };
+    }),
+
+  resetColumnWidth: (sheetId, column) =>
+    set((state) => {
+      const sheet = state.sheets[sheetId];
+      if (!sheet) return state;
+      const { [column]: _removed, ...columnWidths } = sheet.columnWidths ?? {};
+      return {
+        sheets: {
+          ...state.sheets,
+          [sheetId]: { ...sheet, columnWidths },
+        },
+      };
+    }),
+
   moveColumn: (sheetId, sourceColumn, targetColumn, position) =>
     set((state) => {
       const sheet = state.sheets[sheetId];

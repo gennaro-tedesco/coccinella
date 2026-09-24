@@ -46,6 +46,8 @@ function DataTable(_props, ref) {
   const activeSearchMatch = useAppStore((state) => state.activeSearchMatch);
   const searchVersion = useAppStore((state) => state.searchVersion);
   const showError = useAppStore((state) => state.showError);
+  const setColumnWidth = useAppStore((state) => state.setColumnWidth);
+  const resetColumnWidth = useAppStore((state) => state.resetColumnWidth);
   const [openColumn, setOpenColumn] = useState(null);
   const [openColumnWidth, setOpenColumnWidth] = useState(null);
   const [offset, setOffset] = useState(0);
@@ -299,6 +301,55 @@ function DataTable(_props, ref) {
     void setSorting(activeSheetId, next);
   }
 
+  async function fittedDisplayTexts(columnId) {
+    const columnType = sheet.columnTypes[columnId];
+    if (columnType !== "number") {
+      return [
+        await invoke("get_longest_value", {
+          datasetId: sheet.datasetId,
+          column: columnId,
+        }),
+      ];
+    }
+    const stats = await invoke("get_column_stats", {
+      datasetId: sheet.datasetId,
+      column: columnId,
+      columnType,
+    });
+    if (!stats) return [];
+    const precision =
+      sheet.columnPrecision[columnId] ?? DEFAULT_COLUMN_PRECISION;
+    return [stats.min, stats.max].map((value) => value.toFixed(precision));
+  }
+
+  async function toggleColumnFit(columnId) {
+    if (sheet.columnWidths?.[columnId] !== undefined) {
+      resetColumnWidth(sheet.id, columnId);
+      return;
+    }
+    const cellValue = tableRef.current?.querySelector("tbody td .cell-value");
+    if (!cellValue) return;
+    try {
+      const texts = await fittedDisplayTexts(columnId);
+      const textStyle = getComputedStyle(cellValue);
+      const cellStyle = getComputedStyle(cellValue.closest("td"));
+      const context = document.createElement("canvas").getContext("2d");
+      context.font = `${textStyle.fontStyle} ${textStyle.fontWeight} ${textStyle.fontSize} ${textStyle.fontFamily}`;
+      const textWidth = Math.max(
+        0,
+        ...texts.map((text) => context.measureText(text).width),
+      );
+      const width =
+        textWidth +
+        parseFloat(cellStyle.paddingLeft) +
+        parseFloat(cellStyle.paddingRight) +
+        parseFloat(cellStyle.borderRightWidth);
+      setColumnWidth(sheet.id, columnId, Math.ceil(width));
+    } catch (error) {
+      showError(error);
+    }
+  }
+
   if (!sheet) {
     return (
       <div className="data-table-placeholder">
@@ -337,14 +388,22 @@ function DataTable(_props, ref) {
                       : "descending"
                   : undefined;
 
+              const fittedWidth = sheet.columnWidths?.[header.id];
+
               return (
                 <th
                   key={header.id}
-                  className={`th-cell${isSelected ? " selected" : ""}${sheet.pivotDimensions?.includes(header.id) ? " pivot-dimension" : ""}`}
+                  className={`th-cell${isSelected ? " selected" : ""}${sheet.pivotDimensions?.includes(header.id) ? " pivot-dimension" : ""}${fittedWidth !== undefined ? " fitted" : ""}`}
                   ref={(element) => {
                     thRefs.current[header.id] = element;
                   }}
-                  style={sheet.pivotTable ? { top: pivotSuperHeaderHeight } : undefined}
+                  style={{
+                    ...(sheet.pivotTable && { top: pivotSuperHeaderHeight }),
+                    ...(fittedWidth !== undefined && {
+                      width: fittedWidth,
+                      minWidth: fittedWidth,
+                    }),
+                  }}
                   aria-selected={isSelected || undefined}
                   aria-sort={ariaSort}
                   onMouseEnter={() => setHoveredColumn(header.id)}
@@ -360,11 +419,13 @@ function DataTable(_props, ref) {
                       if (event.ctrlKey) event.preventDefault();
                     }}
                   >
-                    <span>
-                      {flexRender(
-                        header.column.columnDef.header,
-                        header.getContext(),
-                      )}
+                    <span className="th-heading">
+                      <span className="th-label">
+                        {flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
+                      </span>
                       <span className="sort-indicator" aria-hidden="true">
                         {{ asc: "▲", desc: "▼" }[sortDirection] ?? ""}
                         {sortDirection && sorting.length > 1 && (
@@ -399,6 +460,11 @@ function DataTable(_props, ref) {
                       }
                     />
                   )}
+                  <div
+                    className="th-resize-handle"
+                    aria-hidden="true"
+                    onDoubleClick={() => void toggleColumnFit(header.id)}
+                  />
                 </th>
               );
             })}
@@ -431,6 +497,7 @@ function DataTable(_props, ref) {
                   isMatch && "search-match",
                   isActiveMatch && "search-match-active",
                   copiedCellKey === cellKey && "copied",
+                  sheet.columnWidths?.[cell.column.id] !== undefined && "fitted",
                   sheet.pivotDimensions?.includes(cell.column.id) && "pivot-dimension",
                 ]
                   .filter(Boolean)

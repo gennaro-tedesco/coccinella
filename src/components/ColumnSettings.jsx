@@ -1,11 +1,13 @@
 // Renders per-column type, numeric precision, and summary-statistic controls.
 // FEATURE: CSV data workspace
-import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { COLUMN_TYPES } from "../utils/columnTypes";
 import ColumnStats from "./ColumnStats";
 import {
+  BLANK_VALUE_LABEL,
   DEFAULT_COLUMN_PRECISION,
   MAX_COLUMN_PRECISION,
   MIN_COLUMN_PRECISION,
@@ -54,11 +56,61 @@ function TypeSelector({ sheet, column }) {
   );
 }
 
+function DistinctValuesMenu({ sheet, column }) {
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState(undefined);
+  const showError = useAppStore((state) => state.showError);
+
+  useEffect(() => {
+    setValues(undefined);
+  }, [sheet.datasetId, sheet.contentVersion, column]);
+
+  useEffect(() => {
+    if (!open || values !== undefined) return undefined;
+    let cancelled = false;
+    invoke("get_distinct_values", { datasetId: sheet.datasetId, column })
+      .then((result) => {
+        if (!cancelled) setValues(result);
+      })
+      .catch((error) => {
+        if (!cancelled) showError(error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, values, sheet.datasetId, column, showError]);
+
+  return (
+    <div
+      className="has-submenu"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button type="button" className="type-selector-trigger">
+        distinct
+      </button>
+      {open && values && (
+        <ul className="file-menu-dropdown submenu distinct-values-submenu">
+          <li className="shortcut-item">{values.length} distinct</li>
+          <li className="menu-separator" />
+          {values.map(({ value, count }) => (
+            <li key={value} className="stat-row">
+              <span className="stat-value">{value || BLANK_VALUE_LABEL}</span>
+              <span className="stat-label">{count}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ColumnSettings({ sheet, column, minWidth }) {
   const setColumnPrecision = useAppStore((state) => state.setColumnPrecision);
   const type = sheet.columnTypes[column];
   const precision = sheet.columnPrecision[column] ?? DEFAULT_COLUMN_PRECISION;
   const hasStats = type !== "string" && type !== "uuid";
+  const hasDistinct = type === "string" || type === "category";
 
   return (
     <div
@@ -70,6 +122,12 @@ function ColumnSettings({ sheet, column, minWidth }) {
         <span>Type</span>
         <TypeSelector sheet={sheet} column={column} />
       </div>
+      {hasDistinct && (
+        <div className="column-settings-row">
+          <span>Values</span>
+          <DistinctValuesMenu sheet={sheet} column={column} />
+        </div>
+      )}
       {type === "number" && (
         <div className="column-settings-row">
           <span>Precision</span>

@@ -51,6 +51,24 @@ describe("application store dataset lifecycle", () => {
     });
   });
 
+  it("sets and resets a fitted column width without touching other columns", () => {
+    useAppStore
+      .getState()
+      .openSheet("people.csv", rootMetadata, "/tmp/people.csv");
+
+    useAppStore.getState().setColumnWidth("root", "name", 120);
+    useAppStore.getState().setColumnWidth("root", "score", 80);
+    expect(useAppStore.getState().sheets.root.columnWidths).toEqual({
+      name: 120,
+      score: 80,
+    });
+
+    useAppStore.getState().resetColumnWidth("root", "name");
+    expect(useAppStore.getState().sheets.root.columnWidths).toEqual({
+      score: 80,
+    });
+  });
+
   it("keeps state intact and reports an error when native close fails", async () => {
     useAppStore
       .getState()
