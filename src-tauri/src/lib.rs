@@ -415,16 +415,35 @@ fn validate_csv_path(path: &str) -> Result<(), String> {
     }
 }
 
+fn validate_delimited_path(path: &str) -> Result<(), String> {
+    match Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("csv" | "tsv") => Ok(()),
+        _ => Err("Only .csv and .tsv files are supported".into()),
+    }
+}
+
+fn is_tsv_path(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("tsv"))
+}
+
 fn file_kind(path: &Path) -> Option<FileKind> {
     match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
-        "csv" => Some(FileKind::Csv),
+        "csv" | "tsv" => Some(FileKind::Csv),
         "json" => Some(FileKind::Json),
         _ => None,
     }
 }
 
 fn validate_data_path(path: &str) -> Result<FileKind, String> {
-    file_kind(Path::new(path)).ok_or_else(|| "Only .csv and .json files are supported".into())
+    file_kind(Path::new(path)).ok_or_else(|| "Only .csv, .tsv and .json files are supported".into())
 }
 
 #[cfg(target_os = "macos")]
@@ -485,7 +504,7 @@ fn validated_columns(headers: &csv::StringRecord) -> Result<Vec<String>, String>
 }
 
 fn read_dataset(path: &str, separator: u8) -> Result<Dataset, String> {
-    validate_csv_path(path)?;
+    validate_delimited_path(path)?;
     let file = File::open(path).map_err(|error| error.to_string())?;
     let size_bytes = file.metadata().map_err(|error| error.to_string())?.len();
     if size_bytes > MAX_CSV_FILE_BYTES {
@@ -541,6 +560,17 @@ fn read_dataset(path: &str, separator: u8) -> Result<Dataset, String> {
     })
 }
 
+fn read_tsv_dataset(path: &str) -> Result<Dataset, String> {
+    match read_dataset(path, b'\t') {
+        Ok(tab_dataset) if tab_dataset.columns.len() > 1 => Ok(tab_dataset),
+        Ok(tab_dataset) => match read_dataset(path, b' ') {
+            Ok(space_dataset) if space_dataset.columns.len() > 1 => Ok(space_dataset),
+            _ => Ok(tab_dataset),
+        },
+        Err(_) => read_dataset(path, b' '),
+    }
+}
+
 async fn read_dataset_blocking(path: String, separator: u8) -> Result<Dataset, String> {
     tauri::async_runtime::spawn_blocking(move || read_dataset(&path, separator))
         .await
@@ -575,7 +605,14 @@ async fn open_file_at_path(
         .to_owned();
     match kind {
         FileKind::Csv => {
-            let dataset = read_dataset_blocking(path_string.clone(), separator).await?;
+            let dataset = if is_tsv_path(&path_string) {
+                let read_path = path_string.clone();
+                tauri::async_runtime::spawn_blocking(move || read_tsv_dataset(&read_path))
+                    .await
+                    .map_err(|error| error.to_string())??
+            } else {
+                read_dataset_blocking(path_string.clone(), separator).await?
+            };
             let metadata = insert_dataset(dataset, state)?;
             Ok(OpenedFile::Csv {
                 filename,
@@ -1646,7 +1683,7 @@ async fn open_file_dialog(
     let file = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
-            .add_filter("Data", &["csv", "json"])
+            .add_filter("Data", &["csv", "tsv", "json"])
             .blocking_pick_file()
     })
     .await
@@ -2998,6 +3035,52 @@ mod tests {
     }
 
     #[test]
+    fn parses_tsv_with_tabs_and_falls_back_to_spaces() {
+        let tab_path = std::env::temp_dir().join(format!(
+            "coccinella-tab-separated-{}-{}.tsv",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("tsv")
+        ));
+        let space_path = std::env::temp_dir().join(format!(
+            "coccinella-space-separated-{}-{}.tsv",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("tsv")
+        ));
+        std::fs::write(&tab_path, "name\tscore\nAda\t10\n").expect("write tab fixture");
+        std::fs::write(&space_path, "name score\nAda 10\n").expect("write space fixture");
+
+        let tab_dataset = read_tsv_dataset(tab_path.to_str().expect("UTF-8 path"))
+            .expect("parse tab-separated TSV");
+        let space_dataset = read_tsv_dataset(space_path.to_str().expect("UTF-8 path"))
+            .expect("parse space-separated TSV");
+        std::fs::remove_file(tab_path).expect("remove tab fixture");
+        std::fs::remove_file(space_path).expect("remove space fixture");
+
+        assert_eq!(tab_dataset.columns, ["name", "score"]);
+        assert_eq!(tab_dataset.separator, b'\t');
+        assert_eq!(space_dataset.columns, ["name", "score"]);
+        assert_eq!(space_dataset.separator, b' ');
+    }
+
+    #[test]
+    fn keeps_single_column_tsv_without_delimiters() {
+        let path = std::env::temp_dir().join(format!(
+            "coccinella-single-column-{}-{}.tsv",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("tsv")
+        ));
+        std::fs::write(&path, "name\nAda\nGrace\n")
+            .expect("write single-column fixture");
+
+        let dataset = read_tsv_dataset(path.to_str().expect("UTF-8 path"))
+            .expect("parse single-column TSV");
+        std::fs::remove_file(path).expect("remove fixture");
+
+        assert_eq!(dataset.columns, ["name"]);
+        assert_eq!(dataset.separator, b'\t');
+    }
+
+    #[test]
     fn rejects_duplicate_headers() {
         let path = std::env::temp_dir().join(format!(
             "coccinella-duplicate-headers-{}.csv",
@@ -3058,6 +3141,7 @@ mod tests {
         std::fs::create_dir_all(&excluded).expect("create excluded fixture directory");
         std::fs::create_dir_all(&hidden).expect("create hidden fixture directory");
         std::fs::write(root.join("root.csv"), "id\n1\n").expect("write root fixture");
+        std::fs::write(root.join("table.tsv"), "id\tname\n1\tAda\n").expect("write TSV fixture");
         std::fs::write(root.join("data.json"), "{}").expect("write JSON fixture");
         std::fs::write(nested.join("nested.CSV"), "id\n2\n").expect("write nested fixture");
         std::fs::write(deeper.join("deep.csv"), "id\n3\n").expect("write deep fixture");
@@ -3078,10 +3162,10 @@ mod tests {
             .filter_map(|path| path.file_name()?.to_str().map(str::to_owned))
             .collect();
 
-        let mut root_names = names[..2].to_vec();
+        let mut root_names = names[..3].to_vec();
         root_names.sort();
-        assert_eq!(root_names, ["data.json", "root.csv"]);
-        assert_eq!(&names[2..], ["nested.CSV", "deep.csv"]);
+        assert_eq!(root_names, ["data.json", "root.csv", "table.tsv"]);
+        assert_eq!(&names[3..], ["nested.CSV", "deep.csv"]);
     }
 
     #[test]
