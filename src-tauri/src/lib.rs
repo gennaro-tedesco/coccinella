@@ -1128,7 +1128,7 @@ fn add_expression_column(
         .map(|index| format!("{COLUMN_VARIABLE_PREFIX}{index}"))
         .collect::<Vec<_>>();
     let mut context = HashMapContext::<DefaultNumericTypes>::new();
-    let mut rows = PackedRows::with_capacity(column_count, source.rows.data.len());
+    let mut rows = PackedRows::with_capacity(column_count, 0);
     let mut result_type = None;
     for row_index in source.order.iter() {
         let row = *row_index as usize;
