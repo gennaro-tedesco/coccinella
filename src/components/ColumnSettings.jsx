@@ -2,7 +2,7 @@
 // FEATURE: CSV data workspace
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, FunnelPlus } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { COLUMN_TYPES } from "../utils/columnTypes";
 import ColumnStats from "./ColumnStats";
@@ -123,9 +123,11 @@ function DistinctValuesMenu({ sheet, column }) {
               <button
                 type="button"
                 className="type-selector-trigger"
+                aria-label="Apply filter"
+                title="Apply filter"
                 onClick={applyInclusion}
               >
-                filter
+                <FunnelPlus size={ICON_SIZE_SMALL} />
               </button>
             )}
           </li>

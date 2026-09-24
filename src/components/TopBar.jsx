@@ -82,6 +82,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
     <div className="top-bar" data-tauri-drag-region="deep">
       <div
         className="file-menu"
+        onMouseEnter={() => setMenuOpen(true)}
         onMouseLeave={() => {
           setMenuOpen(false);
           setOperationsSubmenuOpen(false);

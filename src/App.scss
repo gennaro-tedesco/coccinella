@@ -377,7 +377,15 @@ body,
   gap: tokens.$gap-17;
 }
 
+.distinct-values-submenu .shortcut-item {
+  position: relative;
+}
+
 .distinct-values-submenu .shortcut-item button {
+  position: absolute;
+  top: tokens.$top-3;
+  right: tokens.$padding-12;
+  transform: translateY(tokens.$transform-2);
   width: auto;
   padding: tokens.$padding-50 tokens.$padding-51;
   color: var(--accent);
