@@ -2148,7 +2148,7 @@ button:disabled {
   background: none;
 }
 
-.operation-tabs button:hover,
+.operation-tabs button:hover:not(:disabled),
 .operation-tabs button.active {
   color: var(--accent);
   background-color: var(--highlight);
@@ -2160,9 +2160,19 @@ button:disabled {
 }
 
 .operation-content {
+  display: grid;
+}
+
+.operation-pane {
   display: flex;
   flex-direction: column;
+  grid-area: 1 / 1;
+  min-width: 0;
   gap: tokens.$gap-25;
+}
+
+.operation-pane.inactive {
+  visibility: hidden;
 }
 
 .merge-datasets {

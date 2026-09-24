@@ -45,6 +45,8 @@ const CATEGORY_MAX_DISTINCT_VALUES: usize = 20;
 const CATEGORY_MAX_DISTINCT_RATIO: usize = 2;
 const VARIANCE_POWER: i32 = 2;
 const GENERATION_STEP: u64 = 1;
+const COLUMN_PLACEHOLDER: char = '$';
+const COLUMN_VARIABLE_PREFIX: &str = "column_";
 
 type DatasetHandle = Arc<Mutex<Dataset>>;
 type DatasetStore = HashMap<String, DatasetHandle>;
@@ -1041,6 +1043,127 @@ fn append_datasets(sources: Vec<JoinSource>) -> Result<Dataset, String> {
     ))
 }
 
+fn compile_column_expression(
+    expression: &str,
+    columns: &[String],
+    number_columns: &[String],
+) -> Result<(String, Vec<usize>), String> {
+    let mut candidates = number_columns
+        .iter()
+        .filter_map(|column| {
+            columns
+                .iter()
+                .position(|candidate| candidate == column)
+                .map(|index| (index, column))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|(_, column)| std::cmp::Reverse(column.len()));
+    let mut compiled = String::with_capacity(expression.len());
+    let mut referenced = Vec::<usize>::new();
+    let mut remaining = expression;
+    while let Some(position) = remaining.find(COLUMN_PLACEHOLDER) {
+        compiled.push_str(&remaining[..position]);
+        let after = &remaining[position + COLUMN_PLACEHOLDER.len_utf8()..];
+        let (column_index, column) = candidates
+            .iter()
+            .find(|(_, column)| after.starts_with(column.as_str()))
+            .ok_or_else(|| {
+                format!("Unknown number column after {COLUMN_PLACEHOLDER}{after}")
+            })?;
+        let variable_index = referenced
+            .iter()
+            .position(|index| index == column_index)
+            .unwrap_or_else(|| {
+                referenced.push(*column_index);
+                referenced.len() - 1
+            });
+        compiled.push_str(&format!(" {COLUMN_VARIABLE_PREFIX}{variable_index} "));
+        remaining = &after[column.len()..];
+    }
+    compiled.push_str(remaining);
+    Ok((compiled, referenced))
+}
+
+fn add_expression_column(
+    source: JoinSource,
+    name: &str,
+    expression: &str,
+    number_columns: &[String],
+) -> Result<Dataset, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Enter a name for the new column".into());
+    }
+    if source.columns.iter().any(|column| column == name) {
+        return Err(format!("Column already exists: {name}"));
+    }
+    let column_count = source.columns.len() + 1;
+    if column_count > MAX_CSV_COLUMNS {
+        return Err(format!("Data exceeds the {MAX_CSV_COLUMNS}-column limit"));
+    }
+    if column_count.saturating_mul(source.order.len() + 1) > MAX_CSV_FIELDS {
+        return Err(format!("Data exceeds the {MAX_CSV_FIELDS}-field limit"));
+    }
+    let (compiled, referenced) =
+        compile_column_expression(expression, &source.columns, number_columns)?;
+    let mut tree =
+        build_operator_tree::<DefaultNumericTypes>(&compiled).map_err(|error| error.to_string())?;
+    convert_int_constants_to_floats(&mut tree);
+    let variables = (0..referenced.len())
+        .map(|index| format!("{COLUMN_VARIABLE_PREFIX}{index}"))
+        .collect::<Vec<_>>();
+    let mut context = HashMapContext::<DefaultNumericTypes>::new();
+    let mut rows = PackedRows::with_capacity(column_count, 0);
+    let mut result_type = None;
+    for row_index in source.order.iter() {
+        let row = *row_index as usize;
+        let mut record = csv::StringRecord::from(
+            (0..source.columns.len())
+                .map(|column_index| source.rows.cell(row, column_index))
+                .collect::<Vec<_>>(),
+        );
+        let mut inputs_are_numbers = true;
+        for (variable, column_index) in variables.iter().zip(&referenced) {
+            let Ok(value) = source.rows.cell(row, *column_index).trim().parse::<f64>() else {
+                inputs_are_numbers = false;
+                break;
+            };
+            context
+                .set_value(variable.clone(), Value::from_float(value))
+                .map_err(|error| error.to_string())?;
+        }
+        let value = if inputs_are_numbers {
+            let (value, value_type) = match tree
+                .eval_with_context(&context)
+                .map_err(|error| error.to_string())?
+            {
+                Value::Float(result) if result.is_finite() => (result.to_string(), "number"),
+                Value::Float(_) => (String::new(), "number"),
+                Value::Int(result) => (result.to_string(), "number"),
+                Value::Boolean(result) => (result.to_string(), "boolean"),
+                other => {
+                    return Err(format!(
+                        "Expression must return a number or a boolean, but got {other}"
+                    ))
+                }
+            };
+            if *result_type.get_or_insert(value_type) != value_type {
+                return Err("Expression must return the same type for every row".into());
+            }
+            value
+        } else {
+            String::new()
+        };
+        record.push_field(&value);
+        rows.push_record(&record)?;
+    }
+    let mut columns = source.columns.clone();
+    columns.push(name.to_owned());
+    let mut column_types = source.column_types.clone();
+    column_types.push(result_type.unwrap_or("number").to_owned());
+    Ok(derived_dataset(columns, rows, column_types, source.separator))
+}
+
 fn aggregate_value(
     source: &JoinSource,
     rows: &[RowIndex],
@@ -1851,6 +1974,23 @@ async fn create_aggregated_dataset(
 }
 
 #[tauri::command]
+async fn create_column_dataset(
+    dataset_id: String,
+    name: String,
+    expression: String,
+    number_columns: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<SheetMetadata, String> {
+    let source = operation_source(&state, &dataset_id)?;
+    let dataset = tauri::async_runtime::spawn_blocking(move || {
+        add_expression_column(source, &name, &expression, &number_columns)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    insert_dataset(dataset, &state)
+}
+
+#[tauri::command]
 fn close_dataset(dataset_id: String, state: State<'_, AppState>) -> Result<(), String> {
     let candidates = {
         let store = datasets(&state)?;
@@ -2503,6 +2643,7 @@ pub fn run() {
             create_joined_dataset,
             create_appended_dataset,
             create_aggregated_dataset,
+            create_column_dataset,
             close_dataset,
             get_rows,
             sort_dataset,
@@ -3218,6 +3359,69 @@ mod tests {
         (0..rows.len())
             .map(|index| RowIndex::try_from(index).expect("test rows fit in u32"))
             .collect()
+    }
+
+    #[test]
+    fn adds_column_from_number_column_expressions() {
+        let source = join_source(
+            &["price", "price total", "label"],
+            &[&["2", "10", "a"], &["", "4", "b"], &["4", "0", "c"]],
+        );
+        let number_columns = vec!["price".to_owned(), "price total".to_owned()];
+        let dataset = add_expression_column(
+            source,
+            "ratio",
+            "$price total / $price + 1",
+            &number_columns,
+        )
+        .expect("add column");
+        assert_eq!(dataset.columns, vec!["price", "price total", "label", "ratio"]);
+        assert_eq!(dataset.column_types[3], "number");
+        let values = owned_rows(&dataset)
+            .into_iter()
+            .map(|row| row[3].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(values, vec!["6", "", "1"]);
+    }
+
+    #[test]
+    fn adds_boolean_column_from_comparison_expressions() {
+        let source = join_source(
+            &["population", "areaInSqKm"],
+            &[&["100", "10"], &["5", "50"], &["", "1"]],
+        );
+        let number_columns = vec!["population".to_owned(), "areaInSqKm".to_owned()];
+        let dataset = add_expression_column(
+            source,
+            "dense",
+            "$population > $areaInSqKm",
+            &number_columns,
+        )
+        .expect("add column");
+        assert_eq!(dataset.column_types[2], "boolean");
+        let values = owned_rows(&dataset)
+            .into_iter()
+            .map(|row| row[2].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(values, vec!["true", "false", ""]);
+        let mixed = join_source(&["a"], &[&["1"], &["-1"]]);
+        assert!(add_expression_column(
+            mixed,
+            "b",
+            "if($a > 0, true, $a)",
+            &["a".to_owned()],
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_added_column_expressions() {
+        let source = || join_source(&["a", "b"], &[&["1", "x"]]);
+        let number_columns = vec!["a".to_owned()];
+        assert!(add_expression_column(source(), "c", "$b + 1", &number_columns).is_err());
+        assert!(add_expression_column(source(), "a", "$a + 1", &number_columns).is_err());
+        assert!(add_expression_column(source(), "c", "$a +", &number_columns).is_err());
+        assert!(add_expression_column(source(), " ", "$a", &number_columns).is_err());
     }
 
     #[test]

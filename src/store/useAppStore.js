@@ -490,6 +490,36 @@ export const useAppStore = create((set, get) => ({
     return true;
   },
 
+  createColumnSheet: async (sourceId, name, expression) => {
+    const source = get().sheets[sourceId];
+    if (!source) return false;
+    let metadata;
+    try {
+      metadata = await invoke("create_column_dataset", {
+        datasetId: source.datasetId,
+        name,
+        expression,
+        numberColumns: source.columns.filter((column) => source.columnTypes[column] === "number"),
+      });
+    } catch (error) {
+      get().showError(error);
+      return false;
+    }
+    set((state) => {
+      const id = metadata.datasetId;
+      return {
+        sheets: {
+          ...state.sheets,
+          [id]: derivedSheet(metadata, `${source.filename} + ${name.trim()}`),
+        },
+        sheetOrder: [...state.sheetOrder, id],
+        activeSheetId: id,
+        previousSheetId: state.activeSheetId,
+      };
+    });
+    return true;
+  },
+
   closeFilteredSheet: async (id) => {
     const child = get().sheets[id];
     if (!child?.filterOf) return;

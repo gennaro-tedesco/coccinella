@@ -291,4 +291,29 @@ describe("application store dataset lifecycle", () => {
       pivotDimensions: ["country"],
     });
   });
+
+  it("creates a dataset with a column computed from number columns", async () => {
+    useAppStore.getState().openSheet(
+      "prices.csv",
+      { ...rootMetadata, columns: ["name", "price"], columnTypes: { name: "category", price: "number" } },
+      "/tmp/prices.csv",
+    );
+    invokeMock.mockResolvedValueOnce({
+      ...rootMetadata,
+      datasetId: "computed",
+      columns: ["name", "price", "double"],
+      columnTypes: { name: "category", price: "number", double: "number" },
+    });
+
+    const created = await useAppStore.getState().createColumnSheet("root", " double ", "$price * 2");
+
+    expect(invokeMock).toHaveBeenCalledWith("create_column_dataset", {
+      datasetId: "root",
+      name: " double ",
+      expression: "$price * 2",
+      numberColumns: ["price"],
+    });
+    expect(created).toBe(true);
+    expect(useAppStore.getState().sheets.computed.filename).toBe("prices.csv + double");
+  });
 });
