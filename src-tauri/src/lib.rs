@@ -73,16 +73,24 @@ impl PackedRows {
     }
 
     fn push_record(&mut self, record: &csv::StringRecord) -> Result<(), String> {
-        if record.len() != self.column_count {
-            return Err(format!(
-                "CSV row has {} fields; expected {}",
-                record.len(),
-                self.column_count
-            ));
-        }
-        for field in record {
+        self.push_fields(record)
+    }
+
+    fn push_fields<'a>(&mut self, fields: impl IntoIterator<Item = &'a str>) -> Result<(), String> {
+        let data_len = self.data.len();
+        let cell_count = self.cell_offsets.len();
+        for field in fields {
             self.data.push_str(field);
             self.cell_offsets.push(self.current_offset()?);
+        }
+        let field_count = self.cell_offsets.len() - cell_count;
+        if field_count != self.column_count {
+            self.data.truncate(data_len);
+            self.cell_offsets.truncate(cell_count);
+            return Err(format!(
+                "CSV row has {field_count} fields; expected {}",
+                self.column_count
+            ));
         }
         self.row_offsets.push(self.current_offset()?);
         Ok(())
@@ -1120,15 +1128,10 @@ fn add_expression_column(
         .map(|index| format!("{COLUMN_VARIABLE_PREFIX}{index}"))
         .collect::<Vec<_>>();
     let mut context = HashMapContext::<DefaultNumericTypes>::new();
-    let mut rows = PackedRows::with_capacity(column_count, 0);
+    let mut rows = PackedRows::with_capacity(column_count, source.rows.data.len());
     let mut result_type = None;
     for row_index in source.order.iter() {
         let row = *row_index as usize;
-        let mut record = csv::StringRecord::from(
-            (0..source.columns.len())
-                .map(|column_index| source.rows.cell(row, column_index))
-                .collect::<Vec<_>>(),
-        );
         let mut inputs_are_numbers = true;
         for (variable, column_index) in variables.iter().zip(&referenced) {
             let Ok(value) = source.rows.cell(row, *column_index).trim().parse::<f64>() else {
@@ -1161,8 +1164,11 @@ fn add_expression_column(
         } else {
             String::new()
         };
-        record.push_field(&value);
-        rows.push_record(&record)?;
+        rows.push_fields(
+            (0..source.columns.len())
+                .map(|column_index| source.rows.cell(row, column_index))
+                .chain(std::iter::once(value.as_str())),
+        )?;
     }
     let mut columns = source.columns.clone();
     columns.push(name.to_owned());
@@ -2823,6 +2829,18 @@ mod tests {
                 ("c".to_owned(), 1),
             ]
         );
+    }
+
+    #[test]
+    fn rejects_pushed_fields_with_wrong_count_without_changing_rows() {
+        let mut rows = packed_rows(&[&["a", "b"]]);
+
+        assert!(rows.push_fields(["c"]).is_err());
+        assert!(rows.push_fields(["c", "d", "e"]).is_err());
+        rows.push_fields(["c", "d"]).expect("valid row");
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows.row_owned(1), ["c", "d"]);
     }
 
     #[test]
