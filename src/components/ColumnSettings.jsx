@@ -91,9 +91,9 @@ function DistinctValuesMenu({ sheet, column }) {
       </button>
       {open && values && (
         <ul className="file-menu-dropdown submenu distinct-values-submenu">
-          <li className="shortcut-item">{values.length} distinct</li>
+          <li className="shortcut-item">{values.total} distinct</li>
           <li className="menu-separator" />
-          {values.map(({ value, count }) => (
+          {values.values.map(({ value, count }) => (
             <li key={value} className="stat-row">
               <span className="stat-value">{value || BLANK_VALUE_LABEL}</span>
               <span className="stat-label">{count}</span>

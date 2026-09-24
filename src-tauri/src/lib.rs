@@ -43,6 +43,7 @@ const EXCLUDED_SEARCH_DIRECTORIES: [&str; 5] = [
 const MACOS_PROTECTED_DIRECTORIES: [&str; 3] = ["Music", "Movies", "Pictures"];
 const CATEGORY_MAX_DISTINCT_VALUES: usize = 20;
 const CATEGORY_MAX_DISTINCT_RATIO: usize = 2;
+const MAX_DISPLAYED_DISTINCT_VALUES: usize = 1_000;
 const VARIANCE_POWER: i32 = 2;
 const GENERATION_STEP: u64 = 1;
 const COLUMN_PLACEHOLDER: char = '$';
@@ -318,6 +319,12 @@ enum ColumnStats {
 struct DistinctValue {
     value: String,
     count: usize,
+}
+
+#[derive(Serialize)]
+struct DistinctValues {
+    total: usize,
+    values: Vec<DistinctValue>,
 }
 
 enum Matcher {
@@ -2171,27 +2178,34 @@ fn distinct_values(
     rows: &PackedRows,
     view: &[RowIndex],
     column_index: usize,
-) -> Vec<DistinctValue> {
+    limit: usize,
+) -> DistinctValues {
     let mut frequencies = HashMap::<&str, usize>::new();
     for row_index in view {
         *frequencies
             .entry(rows.cell(*row_index as usize, column_index))
             .or_default() += 1;
     }
-    let mut values = frequencies
-        .into_iter()
-        .map(|(value, count)| DistinctValue {
-            value: value.to_owned(),
-            count,
-        })
-        .collect::<Vec<_>>();
-    values.sort_by(|left, right| {
-        right
-            .count
-            .cmp(&left.count)
-            .then_with(|| left.value.cmp(&right.value))
-    });
-    values
+    let total = frequencies.len();
+    let mut entries = frequencies.into_iter().collect::<Vec<_>>();
+    let by_frequency = |left: &(&str, usize), right: &(&str, usize)| {
+        right.1.cmp(&left.1).then_with(|| left.0.cmp(right.0))
+    };
+    if entries.len() > limit {
+        entries.select_nth_unstable_by(limit, by_frequency);
+        entries.truncate(limit);
+    }
+    entries.sort_by(by_frequency);
+    DistinctValues {
+        total,
+        values: entries
+            .into_iter()
+            .map(|(value, count)| DistinctValue {
+                value: value.to_owned(),
+                count,
+            })
+            .collect(),
+    }
 }
 
 fn longest_value(rows: &PackedRows, view: &[RowIndex], column_index: usize) -> String {
@@ -2207,9 +2221,14 @@ async fn get_distinct_values(
     dataset_id: String,
     column: String,
     state: State<'_, AppState>,
-) -> Result<Vec<DistinctValue>, String> {
+) -> Result<DistinctValues, String> {
     let (rows, view, column_index) = column_view(&state, &dataset_id, &column)?;
-    Ok(distinct_values(&rows, &view, column_index))
+    Ok(distinct_values(
+        &rows,
+        &view,
+        column_index,
+        MAX_DISPLAYED_DISTINCT_VALUES,
+    ))
 }
 
 #[tauri::command]
@@ -2787,11 +2806,14 @@ mod tests {
         let rows = packed_rows(&[&["b"], &["a"], &["b"], &[""], &["c"], &["a"], &["b"]]);
         let view = vec![0, 1, 2, 3, 4, 5];
 
-        let values = distinct_values(&rows, &view, 0)
+        let distinct = distinct_values(&rows, &view, 0, MAX_DISPLAYED_DISTINCT_VALUES);
+        let values = distinct
+            .values
             .into_iter()
             .map(|distinct| (distinct.value, distinct.count))
             .collect::<Vec<_>>();
 
+        assert_eq!(distinct.total, 4);
         assert_eq!(
             values,
             [
@@ -2801,6 +2823,22 @@ mod tests {
                 ("c".to_owned(), 1),
             ]
         );
+    }
+
+    #[test]
+    fn limits_distinct_values_to_most_frequent_and_reports_total() {
+        let rows = packed_rows(&[&["d"], &["b"], &["a"], &["b"], &["c"], &["a"], &["b"]]);
+        let view = vec![0, 1, 2, 3, 4, 5, 6];
+
+        let distinct = distinct_values(&rows, &view, 0, 2);
+        let values = distinct
+            .values
+            .into_iter()
+            .map(|distinct| (distinct.value, distinct.count))
+            .collect::<Vec<_>>();
+
+        assert_eq!(distinct.total, 4);
+        assert_eq!(values, [("b".to_owned(), 3), ("a".to_owned(), 2)]);
     }
 
     #[test]
