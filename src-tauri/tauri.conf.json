@@ -42,6 +42,10 @@
         "mimeType": "text/csv"
       },
       {
+        "ext": ["tsv"],
+        "mimeType": "text/tab-separated-values"
+      },
+      {
         "ext": ["json"],
         "mimeType": "application/json"
       }
