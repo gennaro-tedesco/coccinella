@@ -54,6 +54,10 @@ function ColumnPanel() {
     setSeparatorInput(sheet?.separator ?? ",");
   }, [activeSheetId, sheet?.separator]);
 
+  useEffect(() => {
+    setHoveredColumn(null);
+  }, [activeSheetId, setHoveredColumn]);
+
   async function handleSeparatorChange(separator) {
     setSeparatorMenuOpen(false);
     if (!sheet?.path) return;

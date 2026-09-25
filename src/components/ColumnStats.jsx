@@ -17,7 +17,7 @@ function StatRow({ label, value }) {
 export function useColumnStats(sheet, column) {
   const type = sheet.columnTypes[column];
   const showError = useAppStore((state) => state.showError);
-  const hasStats = type !== "string" && type !== "uuid";
+  const hasStats = Boolean(type) && type !== "string" && type !== "uuid";
   const [stats, setStats] = useState(undefined);
 
   useEffect(() => {

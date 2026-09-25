@@ -760,7 +760,7 @@ function App() {
           <SheetPanel />
           <div className="center">
             <FileTabs />
-            {csvDataMode && <FilterTabs />}
+            {!isJson && <FilterTabs />}
             <div className="content" ref={contentRef}>
               {mode === "data" ? (
                 isJson ? <JsonTree /> : <DataTable ref={dataTableRef} />
