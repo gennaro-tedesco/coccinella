@@ -461,13 +461,25 @@ function DataTable(_props, ref) {
                     </button>
                   </div>
                   {openColumn === header.id && (
-                    <ColumnSettings
-                      sheet={sheet}
-                      column={header.id}
-                      minWidth={
-                        openColumnWidth ? `${openColumnWidth}px` : undefined
-                      }
-                    />
+                    <div
+                      popover="manual"
+                      className="column-settings-layer"
+                      ref={(layer) => {
+                        if (layer && !layer.matches(":popover-open")) {
+                          layer.showPopover();
+                        }
+                      }}
+                    >
+                      <ColumnSettings
+                        sheet={sheet}
+                        column={header.id}
+                        openOnClick
+                        detectSubmenuOverflow
+                        minWidth={
+                          openColumnWidth ? `${openColumnWidth}px` : undefined
+                        }
+                      />
+                    </div>
                   )}
                   <div
                     className="th-resize-handle"

@@ -325,6 +325,16 @@ body,
   margin: tokens.$margin-5;
 }
 
+.data-table .has-submenu:has(> .submenu-below) {
+  position: static;
+}
+
+.data-table .file-menu-dropdown.submenu.submenu-below {
+  top: tokens.$top-1;
+  right: tokens.$right-3;
+  left: auto;
+}
+
 .column-panel .file-menu-dropdown.submenu {
   top: tokens.$top-1;
   left: tokens.$left-1;
@@ -1383,12 +1393,13 @@ body,
   margin-top: tokens.$margin-top-3;
 }
 
-.column-panel .column-settings-popover {
+.column-settings-layer .column-settings-popover {
   left: auto;
   right: tokens.$right-3;
 }
 
-.column-row:has(.column-settings-layer) .th-settings-trigger {
+.column-row:has(.column-settings-layer) .th-settings-trigger,
+.th-cell:has(.column-settings-layer) .th-settings-trigger {
   anchor-name: --column-settings-anchor;
 }
 

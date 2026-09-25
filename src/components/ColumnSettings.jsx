@@ -1,7 +1,7 @@
 // Renders per-column type, numeric precision, and summary-statistic controls.
 // FEATURE: CSV data workspace
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, FunnelPlus } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import {
@@ -24,6 +24,24 @@ function submenuTriggerProps(openOnClick, setOpen) {
     onMouseEnter: () => setOpen(true),
     onMouseLeave: () => setOpen(false),
   };
+}
+
+function useSubmenuPlacement(open, ready, detectOverflow) {
+  const submenuRef = useRef(null);
+  const [openBelow, setOpenBelow] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!open || !ready || !detectOverflow) {
+      setOpenBelow(false);
+      return;
+    }
+    setOpenBelow(
+      submenuRef.current.getBoundingClientRect().right >
+        document.documentElement.clientWidth,
+    );
+  }, [open, ready, detectOverflow]);
+
+  return [submenuRef, openBelow];
 }
 
 function TypeSelector({ sheet, column }) {
@@ -68,7 +86,12 @@ function TypeSelector({ sheet, column }) {
   );
 }
 
-function DistinctValuesMenu({ sheet, column, openOnClick }) {
+function DistinctValuesMenu({
+  sheet,
+  column,
+  openOnClick,
+  detectSubmenuOverflow,
+}) {
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState(undefined);
   const [included, setIncluded] = useState([]);
@@ -77,6 +100,11 @@ function DistinctValuesMenu({ sheet, column, openOnClick }) {
     (state) => state.createExpressionFilteredSheet,
   );
   const includedValues = new Set(included);
+  const [submenuRef, openBelow] = useSubmenuPlacement(
+    open,
+    values !== undefined,
+    detectSubmenuOverflow,
+  );
 
   useEffect(() => {
     setValues(undefined);
@@ -128,7 +156,10 @@ function DistinctValuesMenu({ sheet, column, openOnClick }) {
         distinct
       </button>
       {open && values && (
-        <ul className="file-menu-dropdown submenu distinct-values-submenu">
+        <ul
+          ref={submenuRef}
+          className={`file-menu-dropdown submenu distinct-values-submenu${openBelow ? " submenu-below" : ""}`}
+        >
           <li className="shortcut-item">
             {values.total} distinct
             {included.length > 0 && (
@@ -163,11 +194,21 @@ function DistinctValuesMenu({ sheet, column, openOnClick }) {
   );
 }
 
-function DateFormatMenu({ sheet, column, openOnClick }) {
+function DateFormatMenu({
+  sheet,
+  column,
+  openOnClick,
+  detectSubmenuOverflow,
+}) {
   const [open, setOpen] = useState(false);
   const setColumnDateFormat = useAppStore((state) => state.setColumnDateFormat);
   const format = sheet.columnDateFormats?.[column] ?? DEFAULT_DATE_FORMAT;
   const selected = DATE_FORMATS.find((candidate) => candidate.value === format);
+  const [submenuRef, openBelow] = useSubmenuPlacement(
+    open,
+    true,
+    detectSubmenuOverflow,
+  );
 
   return (
     <div className="has-submenu" {...submenuTriggerProps(openOnClick, setOpen)}>
@@ -179,7 +220,10 @@ function DateFormatMenu({ sheet, column, openOnClick }) {
         {selected?.label ?? format}
       </button>
       {open && (
-        <ul className="file-menu-dropdown submenu date-formats-submenu">
+        <ul
+          ref={submenuRef}
+          className={`file-menu-dropdown submenu date-formats-submenu${openBelow ? " submenu-below" : ""}`}
+        >
           {DATE_FORMATS.map((candidate) => (
             <li key={candidate.value}>
               <button
@@ -200,7 +244,13 @@ function DateFormatMenu({ sheet, column, openOnClick }) {
   );
 }
 
-function ColumnSettings({ sheet, column, minWidth, openOnClick = false }) {
+function ColumnSettings({
+  sheet,
+  column,
+  minWidth,
+  openOnClick = false,
+  detectSubmenuOverflow = false,
+}) {
   const setColumnPrecision = useAppStore((state) => state.setColumnPrecision);
   const type = sheet.columnTypes[column];
   const precision = sheet.columnPrecision[column] ?? DEFAULT_COLUMN_PRECISION;
@@ -224,6 +274,7 @@ function ColumnSettings({ sheet, column, minWidth, openOnClick = false }) {
             sheet={sheet}
             column={column}
             openOnClick={openOnClick}
+            detectSubmenuOverflow={detectSubmenuOverflow}
           />
         </div>
       )}
@@ -234,6 +285,7 @@ function ColumnSettings({ sheet, column, minWidth, openOnClick = false }) {
             sheet={sheet}
             column={column}
             openOnClick={openOnClick}
+            detectSubmenuOverflow={detectSubmenuOverflow}
           />
         </div>
       )}
