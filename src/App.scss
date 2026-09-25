@@ -77,26 +77,6 @@ body,
   --col-8: #f78c6c;
 }
 
-:root[data-theme="deepOcean"] {
-  --bg: #0f111a;
-  --bg-alt: #090b10;
-  --fg: #a6accd;
-  --fg-dark: #717cb4;
-  --border: #232637;
-  --active: #1a1c25;
-  --highlight: #1f2233;
-  --disabled: #464b5d;
-  --accent: #84ffff;
-  --col-1: #f07178;
-  --col-2: #c3e88d;
-  --col-3: #ffcb6b;
-  --col-4: #82aaff;
-  --col-5: #b0c9ff;
-  --col-6: #89ddff;
-  --col-7: #c792ea;
-  --col-8: #f78c6c;
-}
-
 :root[data-theme="palenight"] {
   --bg: #292d3e;
   --bg-alt: #1b1e2b;
@@ -107,26 +87,6 @@ body,
   --highlight: #444267;
   --disabled: #515772;
   --accent: #ab47bc;
-  --col-1: #f07178;
-  --col-2: #c3e88d;
-  --col-3: #ffcb6b;
-  --col-4: #82aaff;
-  --col-5: #b0c9ff;
-  --col-6: #89ddff;
-  --col-7: #c792ea;
-  --col-8: #f78c6c;
-}
-
-:root[data-theme="darker"] {
-  --bg: #212121;
-  --bg-alt: #1a1a1a;
-  --fg: #b0bec5;
-  --fg-dark: #8c8b8b;
-  --border: #343434;
-  --active: #323232;
-  --highlight: #3f3f3f;
-  --disabled: #474747;
-  --accent: #ff9800;
   --col-1: #f07178;
   --col-2: #c3e88d;
   --col-3: #ffcb6b;
@@ -197,26 +157,6 @@ body,
   --col-8: #fd9720;
 }
 
-:root[data-theme="mariana"] {
-  --bg: #2a333c;
-  --bg-alt: #323a48;
-  --fg: #d8dee9;
-  --fg-dark: #a6acb9;
-  --border: #64738a;
-  --active: #304868;
-  --highlight: #515b70;
-  --disabled: #64738a;
-  --accent: #d8dee9;
-  --col-1: #ec5f66;
-  --col-2: #99c794;
-  --col-3: #fac761;
-  --col-4: #6699cc;
-  --col-5: #b0c4d5;
-  --col-6: #a1efe4;
-  --col-7: #c695c6;
-  --col-8: #f9ae28;
-}
-
 :root[data-theme="darkSolar"] {
   --bg: #00141a;
   --bg-alt: #002d38;
@@ -226,6 +166,26 @@ body,
   --active: #002d38;
   --highlight: #073541;
   --disabled: #647a82;
+  --accent: #b28600;
+  --col-1: #dc312e;
+  --col-2: #859900;
+  --col-3: #b28600;
+  --col-4: #278bd3;
+  --col-5: #6d72c5;
+  --col-6: #2aa298;
+  --col-7: #d33682;
+  --col-8: #ca4c16;
+}
+
+:root[data-theme="lightSolar"] {
+  --bg: #fdf6e2;
+  --bg-alt: #ede7d4;
+  --fg: #647a82;
+  --fg-dark: #adb8b8;
+  --border: #ede7d4;
+  --active: #ede7d4;
+  --highlight: #ede7d4;
+  --disabled: #9fabad;
   --accent: #b28600;
   --col-1: #dc312e;
   --col-2: #859900;

@@ -64,8 +64,10 @@ export const useAppStore = create((set, get) => ({
   mode: "data",
   setMode: (mode) => set({ mode }),
 
-  theme: "oceanic",
+  theme: "darkSolar",
   setTheme: (theme) => set({ theme }),
+  previewTheme: null,
+  setPreviewTheme: (previewTheme) => set({ previewTheme }),
 
   sheetPanelOpen: true,
   toggleSheetPanel: () =>

@@ -55,6 +55,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
   const canOperate = Boolean(activeFile && activeFile.kind !== "json");
   const theme = useAppStore((state) => state.theme);
   const setTheme = useAppStore((state) => state.setTheme);
+  const setPreviewTheme = useAppStore((state) => state.setPreviewTheme);
   const showError = useAppStore((state) => state.showError);
   const shortcutsMenuOpen = useAppStore((state) => state.shortcutsMenuOpen);
   const closeShortcutsMenu = useAppStore((state) => state.closeShortcutsMenu);
@@ -68,6 +69,10 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
     setShortcutsSubmenuOpen(true);
     closeShortcutsMenu();
   }, [shortcutsMenuOpen, closeShortcutsMenu]);
+
+  useEffect(() => {
+    if (!themeSubmenuOpen) setPreviewTheme(null);
+  }, [themeSubmenuOpen, setPreviewTheme]);
 
   async function handleOpen() {
     setMenuOpen(false);
@@ -195,12 +200,16 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
                 <ChevronRight size={ICON_SIZE_MENU} />
               </button>
               {themeSubmenuOpen && (
-                <ul className="file-menu-dropdown submenu">
+                <ul
+                  className="file-menu-dropdown submenu"
+                  onMouseLeave={() => setPreviewTheme(null)}
+                >
                   {THEME_ORDER.map((key) => (
                     <li key={key}>
                       <button
                         type="button"
                         className={key === theme ? "active" : ""}
+                        onMouseEnter={() => setPreviewTheme(key)}
                         onClick={() => {
                           setTheme(key);
                           setMenuOpen(false);

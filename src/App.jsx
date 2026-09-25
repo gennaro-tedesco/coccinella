@@ -52,7 +52,7 @@ const getSheetLabel = (id) => useAppStore.getState().sheets[id]?.filename ?? "";
 
 function App() {
   const mode = useAppStore((state) => state.mode);
-  const theme = useAppStore((state) => state.theme);
+  const theme = useAppStore((state) => state.previewTheme ?? state.theme);
   const sheetPanelOpen = useAppStore((state) => state.sheetPanelOpen);
   const columnPanelOpen = useAppStore((state) => state.columnPanelOpen);
   const toggleSheetPanel = useAppStore((state) => state.toggleSheetPanel);

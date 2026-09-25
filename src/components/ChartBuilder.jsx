@@ -230,7 +230,7 @@ function ChartBuilder({ fontSize }) {
     state.activeSheetId ? state.plotConfig[state.activeSheetId] : null,
   );
   const setPlotConfig = useAppStore((state) => state.setPlotConfig);
-  const theme = useAppStore((state) => THEMES[state.theme] ?? THEMES.oceanic);
+  const theme = useAppStore((state) => THEMES[state.previewTheme ?? state.theme] ?? THEMES.darkSolar);
   const showError = useAppStore((state) => state.showError);
 
   const config = plotConfig ?? null;
