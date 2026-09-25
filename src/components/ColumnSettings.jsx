@@ -9,13 +9,17 @@ import {
   DATE_FORMATS,
   DEFAULT_DATE_FORMAT,
 } from "../utils/columnTypes";
-import ColumnStats from "./ColumnStats";
+import { ColumnStatsSummary, useColumnStats } from "./ColumnStats";
 import {
   BLANK_VALUE_LABEL,
   DEFAULT_COLUMN_PRECISION,
+  EXPRESSION_NO_MATCHES_MESSAGE,
   MAX_COLUMN_PRECISION,
   MIN_COLUMN_PRECISION,
   ICON_SIZE_SMALL,
+  ICON_SIZE_STATUS,
+  RANGE_SLIDER_ICON_ASPECT_RATIO,
+  SEARCH_DEBOUNCE_MS,
 } from "../constants";
 
 function submenuTriggerProps(openOnClick, setOpen) {
@@ -244,6 +248,154 @@ function DateFormatMenu({
   );
 }
 
+function RangeSliderIcon({ size }) {
+  return (
+    <svg
+      width={size * RANGE_SLIDER_ICON_ASPECT_RATIO}
+      height={size}
+      viewBox="0 0 72 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
+      <circle cx="6" cy="12" r="5" />
+      <line x1="11" y1="12" x2="61" y2="12" />
+      <circle cx="66" cy="12" r="5" />
+    </svg>
+  );
+}
+
+function NumberRangeMenu({
+  sheet,
+  column,
+  stats,
+  precision,
+  openOnClick,
+  detectSubmenuOverflow,
+}) {
+  const [open, setOpen] = useState(false);
+  const [range, setRange] = useState([stats.min, stats.max]);
+  const [matchCheck, setMatchCheck] = useState({
+    range: null,
+    hasMatches: false,
+  });
+  const showError = useAppStore((state) => state.showError);
+  const expressionConditionMatches = useAppStore(
+    (state) => state.expressionConditionMatches,
+  );
+  const createExpressionFilteredSheet = useAppStore(
+    (state) => state.createExpressionFilteredSheet,
+  );
+  const [low, high] = range;
+  const isFiltered = low > stats.min || high < stats.max;
+  const isChecked =
+    isFiltered && matchCheck.range?.[0] === low && matchCheck.range?.[1] === high;
+  const [submenuRef, openBelow] = useSubmenuPlacement(
+    open,
+    true,
+    detectSubmenuOverflow,
+  );
+
+  useEffect(() => {
+    setRange([stats.min, stats.max]);
+  }, [stats]);
+
+  useEffect(() => {
+    if (!isFiltered) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      expressionConditionMatches(sheet.id, column, {
+        kind: "range",
+        min: low,
+        max: high,
+      })
+        .then((hasMatches) => {
+          if (!cancelled) setMatchCheck({ range: [low, high], hasMatches });
+        })
+        .catch((error) => {
+          if (!cancelled) showError(error);
+        });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isFiltered, low, high, sheet.id, column, expressionConditionMatches, showError]);
+
+  const applyRange = () => {
+    createExpressionFilteredSheet(sheet.id, column, {
+      kind: "range",
+      min: low,
+      max: high,
+    });
+    setRange([stats.min, stats.max]);
+  };
+
+  const sliderProps = {
+    type: "range",
+    min: stats.min,
+    max: stats.max,
+    step: "any",
+  };
+
+  return (
+    <div className="has-submenu" {...submenuTriggerProps(openOnClick, setOpen)}>
+      <button
+        type="button"
+        className="type-selector-trigger"
+        aria-label={`Filter ${column} range`}
+        onClick={openOnClick ? () => setOpen((o) => !o) : undefined}
+      >
+        <RangeSliderIcon size={ICON_SIZE_STATUS} />
+      </button>
+      {open && (
+        <ul
+          ref={submenuRef}
+          className={`file-menu-dropdown submenu number-range-submenu${openBelow ? " submenu-below" : ""}`}
+        >
+          <li className="shortcut-item">
+            {low.toFixed(precision)} – {high.toFixed(precision)}
+            {isChecked && matchCheck.hasMatches && (
+              <button
+                type="button"
+                className="type-selector-trigger"
+                aria-label="Apply filter"
+                title="Apply filter"
+                onClick={applyRange}
+              >
+                <FunnelPlus size={ICON_SIZE_SMALL} />
+              </button>
+            )}
+          </li>
+          <li className="menu-separator" />
+          <li className="number-range-slider">
+            <input
+              {...sliderProps}
+              aria-label={`${column} minimum`}
+              value={low}
+              onChange={(e) =>
+                setRange([Math.min(Number(e.target.value), high), high])
+              }
+            />
+            <input
+              {...sliderProps}
+              aria-label={`${column} maximum`}
+              value={high}
+              onChange={(e) =>
+                setRange([low, Math.max(Number(e.target.value), low)])
+              }
+            />
+          </li>
+          {isChecked && !matchCheck.hasMatches && (
+            <li className="shortcut-item">{EXPRESSION_NO_MATCHES_MESSAGE}</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ColumnSettings({
   sheet,
   column,
@@ -256,6 +408,8 @@ function ColumnSettings({
   const precision = sheet.columnPrecision[column] ?? DEFAULT_COLUMN_PRECISION;
   const hasStats = type !== "string" && type !== "uuid";
   const hasDistinct = type === "string" || type === "category";
+  const stats = useColumnStats(sheet, column);
+  const hasRange = stats?.type === "number" && stats.min < stats.max;
 
   return (
     <div
@@ -321,8 +475,23 @@ function ColumnSettings({
           </div>
         </div>
       )}
+      {hasRange && (
+        <div className="column-settings-row">
+          <span>Range</span>
+          <NumberRangeMenu
+            sheet={sheet}
+            column={column}
+            stats={stats}
+            precision={precision}
+            openOnClick={openOnClick}
+            detectSubmenuOverflow={detectSubmenuOverflow}
+          />
+        </div>
+      )}
       {hasStats && <div className="column-settings-separator" />}
-      {hasStats && <ColumnStats sheet={sheet} column={column} />}
+      {hasStats && (
+        <ColumnStatsSummary sheet={sheet} column={column} stats={stats} />
+      )}
     </div>
   );
 }

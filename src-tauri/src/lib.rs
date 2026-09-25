@@ -203,6 +203,7 @@ enum DateDirection {
 #[serde(tag = "kind", rename_all = "camelCase")]
 enum ExpressionCondition {
     Number { expression: String },
+    Range { min: f64, max: f64 },
     Date { date: String, direction: DateDirection },
     Boolean { value: bool },
     Included { values: Vec<String> },
@@ -896,6 +897,13 @@ fn expression_cell_matcher(condition: &ExpressionCondition) -> Result<CellMatche
                     return false;
                 }
                 tree.eval_boolean_with_context(&context).unwrap_or(false)
+            }))
+        }
+        ExpressionCondition::Range { min, max } => {
+            let (min, max) = (*min, *max);
+            Ok(Box::new(move |cell| {
+                cell.parse::<f64>()
+                    .is_ok_and(|value| value >= min && value <= max)
             }))
         }
         ExpressionCondition::Date { date, direction } => {
@@ -3955,6 +3963,30 @@ mod tests {
             expression: "x > (".to_owned(),
         };
         assert!(has_expression_match(&rows, &view, 0, &invalid).is_err());
+    }
+
+    #[test]
+    fn matches_number_ranges_inclusively() {
+        let rows = packed_rows(&[&["5"], &["10"], &["10.5"], &["20"], &["21"], &["abc"]]);
+        let view = full_view(&rows);
+        let condition = ExpressionCondition::Range {
+            min: 10.0,
+            max: 20.0,
+        };
+        assert_eq!(
+            collect_expression_matches(&rows, &view, 0, &condition).expect("filter"),
+            vec![1, 2, 3]
+        );
+        let narrow = ExpressionCondition::Range {
+            min: 10.2,
+            max: 10.8,
+        };
+        assert_eq!(has_expression_match(&rows, &view, 0, &narrow), Ok(true));
+        let missing = ExpressionCondition::Range {
+            min: 30.0,
+            max: 40.0,
+        };
+        assert_eq!(has_expression_match(&rows, &view, 0, &missing), Ok(false));
     }
 
     #[test]

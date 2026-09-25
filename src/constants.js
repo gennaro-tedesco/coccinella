@@ -21,6 +21,7 @@ export const ICON_SIZE_COMPACT = 13;
 export const ICON_SIZE_MENU = 14;
 export const ICON_SIZE_DEFAULT = 16;
 export const ICON_SIZE_STATUS = 18;
+export const RANGE_SLIDER_ICON_ASPECT_RATIO = 3;
 export const ROW_HEIGHT_CHANGE_THRESHOLD_PX = 0.5;
 export const FUZZY_SEARCH_DEBOUNCE_MS = 150;
 export const SEARCH_DEBOUNCE_MS = 200;

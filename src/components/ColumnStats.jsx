@@ -14,10 +14,8 @@ function StatRow({ label, value }) {
   );
 }
 
-function ColumnStats({ sheet, column }) {
+export function useColumnStats(sheet, column) {
   const type = sheet.columnTypes[column];
-  const precision = sheet.columnPrecision[column] ?? DEFAULT_COLUMN_PRECISION;
-  const dateFormat = sheet.columnDateFormats?.[column] ?? DEFAULT_DATE_FORMAT;
   const showError = useAppStore((state) => state.showError);
   const hasStats = type !== "string" && type !== "uuid";
   const [stats, setStats] = useState(undefined);
@@ -42,7 +40,12 @@ function ColumnStats({ sheet, column }) {
     };
   }, [sheet.datasetId, sheet.contentVersion, type, column, hasStats, showError]);
 
-  if (!hasStats) return null;
+  return hasStats ? stats : undefined;
+}
+
+export function ColumnStatsSummary({ sheet, column, stats }) {
+  const precision = sheet.columnPrecision[column] ?? DEFAULT_COLUMN_PRECISION;
+  const dateFormat = sheet.columnDateFormats?.[column] ?? DEFAULT_DATE_FORMAT;
 
   if (stats === undefined) return null;
   if (!stats) return <div className="column-stats-empty">No data</div>;
@@ -88,6 +91,11 @@ function ColumnStats({ sheet, column }) {
   }
 
   return null;
+}
+
+function ColumnStats({ sheet, column }) {
+  const stats = useColumnStats(sheet, column);
+  return <ColumnStatsSummary sheet={sheet} column={column} stats={stats} />;
 }
 
 export default ColumnStats;

@@ -357,11 +357,13 @@ body,
   gap: tokens.$gap-17;
 }
 
-.distinct-values-submenu .shortcut-item {
+.distinct-values-submenu .shortcut-item,
+.number-range-submenu .shortcut-item {
   position: relative;
 }
 
-.distinct-values-submenu .shortcut-item button {
+.distinct-values-submenu .shortcut-item button,
+.number-range-submenu .shortcut-item button {
   position: absolute;
   top: tokens.$top-3;
   right: tokens.$padding-12;
@@ -374,6 +376,61 @@ body,
 .distinct-values-submenu li button.excluded {
   opacity: tokens.$opacity-12;
   text-decoration: line-through;
+}
+
+.file-menu-dropdown.number-range-submenu {
+  min-width: tokens.$min-width-2;
+}
+
+.number-range-slider {
+  position: relative;
+  height: tokens.$height-21;
+  margin: tokens.$padding-11 tokens.$padding-12;
+}
+
+.number-range-slider::before {
+  content: "";
+  position: absolute;
+  top: tokens.$top-3;
+  left: 0;
+  right: 0;
+  height: tokens.$height-22;
+  transform: translateY(tokens.$transform-2);
+  border-radius: tokens.$border-radius-1;
+  background-color: var(--border);
+}
+
+.number-range-slider input[type="range"] {
+  position: absolute;
+  inset: 0;
+  width: tokens.$width-3;
+  height: tokens.$height-21;
+  margin: 0;
+  background: none;
+  pointer-events: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.number-range-slider input[type="range"]::-webkit-slider-thumb {
+  width: tokens.$width-1;
+  height: tokens.$height-1;
+  border: none;
+  border-radius: tokens.$border-radius-1;
+  background-color: var(--accent);
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-appearance: none;
+}
+
+.number-range-slider input[type="range"]::-moz-range-thumb {
+  width: tokens.$width-1;
+  height: tokens.$height-1;
+  border: none;
+  border-radius: tokens.$border-radius-1;
+  background-color: var(--accent);
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .file-menu-dropdown.shortcuts-submenu {

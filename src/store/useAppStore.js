@@ -9,8 +9,11 @@ import {
 } from "../constants";
 import { descendantSheetIds } from "../utils/sheets";
 
-function expressionConditionLabel(column, condition) {
+function expressionConditionLabel(column, condition, precision) {
   if (condition.kind === "number") return `${column} ${condition.expression}`;
+  if (condition.kind === "range") {
+    return `${column} ${condition.min.toFixed(precision)} – ${condition.max.toFixed(precision)}`;
+  }
   if (condition.kind === "date") return `${column} ${condition.direction} ${condition.date}`;
   if (condition.kind === "included") {
     const values = condition.values.map((value) => value || BLANK_VALUE_LABEL);
@@ -378,7 +381,11 @@ export const useAppStore = create((set, get) => ({
       const currentSource = state.sheets[sourceId];
       if (!currentSource) return state;
       const id = metadata.datasetId;
-      const label = expressionConditionLabel(column, condition);
+      const label = expressionConditionLabel(
+        column,
+        condition,
+        currentSource.columnPrecision[column] ?? DEFAULT_COLUMN_PRECISION,
+      );
       const child = {
         id,
         filename: `${source.filename} : ${label}`,
