@@ -1583,7 +1583,7 @@ body,
   pointer-events: none;
 }
 
-.data-table td:hover .cell-copy-trigger,
+.data-table.cell-hover-enabled td:hover .cell-copy-trigger,
 .cell-copy-trigger:focus-visible {
   opacity: tokens.$opacity-17;
   pointer-events: auto;

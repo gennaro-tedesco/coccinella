@@ -95,6 +95,23 @@ describe("application store dataset lifecycle", () => {
     });
   });
 
+  it("uses automatic number precision until the user sets an override", () => {
+    const metadata = {
+      ...rootMetadata,
+      columns: ["score"],
+      columnTypes: { score: "number" },
+    };
+    useAppStore.getState().openSheet("scores.csv", metadata, "/tmp/scores.csv");
+
+    expect(useAppStore.getState().sheets.root.columnPrecision).toEqual({});
+
+    useAppStore.getState().setColumnPrecision("root", "score", 3);
+    expect(useAppStore.getState().sheets.root.columnPrecision).toEqual({ score: 3 });
+
+    useAppStore.getState().rescanSheet("root", ",", [metadata]);
+    expect(useAppStore.getState().sheets.root.columnPrecision).toEqual({});
+  });
+
   it("keeps state intact and reports an error when native close fails", async () => {
     useAppStore
       .getState()

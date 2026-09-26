@@ -15,12 +15,13 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { formatDateValue } from "../utils/dateFormats";
+import { formatNumberValue } from "../utils/numberFormats";
+import { calculateRowRange } from "../utils/rowRange";
 import { DEFAULT_DATE_FORMAT } from "../utils/columnTypes";
 import { Copy, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import ColumnSettings from "./ColumnSettings";
 import {
-  DEFAULT_COLUMN_PRECISION,
   CELL_COPY_FEEDBACK_MS,
   ICON_SIZE_COMPACT,
   ROW_HEIGHT_CHANGE_THRESHOLD_PX,
@@ -28,9 +29,8 @@ import {
   SOURCE_HEADER_LINE,
 } from "../constants";
 
-const PAGE_SIZE = 200;
-const PAGE_STEP = 100;
 const DEFAULT_ROW_HEIGHT = 29;
+const EMPTY_ROW_RANGE = { offset: 0, limit: 0 };
 
 function DataTable(_props, ref) {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
@@ -52,36 +52,25 @@ function DataTable(_props, ref) {
   const resetColumnWidth = useAppStore((state) => state.resetColumnWidth);
   const [openColumn, setOpenColumn] = useState(null);
   const [openColumnWidth, setOpenColumnWidth] = useState(null);
-  const [offset, setOffset] = useState(0);
+  const [rowRange, setRowRange] = useState(EMPTY_ROW_RANGE);
   const [page, setPage] = useState({ offset: 0, rows: [], matches: [] });
   const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT);
   const [copiedCellKey, setCopiedCellKey] = useState(null);
+  const [cellHoverEnabled, setCellHoverEnabled] = useState(true);
   const tableRef = useRef(null);
   const thRefs = useRef({});
-  const pendingSnapRef = useRef(null);
   const pivotSuperHeaderRef = useRef(null);
   const copyFeedbackTimeoutRef = useRef(null);
+  const pointerPositionRef = useRef(null);
   const [pivotSuperHeaderHeight, setPivotSuperHeaderHeight] = useState(0);
 
   useImperativeHandle(ref, () => ({
     scrollToTop() {
-      if (offset === 0) {
-        tableRef.current?.parentElement?.scrollTo({ top: 0 });
-        return;
-      }
-      pendingSnapRef.current = "top";
-      setOffset(0);
+      tableRef.current?.parentElement?.scrollTo({ top: 0 });
     },
     scrollToBottom() {
-      if (!sheet) return;
-      const target = Math.max(0, sheet.rowCount - PAGE_SIZE);
-      if (offset === target) {
-        const scroller = tableRef.current?.parentElement;
-        scroller?.scrollTo({ top: scroller.scrollHeight });
-        return;
-      }
-      pendingSnapRef.current = "bottom";
-      setOffset(target);
+      const scroller = tableRef.current?.parentElement;
+      scroller?.scrollTo({ top: scroller.scrollHeight });
     },
   }));
 
@@ -95,7 +84,7 @@ function DataTable(_props, ref) {
   }, [openColumn]);
 
   useEffect(() => {
-    setOffset(0);
+    setRowRange(EMPTY_ROW_RANGE);
     setPage({ offset: 0, rows: [], matches: [] });
     tableRef.current?.parentElement?.scrollTo({ top: 0 });
   }, [sheet?.datasetId]);
@@ -108,51 +97,58 @@ function DataTable(_props, ref) {
   useEffect(() => {
     const scroller = tableRef.current?.parentElement;
     if (!scroller || !sheet) return undefined;
-    function updateOffset() {
-      const visibleStart = Math.max(
-        0,
-        Math.floor(scroller.scrollTop / rowHeight) - PAGE_STEP,
+    function updateRange() {
+      setRowRange((currentRange) =>
+        calculateRowRange({
+          scrollTop: scroller.scrollTop,
+          viewportHeight: scroller.clientHeight,
+          rowHeight,
+          rowCount: sheet.rowCount,
+          currentRange,
+        }),
       );
-      setOffset(Math.floor(visibleStart / PAGE_STEP) * PAGE_STEP);
     }
-    updateOffset();
-    scroller.addEventListener("scroll", updateOffset, { passive: true });
-    return () => scroller.removeEventListener("scroll", updateOffset);
-  }, [sheet, rowHeight]);
-
-  // Snaps the scroll position once the requested page (top or bottom row)
-  // has actually rendered, so scrollToTop/scrollToBottom land on real data
-  // instead of an estimated scroll offset.
-  useEffect(() => {
-    if (!pendingSnapRef.current) return;
-    const snapTo = pendingSnapRef.current;
-    pendingSnapRef.current = null;
-    const scroller = tableRef.current?.parentElement;
-    if (!scroller) return;
-    scroller.scrollTo({ top: snapTo === "top" ? 0 : scroller.scrollHeight });
-  }, [page]);
+    function handleScroll() {
+      setCellHoverEnabled(false);
+      updateRange();
+    }
+    updateRange();
+    const observer = new ResizeObserver(updateRange);
+    observer.observe(scroller);
+    scroller.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      observer.disconnect();
+      scroller.removeEventListener("scroll", handleScroll);
+    };
+  }, [sheet?.datasetId, sheet?.rowCount, rowHeight]);
 
   useEffect(() => {
-    if (!sheet) return undefined;
+    if (!sheet || rowRange.limit === 0) return undefined;
     let cancelled = false;
     invoke("get_rows", {
       datasetId: sheet.datasetId,
-      offset,
-      limit: PAGE_SIZE,
+      offset: rowRange.offset,
+      limit: rowRange.limit,
     })
       .then((result) => {
         if (!cancelled) setPage(result);
       })
       .catch((error) => {
         if (!cancelled) {
-          setPage({ offset, rows: [], matches: [] });
+          setPage({ offset: rowRange.offset, rows: [], matches: [] });
           showError(error);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [sheet?.datasetId, sheet?.dataVersion, searchVersion, offset, showError]);
+  }, [
+    sheet?.datasetId,
+    sheet?.dataVersion,
+    searchVersion,
+    rowRange,
+    showError,
+  ]);
 
   useEffect(() => {
     const row = tableRef.current?.querySelector("tbody tr[data-row-index]");
@@ -204,9 +200,7 @@ function DataTable(_props, ref) {
             if (sheet?.columnTypes[name] === "number") {
               const number = Number(value);
               if (!Number.isNaN(number)) {
-                return number.toFixed(
-                  sheet?.columnPrecision[name] ?? DEFAULT_COLUMN_PRECISION,
-                );
+                return formatNumberValue(value, sheet?.columnPrecision[name]);
               }
             }
             if (sheet?.columnTypes[name] === "date") {
@@ -326,9 +320,9 @@ function DataTable(_props, ref) {
       columnType,
     });
     if (!stats) return [];
-    const precision =
-      sheet.columnPrecision[columnId] ?? DEFAULT_COLUMN_PRECISION;
-    return [stats.min, stats.max].map((value) => value.toFixed(precision));
+    return [stats.min, stats.max].map((value) =>
+      formatNumberValue(value, sheet.columnPrecision[columnId]),
+    );
   }
 
   async function toggleColumnFit(columnId) {
@@ -372,7 +366,24 @@ function DataTable(_props, ref) {
     Math.max(0, sheet.rowCount - page.offset - page.rows.length) * rowHeight;
 
   return (
-    <table className={`data-table${sheet.pivotTable ? " pivot-table" : ""}`} ref={tableRef}>
+    <table
+      className={`data-table${sheet.pivotTable ? " pivot-table" : ""}${cellHoverEnabled ? " cell-hover-enabled" : ""}`}
+      ref={tableRef}
+      onPointerMove={(event) => {
+        const previous = pointerPositionRef.current;
+        pointerPositionRef.current = {
+          x: event.clientX,
+          y: event.clientY,
+        };
+        if (
+          !previous ||
+          previous.x !== event.clientX ||
+          previous.y !== event.clientY
+        ) {
+          setCellHoverEnabled(true);
+        }
+      }}
+    >
       <thead data-source-line={SOURCE_HEADER_LINE}>
         {sheet.pivotTable && (
           <tr className="pivot-super-header" ref={pivotSuperHeaderRef}>

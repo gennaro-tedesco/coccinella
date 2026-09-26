@@ -32,10 +32,8 @@ function closeDatasets(sheets, id) {
 
 function derivedSheet(metadata, filename) {
   const columnVisibility = {};
-  const columnPrecision = {};
   for (const column of metadata.columns) {
     columnVisibility[column] = true;
-    columnPrecision[column] = DEFAULT_COLUMN_PRECISION;
   }
   return {
     id: metadata.datasetId,
@@ -51,7 +49,7 @@ function derivedSheet(metadata, filename) {
     columnVisibility,
     columnTypes: metadata.columnTypes,
     columnDateFormats: {},
-    columnPrecision,
+    columnPrecision: {},
     selectedColumns: [],
     sorting: [],
     children: [],
@@ -176,10 +174,8 @@ export const useAppStore = create((set, get) => ({
     set((state) => {
       const id = metadata.datasetId;
       const columnVisibility = {};
-      const columnPrecision = {};
       for (const column of metadata.columns) {
         columnVisibility[column] = true;
-        columnPrecision[column] = DEFAULT_COLUMN_PRECISION;
       }
       return {
         sheets: {
@@ -197,7 +193,7 @@ export const useAppStore = create((set, get) => ({
             columnVisibility,
             columnTypes: metadata.columnTypes,
             columnDateFormats: {},
-            columnPrecision,
+            columnPrecision: {},
             selectedColumns: [],
             sorting: [],
             children: [],
@@ -245,9 +241,6 @@ export const useAppStore = create((set, get) => ({
         const columnVisibility = Object.fromEntries(
           metadata.columns.map((column) => [column, true]),
         );
-        const columnPrecision = Object.fromEntries(
-          metadata.columns.map((column) => [column, DEFAULT_COLUMN_PRECISION]),
-        );
         sheets[metadata.datasetId] = {
           ...existing,
           separator,
@@ -257,7 +250,7 @@ export const useAppStore = create((set, get) => ({
           columnVisibility,
           columnTypes: metadata.columnTypes,
           columnDateFormats: {},
-          columnPrecision,
+          columnPrecision: {},
           selectedColumns:
             metadata.datasetId === sheetId ? [] : existing.selectedColumns,
           sorting: existing.sorting,
