@@ -68,3 +68,9 @@ Go to row mode with `:<row number>`, selected row is highlighted and scrolled to
 Open the data manipulation menu with `=`. Merge, append and aggregate into pivot tables by selecting data, columns and functions.
 
 </details>
+
+## Plotting
+
+For any loaded data set (and derived sheets) plotting is at your fingertips: switch to plotting mode and start exploring (or help yourself with the demo below).
+
+![plotting](https://github.com/user-attachments/assets/10bfa5c7-50ed-471f-a5e9-e58e9e169384)
