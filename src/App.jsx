@@ -48,6 +48,7 @@ const getPathGroup = (candidate) => {
   const slashIndex = candidate.path.lastIndexOf("/");
   return slashIndex === -1 ? "" : candidate.path.slice(0, slashIndex);
 };
+const HORIZONTAL_ARROW_MOTIONS = { ArrowLeft: "h", ArrowRight: "l" };
 const getSheetLabel = (id) => useAppStore.getState().sheets[id]?.filename ?? "";
 
 function App() {
@@ -66,6 +67,7 @@ function App() {
   const setActiveSheetId = useAppStore((state) => state.setActiveSheetId);
   const setMode = useAppStore((state) => state.setMode);
   const closeSheet = useAppStore((state) => state.closeSheet);
+  const closeFilteredSheet = useAppStore((state) => state.closeFilteredSheet);
   const switchToPreviousSheet = useAppStore(
     (state) => state.switchToPreviousSheet,
   );
@@ -498,7 +500,7 @@ function App() {
 
       if (
         !isEditing &&
-        activeSheetId &&
+        activeSheet &&
         !event.ctrlKey &&
         !event.metaKey &&
         !event.altKey &&
@@ -508,7 +510,7 @@ function App() {
         if (event.repeat) return;
         if (pendingQRef.current) {
           pendingQRef.current = false;
-          void closeSheet(activeSheetId);
+          void (activeSheet.filterOf ? closeFilteredSheet : closeSheet)(activeSheetId);
         } else {
           pendingQRef.current = true;
         }
@@ -604,12 +606,13 @@ function App() {
           return;
         }
 
+        const motion = HORIZONTAL_ARROW_MOTIONS[event.key] ?? event.key;
         if (
           !event.ctrlKey &&
           !event.shiftKey &&
           !event.metaKey &&
           !event.altKey &&
-          "hjkl".includes(event.key)
+          "hjkl".includes(motion)
         ) {
           event.preventDefault();
           const rowHeight =
@@ -622,7 +625,7 @@ function App() {
             k: { top: -rowHeight },
             l: { left: HORIZONTAL_SCROLL_PX },
           };
-          content.scrollBy(movement[event.key]);
+          content.scrollBy(movement[motion]);
           return;
         }
       }
@@ -697,6 +700,7 @@ function App() {
     setActiveSheetId,
     setMode,
     closeSheet,
+    closeFilteredSheet,
     activeSheet,
     isJson,
     activeSheetId,
