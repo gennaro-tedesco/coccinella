@@ -64,6 +64,8 @@ function App() {
   const openSheet = useAppStore((state) => state.openSheet);
   const openJson = useAppStore((state) => state.openJson);
   const setActiveSheetId = useAppStore((state) => state.setActiveSheetId);
+  const setMode = useAppStore((state) => state.setMode);
+  const closeSheet = useAppStore((state) => state.closeSheet);
   const switchToPreviousSheet = useAppStore(
     (state) => state.switchToPreviousSheet,
   );
@@ -117,6 +119,7 @@ function App() {
   const highlightedLineRef = useRef(null);
   const highlightTimeoutRef = useRef(null);
   const pendingGRef = useRef(false);
+  const pendingQRef = useRef(false);
   const fileScanRef = useRef(null);
   const csvFilesRef = useRef(null);
   const lastFileFinderInvocationRef = useRef(null);
@@ -171,6 +174,7 @@ function App() {
     if (!csvDataMode) setGoToLineOpen(false);
     if (!csvDataMode) setMergeOpen(false);
     pendingGRef.current = false;
+    pendingQRef.current = false;
   }, [activeSheetId, csvDataMode]);
 
   useEffect(() => {
@@ -358,6 +362,15 @@ function App() {
       ) {
         pendingGRef.current = false;
       }
+      if (
+        isEditing ||
+        event.key !== "q" ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey
+      ) {
+        pendingQRef.current = false;
+      }
 
       if (
         mode === "data" &&
@@ -465,6 +478,40 @@ function App() {
         event.preventDefault();
         toggleSheetPanel();
         toggleColumnPanel();
+        return;
+      }
+
+      if (
+        !isEditing &&
+        activeSheet &&
+        !isJson &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key === "Tab"
+      ) {
+        event.preventDefault();
+        setMode(mode === "data" ? "plot" : "data");
+        return;
+      }
+
+      if (
+        !isEditing &&
+        activeSheetId &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        event.key === "q"
+      ) {
+        event.preventDefault();
+        if (event.repeat) return;
+        if (pendingQRef.current) {
+          pendingQRef.current = false;
+          void closeSheet(activeSheetId);
+        } else {
+          pendingQRef.current = true;
+        }
         return;
       }
 
@@ -648,6 +695,10 @@ function App() {
     closeSearch,
     openShortcutsMenu,
     setActiveSheetId,
+    setMode,
+    closeSheet,
+    activeSheet,
+    isJson,
     activeSheetId,
     searchOpen,
     searchQuery,

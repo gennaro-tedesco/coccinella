@@ -115,6 +115,8 @@ const BAR_MODE_OPTIONS = [
   { value: "group", label: "Side by side" },
 ];
 
+const PLOT_TYPE_STEP_KEYS = { ArrowLeft: -1, h: -1, ArrowRight: 1, l: 1 };
+
 function plotTypeFor(chartType) {
   return PLOT_TYPES.find((type) => type.id === chartType);
 }
@@ -189,6 +191,30 @@ function MultiFieldDropdown({ label, values, options, onChange, open, onToggle }
 
 function columnsOfTypes(sheet, types) {
   return sheet.columns.filter((column) => types.has(sheet.columnTypes[column]));
+}
+
+function defaultConfigFor(sheet, type) {
+  const xOptions = columnsOfTypes(sheet, type.xTypes);
+  const yOptions = type.needsY ? columnsOfTypes(sheet, type.yTypes) : [];
+  const sameTypeSet = type.xTypes === type.yTypes;
+  const xColumn = xOptions[0] ?? "";
+  return {
+    chartType: type.id,
+    xColumn,
+    yColumn: sameTypeSet ? (yOptions[1] ?? yOptions[0] ?? "") : (yOptions[0] ?? ""),
+    yColumns: type.multipleY
+      ? yOptions.filter((column) => column !== xColumn).slice(0, 2)
+      : [],
+    groupColumn: "",
+    binCount: "",
+    histNorm: "count",
+    cumulative: false,
+    showPoints: false,
+    colorIndex: 0,
+    aggFunc: "mean",
+    style: "markers",
+    barMode: "stack",
+  };
 }
 
 const Y_AXIS_TITLE = {
@@ -283,6 +309,36 @@ function ChartBuilder({ fontSize }) {
     showError,
   ]);
 
+  useEffect(() => {
+    if (!sheet) return undefined;
+    function handleKeyDown(event) {
+      const step = PLOT_TYPE_STEP_KEYS[event.key];
+      const target = event.target;
+      const isEditing =
+        target instanceof HTMLElement &&
+        (target.isContentEditable || target.matches("input, textarea, select"));
+      if (
+        !step ||
+        isEditing ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        event.shiftKey
+      ) {
+        return;
+      }
+      event.preventDefault();
+      const currentIndex = PLOT_TYPES.findIndex((type) => type.id === plotType?.id);
+      const nextIndex = currentIndex === -1
+        ? (step > 0 ? 0 : PLOT_TYPES.length - 1)
+        : (currentIndex + step + PLOT_TYPES.length) % PLOT_TYPES.length;
+      setOpenField(null);
+      setPlotConfig(activeSheetId, defaultConfigFor(sheet, PLOT_TYPES[nextIndex]));
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [sheet, plotType, activeSheetId, setPlotConfig]);
+
   if (!sheet) {
     return (
       <div className="chart-builder-placeholder">
@@ -296,27 +352,7 @@ function ChartBuilder({ fontSize }) {
   }
 
   function selectChartType(type) {
-    const xOptions = columnsOfTypes(sheet, type.xTypes);
-    const yOptions = type.needsY ? columnsOfTypes(sheet, type.yTypes) : [];
-    const sameTypeSet = type.xTypes === type.yTypes;
-    const xColumn = xOptions[0] ?? "";
-    setPlotConfig(activeSheetId, {
-      chartType: type.id,
-      xColumn,
-      yColumn: sameTypeSet ? (yOptions[1] ?? yOptions[0] ?? "") : (yOptions[0] ?? ""),
-      yColumns: type.multipleY
-        ? yOptions.filter((column) => column !== xColumn).slice(0, 2)
-        : [],
-      groupColumn: "",
-      binCount: "",
-      histNorm: "count",
-      cumulative: false,
-      showPoints: false,
-      colorIndex: 0,
-      aggFunc: "mean",
-      style: "markers",
-      barMode: "stack",
-    });
+    setPlotConfig(activeSheetId, defaultConfigFor(sheet, type));
   }
 
   const traces = plotType ? buildTraces(config, chartData, theme.colors, theme.bg) : [];

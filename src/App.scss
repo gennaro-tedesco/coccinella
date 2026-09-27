@@ -2273,6 +2273,7 @@ button:disabled {
 
 .operation-content {
   display: grid;
+  flex: tokens.$flex-1;
 }
 
 .operation-pane {
@@ -2366,7 +2367,13 @@ button:disabled {
 .aggregate-lists {
   display: grid;
   grid-template-columns: repeat(2, minmax(tokens.$min-width-16, tokens.$grid-template-columns-7));
+  flex: tokens.$flex-1;
   gap: tokens.$gap-26;
+}
+
+.aggregate-lists .operation-column-list > ul {
+  flex: tokens.$flex-1 0 tokens.$max-height-3;
+  max-height: none;
 }
 
 .operation-column-list > ul {
