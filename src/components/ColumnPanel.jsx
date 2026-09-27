@@ -38,6 +38,7 @@ function ColumnPanel() {
   const toggleColumnPanel = useAppStore((state) => state.toggleColumnPanel);
   const hoveredColumn = useAppStore((state) => state.hoveredColumn);
   const setHoveredColumn = useAppStore((state) => state.setHoveredColumn);
+  const scrollPercent = useAppStore((state) => state.scrollPercent);
   const showError = useAppStore((state) => state.showError);
   const setSearchQuery = useAppStore((state) => state.setSearchQuery);
   const setSearchIsRegex = useAppStore((state) => state.setSearchIsRegex);
@@ -350,10 +351,20 @@ function ColumnPanel() {
         ))}
       </ul>
       {hoveredColumn &&
-        !["string", "uuid"].includes(sheet.columnTypes[hoveredColumn]) && (
+      !["string", "uuid"].includes(sheet.columnTypes[hoveredColumn]) ? (
         <div className="column-hover-stats">
           <ColumnStats sheet={sheet} column={hoveredColumn} />
         </div>
+      ) : (
+        scrollPercent !== null && (
+          <div className="column-hover-stats">
+            <div className="column-stats">
+              <div className="stat-row">
+                <span className="stat-value">{`${scrollPercent}%`}</span>
+              </div>
+            </div>
+          </div>
+        )
       )}
       <div className="panel-header">
         <button

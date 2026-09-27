@@ -24,7 +24,9 @@ import ColumnSettings from "./ColumnSettings";
 import {
   CELL_COPY_FEEDBACK_MS,
   ICON_SIZE_COMPACT,
+  PERCENT_MULTIPLIER,
   ROW_HEIGHT_CHANGE_THRESHOLD_PX,
+  SCROLL_PROGRESS_VISIBLE_MS,
   SOURCE_DATA_LINE_OFFSET,
   SOURCE_HEADER_LINE,
 } from "../constants";
@@ -45,6 +47,7 @@ function DataTable(_props, ref) {
     (state) => state.toggleColumnSelection,
   );
   const setHoveredColumn = useAppStore((state) => state.setHoveredColumn);
+  const setScrollPercent = useAppStore((state) => state.setScrollPercent);
   const activeSearchMatch = useAppStore((state) => state.activeSearchMatch);
   const searchVersion = useAppStore((state) => state.searchVersion);
   const showError = useAppStore((state) => state.showError);
@@ -97,6 +100,21 @@ function DataTable(_props, ref) {
   useEffect(() => {
     const scroller = tableRef.current?.parentElement;
     if (!scroller || !sheet) return undefined;
+    let lastScrollTop = scroller.scrollTop;
+    let hideScrollPercentTimeout;
+    function updateScrollPercent() {
+      if (scroller.scrollTop === lastScrollTop) return;
+      lastScrollTop = scroller.scrollTop;
+      const scrollableHeight = scroller.scrollHeight - scroller.clientHeight;
+      setScrollPercent(
+        Math.round((scroller.scrollTop / scrollableHeight) * PERCENT_MULTIPLIER),
+      );
+      window.clearTimeout(hideScrollPercentTimeout);
+      hideScrollPercentTimeout = window.setTimeout(
+        () => setScrollPercent(null),
+        SCROLL_PROGRESS_VISIBLE_MS,
+      );
+    }
     function updateRange() {
       setRowRange((currentRange) =>
         calculateRowRange({
@@ -111,6 +129,7 @@ function DataTable(_props, ref) {
     function handleScroll() {
       setCellHoverEnabled(false);
       updateRange();
+      updateScrollPercent();
     }
     updateRange();
     const observer = new ResizeObserver(updateRange);
@@ -119,8 +138,10 @@ function DataTable(_props, ref) {
     return () => {
       observer.disconnect();
       scroller.removeEventListener("scroll", handleScroll);
+      window.clearTimeout(hideScrollPercentTimeout);
+      setScrollPercent(null);
     };
-  }, [sheet?.datasetId, sheet?.rowCount, rowHeight]);
+  }, [sheet?.datasetId, sheet?.rowCount, rowHeight, setScrollPercent]);
 
   useEffect(() => {
     if (!sheet || rowRange.limit === 0) return undefined;
