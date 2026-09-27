@@ -909,6 +909,26 @@ body,
   background-color: var(--bg);
 }
 
+.chart-workspace {
+  display: grid;
+  grid-template-columns:
+    minmax(0, tokens.$grid-template-columns-2)
+    tokens.$grid-template-columns-1;
+  flex: tokens.$flex-8;
+  min-height: tokens.$min-height-5;
+}
+
+.chart-workspace-expanded {
+  grid-template-columns: tokens.$grid-template-columns-2;
+}
+
+.chart-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: tokens.$min-height-5;
+}
+
 .chart-controls {
   display: flex;
   gap: tokens.$gap-10;
@@ -916,12 +936,14 @@ body,
   border-bottom: tokens.$border-bottom-3 solid var(--border);
 }
 
-.chart-controls label,
-.chart-controls .chart-field {
+.chart-controls > label,
+.chart-controls > .chart-field {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: tokens.$gap-11;
   font-size: tokens.$font-size-5;
+  text-align: center;
 }
 
 .chart-controls .plot-checkbox {
@@ -1031,10 +1053,19 @@ body,
 
 .plot-picker {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: tokens.$grid-template-columns-2;
+  grid-auto-rows: minmax(0, tokens.$grid-template-columns-2);
   gap: tokens.$gap-13;
-  padding: tokens.$padding-43;
-  flex-shrink: tokens.$flex-shrink-5;
+  min-height: tokens.$min-height-2;
+  padding: tokens.$padding-13;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  background-color: var(--bg-alt);
+}
+
+.plot-picker-single {
+  grid-auto-rows: auto;
+  align-content: center;
 }
 
 .multi-field-dropdown label {
@@ -1082,7 +1113,7 @@ body,
   padding: tokens.$padding-44;
   text-align: left;
   color: var(--fg);
-  background-color: var(--bg-alt);
+  background-color: var(--bg);
   border: tokens.$border-7 solid var(--border);
   border-radius: tokens.$border-radius-23;
   cursor: pointer;
@@ -1114,12 +1145,6 @@ body,
   margin: tokens.$margin-15;
   font-size: tokens.$font-size-9;
   color: var(--fg);
-}
-
-.plot-tile p {
-  margin: tokens.$margin-16;
-  font-size: tokens.$font-size-10;
-  color: var(--fg-dark);
 }
 
 .data-table {
@@ -2680,6 +2705,23 @@ button:disabled {
 }
 
 @media (max-width: tokens.$selector-41) {
+  .chart-workspace {
+    grid-template-columns: tokens.$grid-template-columns-2;
+    grid-template-rows: minmax(0, tokens.$grid-template-columns-2) auto;
+  }
+
+  .plot-picker {
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-top: tokens.$border-7 solid var(--border);
+    border-left: none;
+  }
+
+  .plot-tile {
+    flex: 0 0 tokens.$grid-template-columns-1;
+  }
+
   .aggregate-lists,
   .merge-datasets,
   .merge-type-grid,

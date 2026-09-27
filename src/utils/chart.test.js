@@ -109,4 +109,112 @@ describe("chart aggregation", () => {
       { type: "bar", name: "Failed", x: [1, 2], y: [17, 18] },
     ]);
   });
+
+  it("builds an aggregated heatmap from two dimensions and one value", () => {
+    const [trace] = buildTraces(
+      {
+        chartType: "heatmap",
+        heatmapMode: "aggregate",
+        xColumn: "cut",
+        yColumn: "color",
+        valueColumn: "carat",
+        aggFunc: "mean",
+      },
+      {
+        xValues: ["Ideal", "Ideal", "Fair"],
+        yValues: [["E", "E", "G"], [1, 3, 2]],
+        groupValues: null,
+      },
+      ["#111", "#222"],
+      "#000",
+    );
+
+    expect(trace).toMatchObject({
+      type: "heatmap",
+      x: ["Ideal", "Fair"],
+      y: ["E", "G"],
+      z: [[2, null], [null, 2]],
+    });
+  });
+
+  it("builds a Pearson correlation matrix for selected numeric columns", () => {
+    const [trace] = buildTraces(
+      {
+        chartType: "heatmap",
+        heatmapMode: "correlation",
+        correlationColumns: ["carat", "depth", "table"],
+      },
+      {
+        xValues: [1, 2, 3, ""],
+        yValues: [[2, 4, 6, ""], [6, 4, 2, ""]],
+        groupValues: null,
+      },
+      ["#111", "#222"],
+      "#000",
+    );
+
+    expect(trace).toMatchObject({
+      type: "heatmap",
+      x: ["carat", "depth", "table"],
+      y: ["carat", "depth", "table"],
+      z: [[1, 1, -1], [1, 1, -1], [-1, -1, 1]],
+      zmin: -1,
+      zmax: 1,
+    });
+  });
+
+  it("builds a heatmap directly from pivot table values", () => {
+    const [trace] = buildTraces(
+      {
+        chartType: "heatmap",
+        heatmapMode: "pivot",
+        xColumn: "region",
+        yColumns: ["January", "February"],
+        pivotColumnDimension: "month",
+        pivotMeasureLabel: "sum of revenue",
+      },
+      {
+        xValues: ["North", "South"],
+        yValues: [["10", "30"], ["20", ""]],
+        groupValues: null,
+      },
+      ["#111", "#222"],
+      "#000",
+    );
+
+    expect(trace).toMatchObject({
+      type: "heatmap",
+      x: ["January", "February"],
+      y: ["North", "South"],
+      z: [[10, 20], [30, null]],
+    });
+  });
+
+  it("transposes heatmap values and axes", () => {
+    const [trace] = buildTraces(
+      {
+        chartType: "heatmap",
+        heatmapMode: "pivot",
+        transpose: true,
+        xColumn: "region",
+        yColumns: ["January", "February"],
+        pivotColumnDimension: "month",
+        pivotMeasureLabel: "sum of revenue",
+      },
+      {
+        xValues: ["North", "South"],
+        yValues: [["10", "30"], ["20", ""]],
+        groupValues: null,
+      },
+      ["#111", "#222"],
+      "#000",
+    );
+
+    expect(trace).toMatchObject({
+      x: ["North", "South"],
+      y: ["January", "February"],
+      z: [[10, 20], [30, null]],
+      transpose: true,
+    });
+  });
 });

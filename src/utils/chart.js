@@ -1,6 +1,7 @@
 const ZERO = 0;
 const ONE = 1;
 const TWO = 2;
+const COLOR_SCALE_MIDPOINT = 0.5;
 
 export const AGG_FUNCS = {
   mean: (nums) => nums.reduce((a, b) => a + b, ZERO) / nums.length,
@@ -24,6 +25,105 @@ function groupIndices(length, groupValues) {
     (groups[value] ??= []).push(index);
   });
   return groups;
+}
+
+function numericValue(value) {
+  if (String(value).trim() === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function correlation(left, right) {
+  const pairs = left
+    .map((value, index) => [numericValue(value), numericValue(right[index])])
+    .filter(([leftValue, rightValue]) => leftValue !== null && rightValue !== null);
+  if (pairs.length < TWO) return null;
+  const leftMean = AGG_FUNCS.mean(pairs.map(([value]) => value));
+  const rightMean = AGG_FUNCS.mean(pairs.map(([, value]) => value));
+  let numerator = ZERO;
+  let leftSquared = ZERO;
+  let rightSquared = ZERO;
+  pairs.forEach(([leftValue, rightValue]) => {
+    const leftDifference = leftValue - leftMean;
+    const rightDifference = rightValue - rightMean;
+    numerator += leftDifference * rightDifference;
+    leftSquared += leftDifference ** TWO;
+    rightSquared += rightDifference ** TWO;
+  });
+  const denominator = Math.sqrt(leftSquared * rightSquared);
+  return denominator === ZERO ? null : numerator / denominator;
+}
+
+function buildAggregatedHeatmap(config, xValues, yValues, color, gapColor) {
+  const axisYValues = yValues[ZERO];
+  const valueValues = yValues[ONE];
+  if (!axisYValues || !valueValues) return [];
+  const xCategories = [...new Set(xValues)];
+  const yCategories = [...new Set(axisYValues)];
+  const buckets = new Map();
+  xValues.forEach((xValue, index) => {
+    const number = numericValue(valueValues[index]);
+    if (number === null) return;
+    const key = JSON.stringify([xValue, axisYValues[index]]);
+    const values = buckets.get(key) ?? [];
+    values.push(number);
+    buckets.set(key, values);
+  });
+  const aggregate = AGG_FUNCS[config.aggFunc] ?? AGG_FUNCS.mean;
+  const xLabel = config.transpose ? config.yColumn : config.xColumn;
+  const yLabel = config.transpose ? config.xColumn : config.yColumn;
+  return [{
+    x: xCategories,
+    y: yCategories,
+    z: yCategories.map((yValue) =>
+      xCategories.map((xValue) => {
+        const values = buckets.get(JSON.stringify([xValue, yValue]));
+        return values ? aggregate(values) : null;
+      })
+    ),
+    type: "heatmap",
+    colorscale: [[ZERO, gapColor], [ONE, color]],
+    hoverongaps: false,
+    hovertemplate: `${xLabel}: %{x}<br>${yLabel}: %{y}<br>${config.valueColumn}: %{z}<extra></extra>`,
+  }];
+}
+
+function buildCorrelationHeatmap(config, xValues, yValues, palette, startIndex, gapColor) {
+  const columns = config.correlationColumns ?? [];
+  const values = [xValues, ...yValues];
+  if (columns.length < TWO || values.length !== columns.length) return [];
+  return [{
+    x: columns,
+    y: columns,
+    z: values.map((left) => values.map((right) => correlation(left, right))),
+    type: "heatmap",
+    zmin: -ONE,
+    zmax: ONE,
+    colorscale: [
+      [ZERO, palette[(startIndex + ONE) % palette.length]],
+      [COLOR_SCALE_MIDPOINT, gapColor],
+      [ONE, palette[startIndex % palette.length]],
+    ],
+    hoverongaps: false,
+    hovertemplate: "%{x} × %{y}<br>Correlation: %{z:.3f}<extra></extra>",
+  }];
+}
+
+function buildPivotHeatmap(config, xValues, yValues, color, gapColor) {
+  if (yValues.length !== config.yColumns.length) return [];
+  const xLabel = config.transpose ? config.xColumn : config.pivotColumnDimension;
+  const yLabel = config.transpose ? config.pivotColumnDimension : config.xColumn;
+  return [{
+    x: config.yColumns,
+    y: xValues,
+    z: xValues.map((_, rowIndex) =>
+      yValues.map((columnValues) => numericValue(columnValues[rowIndex]))
+    ),
+    type: "heatmap",
+    colorscale: [[ZERO, gapColor], [ONE, color]],
+    hoverongaps: false,
+    hovertemplate: `${xLabel}: %{x}<br>${yLabel}: %{y}<br>${config.pivotMeasureLabel}: %{z}<extra></extra>`,
+  }];
 }
 
 export function buildTraces(config, chartData, palette, gapColor) {
@@ -114,6 +214,20 @@ export function buildTraces(config, chartData, palette, gapColor) {
           name: grouped ? key : undefined,
         };
       });
+    }
+    case "heatmap": {
+      const traces = config.heatmapMode === "pivot"
+        ? buildPivotHeatmap(config, xValues, yValues, colorFor(ZERO), gapColor)
+        : config.heatmapMode === "correlation"
+          ? buildCorrelationHeatmap(config, xValues, yValues, palette, startIndex, gapColor)
+          : buildAggregatedHeatmap(config, xValues, yValues, colorFor(ZERO), gapColor);
+      if (!config.transpose) return traces;
+      return traces.map((trace) => ({
+        ...trace,
+        x: trace.y,
+        y: trace.x,
+        transpose: true,
+      }));
     }
     case "linechart": {
       if (grouped) {

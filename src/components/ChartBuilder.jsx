@@ -7,6 +7,7 @@ import {
   ChartBarIncreasing,
   ChartLine,
   ChartNoAxesColumnIncreasing,
+  Grid3X3,
   BoxSelect,
   X,
 } from "lucide-react";
@@ -15,25 +16,26 @@ import Bar from "plotly.js/lib/bar";
 import Box from "plotly.js/lib/box";
 import Histogram from "plotly.js/lib/histogram";
 import Scatter from "plotly.js/lib/scatter";
+import Heatmap from "plotly.js/lib/heatmap";
 import createPlotlyComponent from "react-plotly.js/factory";
 import { useAppStore } from "../store/useAppStore";
 import { THEMES } from "../utils/themes";
 import { FULL_SIZE_PERCENT, ICON_SIZE_DEFAULT, PLOT_MODE_BAR_BUTTONS } from "../constants";
 import { buildTraces } from "../utils/chart";
 
-Plotly.register([Bar, Box, Histogram, Scatter]);
+Plotly.register([Bar, Box, Histogram, Scatter, Heatmap]);
 const Plot = createPlotlyComponent(Plotly);
 const EMPTY_CHART_DATA = { xValues: [], yValues: [], groupValues: null };
 
 const NUMERIC_TYPES = new Set(["number"]);
 const CATEGORICAL_TYPES = new Set(["string", "category", "boolean", "uuid", "date"]);
 const SEQUENCE_TYPES = new Set(["number", "date"]);
+const MIN_CORRELATION_COLUMNS = 2;
 
 const PLOT_TYPES = [
   {
     id: "scatter",
     label: "Scatter plot",
-    description: "Compare two numeric columns",
     icon: ScatterChart,
     needsY: true,
     xTypes: NUMERIC_TYPES,
@@ -42,7 +44,6 @@ const PLOT_TYPES = [
   {
     id: "histogram",
     label: "Histogram",
-    description: "Distribution of one column as bars",
     icon: ChartColumn,
     needsY: false,
     xTypes: NUMERIC_TYPES,
@@ -50,7 +51,6 @@ const PLOT_TYPES = [
   {
     id: "countplot",
     label: "Count plot",
-    description: "Counts per category",
     icon: ChartBarBig,
     needsY: false,
     xTypes: CATEGORICAL_TYPES,
@@ -58,7 +58,6 @@ const PLOT_TYPES = [
   {
     id: "boxplot",
     label: "Box plot",
-    description: "Quartiles and outliers of one column",
     icon: BoxSelect,
     needsY: false,
     valueOnYAxis: true,
@@ -67,16 +66,22 @@ const PLOT_TYPES = [
   {
     id: "barchart",
     label: "Bar chart",
-    description: "Aggregate a number across categories",
     icon: ChartBarIncreasing,
     needsY: true,
     xTypes: CATEGORICAL_TYPES,
     yTypes: NUMERIC_TYPES,
   },
   {
+    id: "heatmap",
+    label: "Heatmap",
+    icon: Grid3X3,
+    needsY: true,
+    xTypes: CATEGORICAL_TYPES,
+    yTypes: CATEGORICAL_TYPES,
+  },
+  {
     id: "linechart",
     label: "Time Series",
-    description: "Track numeric series over time",
     icon: ChartLine,
     needsY: true,
     multipleY: true,
@@ -86,7 +91,6 @@ const PLOT_TYPES = [
   {
     id: "stackedbar",
     label: "Stacked bar",
-    description: "Compare totals in sequence",
     icon: ChartNoAxesColumnIncreasing,
     needsY: true,
     multipleY: true,
@@ -94,6 +98,7 @@ const PLOT_TYPES = [
     yTypes: NUMERIC_TYPES,
   },
 ];
+const PIVOT_PLOT_TYPES = PLOT_TYPES.filter((type) => type.id === "heatmap");
 
 const AGG_FUNC_OPTIONS = [
   { value: "mean", label: "Mean" },
@@ -114,12 +119,12 @@ const BAR_MODE_OPTIONS = [
   { value: "stack", label: "Stacked" },
   { value: "group", label: "Side by side" },
 ];
+const HEATMAP_MODE_OPTIONS = [
+  { value: "aggregate", label: "Aggregated" },
+  { value: "correlation", label: "Correlation" },
+];
 
-const PLOT_TYPE_STEP_KEYS = { ArrowLeft: -1, h: -1, ArrowRight: 1, l: 1 };
-
-function plotTypeFor(chartType) {
-  return PLOT_TYPES.find((type) => type.id === chartType);
-}
+const PLOT_TYPE_STEP_KEYS = { ArrowUp: -1, k: -1, ArrowDown: 1, j: 1 };
 
 function FieldDropdown({ label, value, options, onChange, open, onToggle, className = "" }) {
   const selected = options.find((option) => option.value === value);
@@ -194,6 +199,18 @@ function columnsOfTypes(sheet, types) {
 }
 
 function defaultConfigFor(sheet, type) {
+  if (sheet.pivotTable) {
+    return {
+      chartType: type.id,
+      xColumn: sheet.pivotRowDimension,
+      yColumns: sheet.columns.filter((column) => column !== sheet.pivotRowDimension),
+      colorIndex: 0,
+      heatmapMode: "pivot",
+      transpose: false,
+      pivotColumnDimension: sheet.pivotColumnDimension,
+      pivotMeasureLabel: sheet.pivotMeasureLabel,
+    };
+  }
   const xOptions = columnsOfTypes(sheet, type.xTypes);
   const yOptions = type.needsY ? columnsOfTypes(sheet, type.yTypes) : [];
   const sameTypeSet = type.xTypes === type.yTypes;
@@ -214,6 +231,10 @@ function defaultConfigFor(sheet, type) {
     aggFunc: "mean",
     style: "markers",
     barMode: "stack",
+    heatmapMode: "aggregate",
+    transpose: false,
+    valueColumn: columnsOfTypes(sheet, NUMERIC_TYPES)[0] ?? "",
+    correlationColumns: columnsOfTypes(sheet, NUMERIC_TYPES),
   };
 }
 
@@ -247,7 +268,7 @@ function yAxisTitleFor(plotType, config) {
   return Y_AXIS_TITLE[config.chartType];
 }
 
-function ChartBuilder({ fontSize }) {
+function ChartBuilder({ fontSize, expanded }) {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
   const sheet = useAppStore((state) =>
     state.activeSheetId ? state.sheets[state.activeSheetId] : null,
@@ -260,9 +281,18 @@ function ChartBuilder({ fontSize }) {
   const showError = useAppStore((state) => state.showError);
 
   const config = plotConfig ?? null;
-  const plotType = config ? plotTypeFor(config.chartType) : null;
+  const selectablePlotTypes = sheet?.pivotTable ? PIVOT_PLOT_TYPES : PLOT_TYPES;
+  const plotType = config
+    ? selectablePlotTypes.find((type) => type.id === config.chartType)
+    : null;
+  const pivotHeatmap = Boolean(sheet?.pivotTable && plotType?.id === "heatmap");
   const [chartData, setChartData] = useState(EMPTY_CHART_DATA);
   const [openField, setOpenField] = useState(null);
+
+  useEffect(() => {
+    if (!sheet?.pivotTable || plotType) return;
+    setPlotConfig(activeSheetId, defaultConfigFor(sheet, PIVOT_PLOT_TYPES[0]));
+  }, [sheet, plotType, activeSheetId, setPlotConfig]);
 
   useEffect(() => {
     if (!openField) return undefined;
@@ -274,17 +304,31 @@ function ChartBuilder({ fontSize }) {
   }, [openField]);
 
   useEffect(() => {
-    if (!sheet || !plotType || !config.xColumn) return undefined;
-    if (plotType.needsY && !config.yColumn && !config.yColumns?.length) return undefined;
-    let cancelled = false;
+    if (!sheet || !plotType) return undefined;
+    const correlationHeatmap = plotType.id === "heatmap" && config.heatmapMode === "correlation";
     setChartData(EMPTY_CHART_DATA);
+    if (!pivotHeatmap && correlationHeatmap && config.correlationColumns?.length < MIN_CORRELATION_COLUMNS) {
+      return undefined;
+    }
+    if (!pivotHeatmap && !correlationHeatmap && !config.xColumn) return undefined;
+    if (!pivotHeatmap && !correlationHeatmap && plotType.needsY && !config.yColumn && !config.yColumns?.length) {
+      return undefined;
+    }
+    if (!pivotHeatmap && plotType.id === "heatmap" && !correlationHeatmap && !config.valueColumn) return undefined;
+    let cancelled = false;
     invoke("get_chart_data", {
       datasetId: sheet.datasetId,
-      xColumn: config.xColumn,
-      yColumns: plotType.needsY
-        ? (plotType.multipleY ? config.yColumns : [config.yColumn]).filter(Boolean)
-        : [],
-      groupColumn: config.groupColumn || null,
+      xColumn: correlationHeatmap ? config.correlationColumns[0] : config.xColumn,
+      yColumns: pivotHeatmap
+        ? config.yColumns
+        : correlationHeatmap
+          ? config.correlationColumns.slice(1)
+          : plotType.id === "heatmap"
+            ? [config.yColumn, config.valueColumn]
+            : plotType.needsY
+              ? (plotType.multipleY ? config.yColumns : [config.yColumn]).filter(Boolean)
+              : [],
+      groupColumn: pivotHeatmap || correlationHeatmap ? null : (config.groupColumn || null),
     })
       .then((result) => {
         if (!cancelled) setChartData(result);
@@ -306,6 +350,10 @@ function ChartBuilder({ fontSize }) {
     config?.yColumn,
     config?.yColumns,
     config?.groupColumn,
+    config?.valueColumn,
+    config?.heatmapMode,
+    config?.correlationColumns,
+    pivotHeatmap,
     showError,
   ]);
 
@@ -328,16 +376,16 @@ function ChartBuilder({ fontSize }) {
         return;
       }
       event.preventDefault();
-      const currentIndex = PLOT_TYPES.findIndex((type) => type.id === plotType?.id);
+      const currentIndex = selectablePlotTypes.findIndex((type) => type.id === plotType?.id);
       const nextIndex = currentIndex === -1
-        ? (step > 0 ? 0 : PLOT_TYPES.length - 1)
-        : (currentIndex + step + PLOT_TYPES.length) % PLOT_TYPES.length;
+        ? (step > 0 ? 0 : selectablePlotTypes.length - 1)
+        : (currentIndex + step + selectablePlotTypes.length) % selectablePlotTypes.length;
       setOpenField(null);
-      setPlotConfig(activeSheetId, defaultConfigFor(sheet, PLOT_TYPES[nextIndex]));
+      setPlotConfig(activeSheetId, defaultConfigFor(sheet, selectablePlotTypes[nextIndex]));
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [sheet, plotType, activeSheetId, setPlotConfig]);
+  }, [sheet, plotType, activeSheetId, selectablePlotTypes, setPlotConfig]);
 
   if (!sheet) {
     return (
@@ -381,6 +429,12 @@ function ChartBuilder({ fontSize }) {
     { value: "", label: "None" },
     ...groupOptions.map((column) => ({ value: column, label: column })),
   ];
+  const numericFieldOptions = columnsOfTypes(sheet, NUMERIC_TYPES).map((column) => ({
+    value: column,
+    label: column,
+  }));
+  const correlationHeatmap = plotType?.id === "heatmap" && config.heatmapMode === "correlation";
+  const heatmapTransposed = plotType?.id === "heatmap" && Boolean(config.transpose);
   const colorFieldOptions = theme.colors.map((hex, index) => ({
     value: index,
     render: () => (
@@ -389,196 +443,272 @@ function ChartBuilder({ fontSize }) {
       </span>
     ),
   }));
+  const xAxisTitle = !plotType
+    ? ""
+    : pivotHeatmap
+      ? sheet.pivotColumnDimension
+      : correlationHeatmap
+        ? ""
+        : plotType.valueOnYAxis
+          ? (config.groupColumn ?? "")
+          : config.xColumn;
+  const yAxisTitle = !plotType
+    ? ""
+    : pivotHeatmap
+      ? sheet.pivotRowDimension
+      : correlationHeatmap
+        ? ""
+        : yAxisTitleFor(plotType, config);
+  const modeBarButtons = plotType?.id === "heatmap"
+    ? [[
+        ...PLOT_MODE_BAR_BUTTONS[0],
+        {
+          name: heatmapTransposed ? "Restore heatmap axes" : "Transpose heatmap axes",
+          icon: Plotly.Icons["3d_rotate"],
+          click: () => updateConfig({ transpose: !heatmapTransposed }),
+        },
+      ]]
+    : PLOT_MODE_BAR_BUTTONS;
 
   return (
     <div className="chart-builder">
-      <div className="plot-picker">
-        {PLOT_TYPES.map((type) => {
-          const Icon = type.icon;
-          return (
-            <button
-              key={type.id}
-              className={
-                type.id === plotType?.id ? "plot-tile plot-tile-active" : "plot-tile"
-              }
-              onClick={() => selectChartType(type)}
-            >
-              <Icon className="plot-tile-icon" />
-              <h3>{type.label}</h3>
-              <p>{type.description}</p>
-            </button>
-          );
-        })}
-      </div>
-      {plotType && (
-        <>
-          <div className="chart-controls">
-            <FieldDropdown
-              label={plotType.needsY ? "X" : "Column"}
-              value={config.xColumn}
-              options={xFieldOptions}
-              onChange={(value) => updateConfig({ xColumn: value })}
-              open={openField === "x"}
-              onToggle={() => setOpenField(openField === "x" ? null : "x")}
-            />
-            {plotType.needsY && !plotType.multipleY && (
-              <FieldDropdown
-                label="Y"
-                value={config.yColumn}
-                options={yFieldOptions}
-                onChange={(value) => updateConfig({ yColumn: value })}
-                open={openField === "y"}
-                onToggle={() => setOpenField(openField === "y" ? null : "y")}
-              />
-            )}
-            {plotType.multipleY && (
-              <MultiFieldDropdown
-                label="Values"
-                values={config.yColumns ?? []}
-                options={yFieldOptions}
-                onChange={(values) => updateConfig({ yColumns: values })}
-                open={openField === "values"}
-                onToggle={() => setOpenField(openField === "values" ? null : "values")}
-              />
-            )}
-            {(!plotType.multipleY || plotType.id === "linechart") && (
-              <FieldDropdown
-                label="Group by"
-                value={config.groupColumn ?? ""}
-                options={groupFieldOptions}
-                onChange={(value) => updateConfig({ groupColumn: value })}
-                open={openField === "group"}
-                onToggle={() => setOpenField(openField === "group" ? null : "group")}
-              />
-            )}
-            <FieldDropdown
-              className="color-field"
-              label="Color"
-              value={config.colorIndex ?? 0}
-              options={colorFieldOptions}
-              onChange={(value) => updateConfig({ colorIndex: value })}
-              open={openField === "color"}
-              onToggle={() => setOpenField(openField === "color" ? null : "color")}
-            />
-            {plotType.id === "histogram" && (
-              <>
-                <label>
-                  Bins
-                  <input
-                    type="number"
-                    min="1"
-                    placeholder="Auto"
-                    value={config.binCount ?? ""}
-                    onChange={(e) => updateConfig({ binCount: e.target.value })}
+      <div className={expanded ? "chart-workspace chart-workspace-expanded" : "chart-workspace"}>
+        <div className="chart-main">
+          {plotType && (
+            <>
+              <div className="chart-controls">
+                {plotType.id === "heatmap" && !pivotHeatmap && (
+                  <FieldDropdown
+                    label="Mode"
+                    value={config.heatmapMode ?? "aggregate"}
+                    options={HEATMAP_MODE_OPTIONS}
+                    onChange={(value) => updateConfig({ heatmapMode: value })}
+                    open={openField === "heatmapMode"}
+                    onToggle={() => setOpenField(openField === "heatmapMode" ? null : "heatmapMode")}
                   />
-                </label>
+                )}
+                {!pivotHeatmap && !correlationHeatmap && (
+                  <FieldDropdown
+                    label={plotType.needsY ? "X" : "Column"}
+                    value={config.xColumn}
+                    options={xFieldOptions}
+                    onChange={(value) => updateConfig({ xColumn: value })}
+                    open={openField === "x"}
+                    onToggle={() => setOpenField(openField === "x" ? null : "x")}
+                  />
+                )}
+                {!pivotHeatmap && !correlationHeatmap && plotType.needsY && !plotType.multipleY && (
+                  <FieldDropdown
+                    label="Y"
+                    value={config.yColumn}
+                    options={yFieldOptions}
+                    onChange={(value) => updateConfig({ yColumn: value })}
+                    open={openField === "y"}
+                    onToggle={() => setOpenField(openField === "y" ? null : "y")}
+                  />
+                )}
+                {correlationHeatmap && (
+                  <MultiFieldDropdown
+                    label="Values"
+                    values={config.correlationColumns ?? []}
+                    options={numericFieldOptions}
+                    onChange={(values) => updateConfig({ correlationColumns: values })}
+                    open={openField === "correlations"}
+                    onToggle={() => setOpenField(openField === "correlations" ? null : "correlations")}
+                  />
+                )}
+                {plotType.multipleY && (
+                  <MultiFieldDropdown
+                    label="Values"
+                    values={config.yColumns ?? []}
+                    options={yFieldOptions}
+                    onChange={(values) => updateConfig({ yColumns: values })}
+                    open={openField === "values"}
+                    onToggle={() => setOpenField(openField === "values" ? null : "values")}
+                  />
+                )}
+                {plotType.id !== "heatmap" && (!plotType.multipleY || plotType.id === "linechart") && (
+                  <FieldDropdown
+                    label="Group by"
+                    value={config.groupColumn ?? ""}
+                    options={groupFieldOptions}
+                    onChange={(value) => updateConfig({ groupColumn: value })}
+                    open={openField === "group"}
+                    onToggle={() => setOpenField(openField === "group" ? null : "group")}
+                  />
+                )}
                 <FieldDropdown
-                  label="Normalize"
-                  value={config.histNorm ?? "count"}
-                  options={HIST_NORM_OPTIONS}
-                  onChange={(value) => updateConfig({ histNorm: value })}
-                  open={openField === "histNorm"}
-                  onToggle={() =>
-                    setOpenField(openField === "histNorm" ? null : "histNorm")
-                  }
+                  className="color-field"
+                  label="Color"
+                  value={config.colorIndex ?? 0}
+                  options={colorFieldOptions}
+                  onChange={(value) => updateConfig({ colorIndex: value })}
+                  open={openField === "color"}
+                  onToggle={() => setOpenField(openField === "color" ? null : "color")}
                 />
-                <label className="plot-checkbox">
-                  Cumulative
-                  <input
-                    type="checkbox"
-                    checked={Boolean(config.cumulative)}
-                    onChange={(e) => updateConfig({ cumulative: e.target.checked })}
+                {plotType.id === "histogram" && (
+                  <>
+                    <label>
+                      Bins
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Auto"
+                        value={config.binCount ?? ""}
+                        onChange={(e) => updateConfig({ binCount: e.target.value })}
+                      />
+                    </label>
+                    <FieldDropdown
+                      label="Normalize"
+                      value={config.histNorm ?? "count"}
+                      options={HIST_NORM_OPTIONS}
+                      onChange={(value) => updateConfig({ histNorm: value })}
+                      open={openField === "histNorm"}
+                      onToggle={() => setOpenField(openField === "histNorm" ? null : "histNorm")}
+                    />
+                    <label className="plot-checkbox">
+                      Cumulative
+                      <input
+                        type="checkbox"
+                        checked={Boolean(config.cumulative)}
+                        onChange={(e) => updateConfig({ cumulative: e.target.checked })}
+                      />
+                    </label>
+                  </>
+                )}
+                {plotType.id === "barchart" && (
+                  <FieldDropdown
+                    label="Aggregate"
+                    value={config.aggFunc ?? "mean"}
+                    options={AGG_FUNC_OPTIONS}
+                    onChange={(value) => updateConfig({ aggFunc: value })}
+                    open={openField === "aggFunc"}
+                    onToggle={() => setOpenField(openField === "aggFunc" ? null : "aggFunc")}
                   />
-                </label>
-              </>
-            )}
-            {plotType.id === "barchart" && (
-              <FieldDropdown
-                label="Aggregate"
-                value={config.aggFunc ?? "mean"}
-                options={AGG_FUNC_OPTIONS}
-                onChange={(value) => updateConfig({ aggFunc: value })}
-                open={openField === "aggFunc"}
-                onToggle={() =>
-                  setOpenField(openField === "aggFunc" ? null : "aggFunc")
-                }
-              />
-            )}
-            {plotType.id === "stackedbar" && (
-              <FieldDropdown
-                label="Bar layout"
-                value={config.barMode ?? "stack"}
-                options={BAR_MODE_OPTIONS}
-                onChange={(value) => updateConfig({ barMode: value })}
-                open={openField === "barMode"}
-                onToggle={() => setOpenField(openField === "barMode" ? null : "barMode")}
-              />
-            )}
-            {plotType.id === "boxplot" && (
-              <label className="plot-checkbox">
-                Show points
-                <input
-                  type="checkbox"
-                  checked={Boolean(config.showPoints)}
-                  onChange={(e) => updateConfig({ showPoints: e.target.checked })}
+                )}
+                {plotType.id === "heatmap" && !pivotHeatmap && !correlationHeatmap && (
+                  <>
+                    <FieldDropdown
+                      label="Value"
+                      value={config.valueColumn ?? ""}
+                      options={numericFieldOptions}
+                      onChange={(value) => updateConfig({ valueColumn: value })}
+                      open={openField === "value"}
+                      onToggle={() => setOpenField(openField === "value" ? null : "value")}
+                    />
+                    <FieldDropdown
+                      label="Aggregate"
+                      value={config.aggFunc ?? "mean"}
+                      options={AGG_FUNC_OPTIONS}
+                      onChange={(value) => updateConfig({ aggFunc: value })}
+                      open={openField === "aggFunc"}
+                      onToggle={() => setOpenField(openField === "aggFunc" ? null : "aggFunc")}
+                    />
+                  </>
+                )}
+                {plotType.id === "stackedbar" && (
+                  <FieldDropdown
+                    label="Bar layout"
+                    value={config.barMode ?? "stack"}
+                    options={BAR_MODE_OPTIONS}
+                    onChange={(value) => updateConfig({ barMode: value })}
+                    open={openField === "barMode"}
+                    onToggle={() => setOpenField(openField === "barMode" ? null : "barMode")}
+                  />
+                )}
+                {plotType.id === "boxplot" && (
+                  <label className="plot-checkbox">
+                    Show points
+                    <input
+                      type="checkbox"
+                      checked={Boolean(config.showPoints)}
+                      onChange={(e) => updateConfig({ showPoints: e.target.checked })}
+                    />
+                  </label>
+                )}
+                {plotType.id === "scatter" && (
+                  <FieldDropdown
+                    label="Style"
+                    value={config.style ?? "markers"}
+                    options={SCATTER_STYLE_OPTIONS}
+                    onChange={(value) => updateConfig({ style: value })}
+                    open={openField === "style"}
+                    onToggle={() => setOpenField(openField === "style" ? null : "style")}
+                  />
+                )}
+                {!pivotHeatmap && (
+                  <button
+                    type="button"
+                    className="plot-close"
+                    aria-label="Close plot"
+                    onClick={() => updateConfig({ chartType: null })}
+                  >
+                    <X size={ICON_SIZE_DEFAULT} />
+                  </button>
+                )}
+              </div>
+              <div className="chart-plot">
+                <Plot
+                  key={`${config.chartType}-${config.xColumn}-${config.yColumn}-${config.yColumns?.join(",")}-${config.groupColumn}-${config.binCount}-${config.histNorm}-${config.cumulative}-${config.showPoints}-${config.colorIndex}-${config.aggFunc}-${config.style}-${config.barMode}-${config.heatmapMode}-${config.transpose}-${config.valueColumn}-${config.correlationColumns?.join(",")}`}
+                  data={traces}
+                  layout={{
+                    autosize: true,
+                    paper_bgcolor: theme.bg,
+                    plot_bgcolor: theme.bg,
+                    font: {
+                      family: "Lexend, sans-serif",
+                      size: fontSize,
+                      color: theme.fg,
+                    },
+                    barmode: plotType.id === "stackedbar" ? (config.barMode ?? "stack") : "group",
+                    showlegend: grouped || plotType.multipleY,
+                    xaxis: {
+                      title: heatmapTransposed ? yAxisTitle : xAxisTitle,
+                      autorange: true,
+                      showgrid: false,
+                      linecolor: theme.border,
+                      zerolinecolor: theme.border,
+                    },
+                    yaxis: {
+                      title: heatmapTransposed ? xAxisTitle : yAxisTitle,
+                      autorange: true,
+                      showgrid: false,
+                      linecolor: theme.border,
+                      zerolinecolor: theme.border,
+                    },
+                  }}
+                  config={{
+                    displaylogo: false,
+                    modeBarButtons,
+                  }}
+                  useResizeHandler
+                  style={{
+                    width: FULL_SIZE_PERCENT,
+                    height: FULL_SIZE_PERCENT,
+                  }}
                 />
-              </label>
-            )}
-            {plotType.id === "scatter" && (
-              <FieldDropdown
-                label="Style"
-                value={config.style ?? "markers"}
-                options={SCATTER_STYLE_OPTIONS}
-                onChange={(value) => updateConfig({ style: value })}
-                open={openField === "style"}
-                onToggle={() => setOpenField(openField === "style" ? null : "style")}
-              />
-            )}
-            <button
-              type="button"
-              className="plot-close"
-              aria-label="Close plot"
-              onClick={() => updateConfig({ chartType: null })}
-            >
-              <X size={ICON_SIZE_DEFAULT} />
-            </button>
+              </div>
+            </>
+          )}
+        </div>
+        {!expanded && (
+          <div className={selectablePlotTypes.length === 1 ? "plot-picker plot-picker-single" : "plot-picker"}>
+            {selectablePlotTypes.map((type) => {
+              const Icon = type.icon;
+              return (
+                <button
+                  key={type.id}
+                  className={type.id === plotType?.id ? "plot-tile plot-tile-active" : "plot-tile"}
+                  onClick={() => selectChartType(type)}
+                >
+                  <Icon className="plot-tile-icon" />
+                  <h3>{type.label}</h3>
+                </button>
+              );
+            })}
           </div>
-          <div className="chart-plot">
-            <Plot
-              key={`${config.chartType}-${config.xColumn}-${config.yColumn}-${config.yColumns?.join(",")}-${config.groupColumn}-${config.binCount}-${config.histNorm}-${config.cumulative}-${config.showPoints}-${config.colorIndex}-${config.aggFunc}-${config.style}-${config.barMode}`}
-              data={traces}
-              layout={{
-                autosize: true,
-                paper_bgcolor: theme.bg,
-                plot_bgcolor: theme.bg,
-                font: { family: "Lexend, sans-serif", size: fontSize, color: theme.fg },
-                barmode:
-                  plotType.id === "stackedbar" ? (config.barMode ?? "stack") : "group",
-                showlegend: grouped || plotType.multipleY,
-                xaxis: {
-                  title: plotType.valueOnYAxis
-                    ? (config.groupColumn ?? "")
-                    : config.xColumn,
-                  autorange: true,
-                  showgrid: false,
-                  linecolor: theme.border,
-                  zerolinecolor: theme.border,
-                },
-                yaxis: {
-                  title: yAxisTitleFor(plotType, config),
-                  autorange: true,
-                  showgrid: false,
-                  linecolor: theme.border,
-                  zerolinecolor: theme.border,
-                },
-              }}
-              config={{ displaylogo: false, modeBarButtons: PLOT_MODE_BAR_BUTTONS }}
-              useResizeHandler
-              style={{ width: FULL_SIZE_PERCENT, height: FULL_SIZE_PERCENT }}
-            />
-          </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

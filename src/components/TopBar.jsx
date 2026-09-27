@@ -31,7 +31,7 @@ const SHORTCUTS = [
   ["Toggle side panels", "z"],
   ["Toggle data / plot view", "Tab"],
   ["Close sheet", "qq"],
-  ["Previous / next plot type", "h / l / ← / →"],
+  ["Previous / next plot type", "k / j / ↑ / ↓"],
   ["Go to tab", "Cmd+1-9"],
   ["Previous sheet", "Ctrl+^"],
   ["Scroll left", "h / ←"],

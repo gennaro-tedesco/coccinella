@@ -56,8 +56,6 @@ function App() {
   const theme = useAppStore((state) => state.previewTheme ?? state.theme);
   const sheetPanelOpen = useAppStore((state) => state.sheetPanelOpen);
   const columnPanelOpen = useAppStore((state) => state.columnPanelOpen);
-  const toggleSheetPanel = useAppStore((state) => state.toggleSheetPanel);
-  const toggleColumnPanel = useAppStore((state) => state.toggleColumnPanel);
   const hasSheets = useAppStore((state) => state.sheetOrder.length > 0);
   const sheets = useAppStore((state) => state.sheets);
   const sheetOrder = useAppStore((state) => state.sheetOrder);
@@ -116,6 +114,7 @@ function App() {
   const [goToLineOpen, setGoToLineOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeTab, setMergeTab] = useState(null);
+  const [panelsHidden, setPanelsHidden] = useState(false);
   const contentRef = useRef(null);
   const highlightedLineRef = useRef(null);
   const highlightTimeoutRef = useRef(null);
@@ -477,8 +476,7 @@ function App() {
         event.key === "z"
       ) {
         event.preventDefault();
-        toggleSheetPanel();
-        toggleColumnPanel();
+        setPanelsHidden((hidden) => !hidden);
         return;
       }
 
@@ -691,8 +689,6 @@ function App() {
     openSheet,
     openJson,
     switchToPreviousSheet,
-    toggleSheetPanel,
-    toggleColumnPanel,
     openSearch,
     closeSearch,
     openShortcutsMenu,
@@ -808,10 +804,12 @@ function App() {
         <div
           className="main"
           style={{
-            gridTemplateColumns: `${sheetPanelOpen ? `${PANEL_WIDTH_PX}px` : `${COLLAPSED_PANEL_WIDTH_PX}px`} 1fr ${rightWidth}`,
+            gridTemplateColumns: panelsHidden
+              ? "1fr"
+              : `${sheetPanelOpen ? `${PANEL_WIDTH_PX}px` : `${COLLAPSED_PANEL_WIDTH_PX}px`} 1fr ${rightWidth}`,
           }}
         >
-          <SheetPanel />
+          {!panelsHidden && <SheetPanel />}
           <div className="center">
             <FileTabs />
             {!isJson && <FilterTabs />}
@@ -821,17 +819,18 @@ function App() {
               ) : (
                 <LazyErrorBoundary>
                   <Suspense fallback={<div className="chart-builder-placeholder">Loading chart tools...</div>}>
-                    <ChartBuilder fontSize={fontSize} />
+                    <ChartBuilder fontSize={fontSize} expanded={panelsHidden} />
                   </Suspense>
                 </LazyErrorBoundary>
               )}
             </div>
           </div>
-          {mode === "data" ? (
-            isJson ? <JsonKeysPanel /> : <ColumnPanel />
-          ) : (
-            <div className="plot-margin" />
-          )}
+          {!panelsHidden &&
+            (mode === "data" ? (
+              isJson ? <JsonKeysPanel /> : <ColumnPanel />
+            ) : (
+              <div className="plot-margin" />
+            ))}
         </div>
       ) : (
         <EmptyState />
