@@ -1,14 +1,7 @@
 // Renders a window of the active Rust-owned dataset.
 // FEATURE: CSV data workspace
 import { invoke } from "@tauri-apps/api/core";
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   flexRender,
   getCoreRowModel,
@@ -34,7 +27,7 @@ import {
 const DEFAULT_ROW_HEIGHT = 29;
 const EMPTY_ROW_RANGE = { offset: 0, limit: 0 };
 
-function DataTable(_props, ref) {
+function DataTable() {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
   const sheet = useAppStore((state) =>
     state.activeSheetId ? state.sheets[state.activeSheetId] : null,
@@ -66,16 +59,6 @@ function DataTable(_props, ref) {
   const copyFeedbackTimeoutRef = useRef(null);
   const pointerPositionRef = useRef(null);
   const [pivotSuperHeaderHeight, setPivotSuperHeaderHeight] = useState(0);
-
-  useImperativeHandle(ref, () => ({
-    scrollToTop() {
-      tableRef.current?.parentElement?.scrollTo({ top: 0 });
-    },
-    scrollToBottom() {
-      const scroller = tableRef.current?.parentElement;
-      scroller?.scrollTo({ top: scroller.scrollHeight });
-    },
-  }));
 
   useEffect(() => {
     if (!openColumn) return;
@@ -610,4 +593,4 @@ function DataTable(_props, ref) {
   );
 }
 
-export default forwardRef(DataTable);
+export default DataTable;

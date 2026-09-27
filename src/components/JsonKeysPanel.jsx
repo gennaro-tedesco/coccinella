@@ -84,6 +84,7 @@ function JsonKeysPanel() {
   const panelOpen = useAppStore((state) => state.columnPanelOpen);
   const togglePanel = useAppStore((state) => state.toggleColumnPanel);
   const navigate = useAppStore((state) => state.navigateToJsonKey);
+  const scrollPercent = useAppStore((state) => state.scrollPercent);
   const schema = useMemo(
     () => (sheet?.kind === "json" ? buildJsonKeyTree(sheet.data) : null),
     [sheet],
@@ -135,6 +136,9 @@ function JsonKeysPanel() {
           />
         )}
       </ul>
+      {scrollPercent !== null && (
+        <div className="scroll-percent">{`${scrollPercent}%`}</div>
+      )}
       <div className="panel-header">
         <button type="button" className="panel-toggle" aria-label="Close keys panel" onClick={togglePanel}>
           <ChevronRight size={ICON_SIZE_DEFAULT} />

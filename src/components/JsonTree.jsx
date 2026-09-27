@@ -16,7 +16,9 @@ import {
   ICON_SIZE_COMPACT,
   JSON_COPY_INDENT,
   JSON_TREE_OVERSCAN_ROWS,
+  PERCENT_MULTIPLIER,
   ROW_HEIGHT_CHANGE_THRESHOLD_PX,
+  SCROLL_PROGRESS_VISIBLE_MS,
 } from "../constants";
 
 const NO_OVERRIDES = new Map();
@@ -95,6 +97,7 @@ function JsonTree() {
   const navigation = useAppStore((state) => state.jsonNavigation);
   const clearNavigation = useAppStore((state) => state.clearJsonNavigation);
   const showError = useAppStore((state) => state.showError);
+  const setScrollPercent = useAppStore((state) => state.setScrollPercent);
   const copyFeedbackTimeoutRef = useRef(null);
   const [copiedPath, setCopiedPath] = useState(null);
   const searchMatches = useAppStore((state) => state.jsonSearchMatches);
@@ -195,6 +198,25 @@ function JsonTree() {
     const tree = treeRef.current;
     const scroller = tree?.closest(".content");
     if (!scroller) return undefined;
+    let lastScrollTop = scroller.scrollTop;
+    let hideScrollPercentTimeout;
+    function updateScrollPercent() {
+      if (scroller.scrollTop === lastScrollTop) return;
+      lastScrollTop = scroller.scrollTop;
+      const scrollableHeight = scroller.scrollHeight - scroller.clientHeight;
+      setScrollPercent(
+        Math.round((scroller.scrollTop / scrollableHeight) * PERCENT_MULTIPLIER),
+      );
+      window.clearTimeout(hideScrollPercentTimeout);
+      hideScrollPercentTimeout = window.setTimeout(
+        () => setScrollPercent(null),
+        SCROLL_PROGRESS_VISIBLE_MS,
+      );
+    }
+    function handleScroll() {
+      updateWindow();
+      updateScrollPercent();
+    }
     function updateWindow() {
       const geometry = treeScrollGeometry(tree);
       setFirstVisibleRow(
@@ -203,14 +225,16 @@ function JsonTree() {
       setViewportRows(Math.ceil(scroller.clientHeight / rowHeight));
     }
     updateWindow();
-    scroller.addEventListener("scroll", updateWindow, { passive: true });
+    scroller.addEventListener("scroll", handleScroll, { passive: true });
     const observer = new ResizeObserver(updateWindow);
     observer.observe(scroller);
     return () => {
-      scroller.removeEventListener("scroll", updateWindow);
+      scroller.removeEventListener("scroll", handleScroll);
       observer.disconnect();
+      window.clearTimeout(hideScrollPercentTimeout);
+      setScrollPercent(null);
     };
-  }, [sheetId, rowHeight]);
+  }, [sheetId, rowHeight, setScrollPercent]);
 
   const windowStart = Math.min(
     rows.length,

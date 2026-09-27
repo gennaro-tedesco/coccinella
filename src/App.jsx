@@ -117,7 +117,6 @@ function App() {
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeTab, setMergeTab] = useState(null);
   const contentRef = useRef(null);
-  const dataTableRef = useRef(null);
   const highlightedLineRef = useRef(null);
   const highlightTimeoutRef = useRef(null);
   const pendingGRef = useRef(false);
@@ -356,7 +355,7 @@ function App() {
       if (mergeOpen) return;
       if (
         isEditing ||
-        !csvDataMode ||
+        mode !== "data" ||
         event.key !== "g" ||
         event.ctrlKey ||
         event.metaKey ||
@@ -567,7 +566,7 @@ function App() {
       }
 
       const content = contentRef.current;
-      if (!isEditing && csvDataMode && content) {
+      if (!isEditing && mode === "data" && content) {
         if (
           !event.ctrlKey &&
           !event.metaKey &&
@@ -579,10 +578,10 @@ function App() {
 
           if (event.key === "G") {
             pendingGRef.current = false;
-            dataTableRef.current?.scrollToBottom();
+            content.scrollTo({ top: content.scrollHeight });
           } else if (pendingGRef.current) {
             pendingGRef.current = false;
-            dataTableRef.current?.scrollToTop();
+            content.scrollTo({ top: 0 });
           } else {
             pendingGRef.current = true;
           }
@@ -612,12 +611,12 @@ function App() {
           !event.shiftKey &&
           !event.metaKey &&
           !event.altKey &&
-          "hjkl".includes(motion)
+          (csvDataMode ? "hjkl" : "jk").includes(motion)
         ) {
           event.preventDefault();
           const rowHeight =
             content
-              .querySelector(".data-table tbody tr[data-row-index]")
+              .querySelector(isJson ? ".json-node" : ".data-table tbody tr[data-row-index]")
               ?.getBoundingClientRect().height ?? FALLBACK_ROW_HEIGHT_PX;
           const movement = {
             h: { left: -HORIZONTAL_SCROLL_PX },
@@ -818,7 +817,7 @@ function App() {
             {!isJson && <FilterTabs />}
             <div className="content" ref={contentRef}>
               {mode === "data" ? (
-                isJson ? <JsonTree /> : <DataTable ref={dataTableRef} />
+                isJson ? <JsonTree /> : <DataTable />
               ) : (
                 <LazyErrorBoundary>
                   <Suspense fallback={<div className="chart-builder-placeholder">Loading chart tools...</div>}>
