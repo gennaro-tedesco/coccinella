@@ -357,13 +357,7 @@ function ColumnPanel() {
         </div>
       ) : (
         scrollPercent !== null && (
-          <div className="column-hover-stats">
-            <div className="column-stats">
-              <div className="stat-row">
-                <span className="stat-value">{`${scrollPercent}%`}</span>
-              </div>
-            </div>
-          </div>
+          <div className="scroll-percent">{`${scrollPercent}%`}</div>
         )
       )}
       <div className="panel-header">

@@ -1862,7 +1862,15 @@ body,
   margin-top: tokens.$margin-top-7;
 }
 
-.column-hover-stats + .panel-header {
+.scroll-percent {
+  margin-top: auto;
+  padding: tokens.$padding-66;
+  font-size: tokens.$font-size-14;
+  flex-shrink: tokens.$flex-shrink-7;
+}
+
+.column-hover-stats + .panel-header,
+.scroll-percent + .panel-header {
   margin-top: tokens.$margin-top-8;
 }
 

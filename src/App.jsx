@@ -617,7 +617,7 @@ function App() {
           event.preventDefault();
           const rowHeight =
             content
-              .querySelector(".data-table tbody tr")
+              .querySelector(".data-table tbody tr[data-row-index]")
               ?.getBoundingClientRect().height ?? FALLBACK_ROW_HEIGHT_PX;
           const movement = {
             h: { left: -HORIZONTAL_SCROLL_PX },
