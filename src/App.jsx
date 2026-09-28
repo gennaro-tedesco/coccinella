@@ -19,6 +19,7 @@ import FuzzyFinder from "./components/FuzzyFinder";
 import GoToLine from "./components/GoToLine";
 import MergePanel from "./components/MergePanel";
 import { openFile, openFileAtPath } from "./utils/openFile";
+import { THEMES, applyThemeVariables } from "./utils/themes";
 import { ErrorSnackbar } from "./components/Snackbar";
 import LazyErrorBoundary from "./components/LazyErrorBoundary";
 import FileLoadOverlay from "./components/FileLoadOverlay";
@@ -125,7 +126,7 @@ function App() {
   const lastFileFinderInvocationRef = useRef(null);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    applyThemeVariables(THEMES[theme], document.documentElement);
   }, [theme]);
 
   useEffect(() => {

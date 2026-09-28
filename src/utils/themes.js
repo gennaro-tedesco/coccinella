@@ -149,6 +149,29 @@ export const THEMES = {
   },
 };
 
+const THEME_CSS_VARIABLES = {
+  bg: "--bg",
+  bgAlt: "--bg-alt",
+  fg: "--fg",
+  fgDark: "--fg-dark",
+  border: "--border",
+  active: "--active",
+  highlight: "--highlight",
+  disabled: "--disabled",
+  accent: "--accent",
+};
+
+const PALETTE_CSS_VARIABLE_PREFIX = "--col-";
+
+export function applyThemeVariables(theme, target) {
+  Object.entries(THEME_CSS_VARIABLES).forEach(([key, variable]) => {
+    target.style.setProperty(variable, theme[key]);
+  });
+  theme.colors.forEach((color, index) => {
+    target.style.setProperty(`${PALETTE_CSS_VARIABLE_PREFIX}${index + 1}`, color);
+  });
+}
+
 export const THEME_ORDER = [
   "darkSolar",
   "lightSolar",
