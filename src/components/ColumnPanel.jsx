@@ -7,6 +7,7 @@ import { formatBytes } from "../utils/stats";
 import { rescanCsvFile } from "../utils/openFile";
 import ColumnStats from "./ColumnStats";
 import ColumnSettings from "./ColumnSettings";
+import ScrollPercent from "./ScrollPercent";
 import {
   COLUMN_DRAG_THRESHOLD_PX,
   ICON_SIZE_COMPACT,
@@ -38,7 +39,6 @@ function ColumnPanel() {
   const toggleColumnPanel = useAppStore((state) => state.toggleColumnPanel);
   const hoveredColumn = useAppStore((state) => state.hoveredColumn);
   const setHoveredColumn = useAppStore((state) => state.setHoveredColumn);
-  const scrollPercent = useAppStore((state) => state.scrollPercent);
   const showError = useAppStore((state) => state.showError);
   const setSearchQuery = useAppStore((state) => state.setSearchQuery);
   const setSearchIsRegex = useAppStore((state) => state.setSearchIsRegex);
@@ -356,9 +356,7 @@ function ColumnPanel() {
           <ColumnStats sheet={sheet} column={hoveredColumn} />
         </div>
       ) : (
-        scrollPercent !== null && (
-          <div className="scroll-percent">{`${scrollPercent}%`}</div>
-        )
+        <ScrollPercent />
       )}
       <div className="panel-header">
         <button

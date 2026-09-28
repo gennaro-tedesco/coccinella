@@ -16,10 +16,9 @@ import {
   ICON_SIZE_COMPACT,
   JSON_COPY_INDENT,
   JSON_TREE_OVERSCAN_ROWS,
-  PERCENT_MULTIPLIER,
   ROW_HEIGHT_CHANGE_THRESHOLD_PX,
-  SCROLL_PROGRESS_VISIBLE_MS,
 } from "../constants";
+import { useScrollPercent } from "../hooks/useScrollPercent";
 
 const NO_OVERRIDES = new Map();
 
@@ -97,7 +96,6 @@ function JsonTree() {
   const navigation = useAppStore((state) => state.jsonNavigation);
   const clearNavigation = useAppStore((state) => state.clearJsonNavigation);
   const showError = useAppStore((state) => state.showError);
-  const setScrollPercent = useAppStore((state) => state.setScrollPercent);
   const copyFeedbackTimeoutRef = useRef(null);
   const [copiedPath, setCopiedPath] = useState(null);
   const searchMatches = useAppStore((state) => state.jsonSearchMatches);
@@ -110,6 +108,7 @@ function JsonTree() {
   const [viewportRows, setViewportRows] = useState(0);
   const [rowHeight, setRowHeight] = useState(FALLBACK_ROW_HEIGHT_PX);
   const sheetId = sheet?.kind === "json" ? sheet.id : null;
+  useScrollPercent(treeRef, ".content", sheetId);
   const overrides = openState.sheetId === sheetId ? openState.overrides : NO_OVERRIDES;
   const rows = useMemo(
     () => (sheetId ? flattenJsonTree(sheet.data, overrides) : []),
@@ -198,24 +197,8 @@ function JsonTree() {
     const tree = treeRef.current;
     const scroller = tree?.closest(".content");
     if (!scroller) return undefined;
-    let lastScrollTop = scroller.scrollTop;
-    let hideScrollPercentTimeout;
-    function updateScrollPercent() {
-      if (scroller.scrollTop === lastScrollTop) return;
-      lastScrollTop = scroller.scrollTop;
-      const scrollableHeight = scroller.scrollHeight - scroller.clientHeight;
-      setScrollPercent(
-        Math.round((scroller.scrollTop / scrollableHeight) * PERCENT_MULTIPLIER),
-      );
-      window.clearTimeout(hideScrollPercentTimeout);
-      hideScrollPercentTimeout = window.setTimeout(
-        () => setScrollPercent(null),
-        SCROLL_PROGRESS_VISIBLE_MS,
-      );
-    }
     function handleScroll() {
       updateWindow();
-      updateScrollPercent();
     }
     function updateWindow() {
       const geometry = treeScrollGeometry(tree);
@@ -231,10 +214,8 @@ function JsonTree() {
     return () => {
       scroller.removeEventListener("scroll", handleScroll);
       observer.disconnect();
-      window.clearTimeout(hideScrollPercentTimeout);
-      setScrollPercent(null);
     };
-  }, [sheetId, rowHeight, setScrollPercent]);
+  }, [sheetId, rowHeight]);
 
   const windowStart = Math.min(
     rows.length,

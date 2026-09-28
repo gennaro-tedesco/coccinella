@@ -110,7 +110,7 @@ describe("chart aggregation", () => {
     ]);
   });
 
-  it("builds an aggregated heatmap from two dimensions and one value", () => {
+  it("builds an aggregated heatmap from a precomputed grid", () => {
     const [trace] = buildTraces(
       {
         chartType: "heatmap",
@@ -121,8 +121,9 @@ describe("chart aggregation", () => {
         aggFunc: "mean",
       },
       {
-        xValues: ["Ideal", "Ideal", "Fair"],
-        yValues: [["E", "E", "G"], [1, 3, 2]],
+        xValues: ["Ideal", "Fair"],
+        yValues: ["E", "G"],
+        zValues: [[2, null], [null, 2]],
         groupValues: null,
       },
       ["#111", "#222"],
@@ -137,7 +138,7 @@ describe("chart aggregation", () => {
     });
   });
 
-  it("builds a Pearson correlation matrix for selected numeric columns", () => {
+  it("builds a correlation heatmap from a precomputed matrix", () => {
     const [trace] = buildTraces(
       {
         chartType: "heatmap",
@@ -145,8 +146,9 @@ describe("chart aggregation", () => {
         correlationColumns: ["carat", "depth", "table"],
       },
       {
-        xValues: [1, 2, 3, ""],
-        yValues: [[2, 4, 6, ""], [6, 4, 2, ""]],
+        xValues: ["carat", "depth", "table"],
+        yValues: ["carat", "depth", "table"],
+        zValues: [[1, 1, -1], [1, 1, -1], [-1, -1, 1]],
         groupValues: null,
       },
       ["#111", "#222"],

@@ -276,6 +276,75 @@ struct ChartData {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HeatmapGrid {
+    x_values: Vec<String>,
+    y_values: Vec<String>,
+    z_values: Vec<Vec<Option<f64>>>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ChartAggregation {
+    Mean,
+    Sum,
+    Min,
+    Max,
+    Median,
+    Count,
+}
+
+struct HeatmapBucket {
+    sum: f64,
+    count: usize,
+    min: f64,
+    max: f64,
+    values: Option<Vec<f64>>,
+}
+
+impl HeatmapBucket {
+    fn new(value: f64, aggregation: ChartAggregation) -> Self {
+        Self {
+            sum: value,
+            count: 1,
+            min: value,
+            max: value,
+            values: matches!(aggregation, ChartAggregation::Median).then(|| vec![value]),
+        }
+    }
+
+    fn push(&mut self, value: f64) {
+        self.sum += value;
+        self.count += 1;
+        self.min = self.min.min(value);
+        self.max = self.max.max(value);
+        if let Some(values) = &mut self.values {
+            values.push(value);
+        }
+    }
+
+    fn aggregate(mut self, aggregation: ChartAggregation) -> f64 {
+        match aggregation {
+            ChartAggregation::Mean => self.sum / self.count as f64,
+            ChartAggregation::Sum => self.sum,
+            ChartAggregation::Min => self.min,
+            ChartAggregation::Max => self.max,
+            ChartAggregation::Count => self.count as f64,
+            ChartAggregation::Median => {
+                let values = self.values.as_mut().expect("median values");
+                values.sort_by(|left, right| left.partial_cmp(right).unwrap_or(Ordering::Equal));
+                let middle = values.len() / 2;
+                if values.len().is_multiple_of(2) {
+                    (values[middle - 1] + values[middle]) / 2.0
+                } else {
+                    values[middle]
+                }
+            }
+        }
+    }
+}
+
+#[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 enum OpenedFile {
     Csv {
@@ -2661,6 +2730,211 @@ async fn get_chart_data(
     })
 }
 
+fn chart_number(value: &str) -> Option<f64> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    value.parse::<f64>().ok().filter(|number| number.is_finite())
+}
+
+fn pearson_correlation(left: &[f64], right: &[f64]) -> Option<f64> {
+    let mut count = 0;
+    let mut left_sum = 0.0;
+    let mut right_sum = 0.0;
+    for (left, right) in left.iter().zip(right) {
+        if left.is_finite() && right.is_finite() {
+            count += 1;
+            left_sum += left;
+            right_sum += right;
+        }
+    }
+    if count < 2 {
+        return None;
+    }
+    let left_mean = left_sum / count as f64;
+    let right_mean = right_sum / count as f64;
+    let mut numerator = 0.0;
+    let mut left_squared = 0.0;
+    let mut right_squared = 0.0;
+    for (left, right) in left.iter().zip(right) {
+        if left.is_finite() && right.is_finite() {
+            let left_difference = left - left_mean;
+            let right_difference = right - right_mean;
+            numerator += left_difference * right_difference;
+            left_squared += left_difference.powi(VARIANCE_POWER);
+            right_squared += right_difference.powi(VARIANCE_POWER);
+        }
+    }
+    let denominator = (left_squared * right_squared).sqrt();
+    (denominator != 0.0).then_some(numerator / denominator)
+}
+
+fn correlation_grid(
+    rows: &PackedRows,
+    order: &[RowIndex],
+    columns: Vec<String>,
+    column_indices: &[usize],
+) -> HeatmapGrid {
+    let values = column_indices
+        .iter()
+        .map(|column_index| {
+            order
+                .iter()
+                .map(|row_index| {
+                    chart_number(rows.cell(*row_index as usize, *column_index))
+                        .unwrap_or(f64::NAN)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut z_values = vec![vec![None; columns.len()]; columns.len()];
+    for left_index in 0..columns.len() {
+        for right_index in left_index..columns.len() {
+            let correlation = pearson_correlation(&values[left_index], &values[right_index]);
+            z_values[left_index][right_index] = correlation;
+            z_values[right_index][left_index] = correlation;
+        }
+    }
+    HeatmapGrid {
+        x_values: columns.clone(),
+        y_values: columns,
+        z_values,
+    }
+}
+
+fn category_index(
+    value: &str,
+    categories: &mut Vec<String>,
+    indices: &mut HashMap<String, usize>,
+) -> usize {
+    if let Some(index) = indices.get(value) {
+        return *index;
+    }
+    let index = categories.len();
+    let value = value.to_owned();
+    categories.push(value.clone());
+    indices.insert(value, index);
+    index
+}
+
+fn aggregated_heatmap_grid(
+    rows: &PackedRows,
+    order: &[RowIndex],
+    x_index: usize,
+    y_index: usize,
+    value_index: usize,
+    aggregation: ChartAggregation,
+) -> HeatmapGrid {
+    let mut x_values = Vec::new();
+    let mut y_values = Vec::new();
+    let mut x_indices = HashMap::new();
+    let mut y_indices = HashMap::new();
+    let mut buckets = HashMap::<(usize, usize), HeatmapBucket>::new();
+    for row_index in order {
+        let row_index = *row_index as usize;
+        let x_bucket = category_index(rows.cell(row_index, x_index), &mut x_values, &mut x_indices);
+        let y_bucket = category_index(rows.cell(row_index, y_index), &mut y_values, &mut y_indices);
+        let Some(value) = chart_number(rows.cell(row_index, value_index)) else {
+            continue;
+        };
+        buckets
+            .entry((x_bucket, y_bucket))
+            .and_modify(|bucket| bucket.push(value))
+            .or_insert_with(|| HeatmapBucket::new(value, aggregation));
+    }
+    let mut z_values = vec![vec![None; x_values.len()]; y_values.len()];
+    for ((x_index, y_index), bucket) in buckets {
+        z_values[y_index][x_index] = Some(bucket.aggregate(aggregation));
+    }
+    HeatmapGrid {
+        x_values,
+        y_values,
+        z_values,
+    }
+}
+
+#[tauri::command]
+async fn get_correlation_matrix(
+    dataset_id: String,
+    columns: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<HeatmapGrid, String> {
+    let handle = dataset(&state, &dataset_id)?;
+    let (rows, order, column_indices) = {
+        let dataset = lock_dataset(&handle)?;
+        if dataset.order.len() > MAX_CHART_POINTS {
+            return Err(format!(
+                "Chart data has {} rows; the limit is {MAX_CHART_POINTS}",
+                dataset.order.len()
+            ));
+        }
+        let column_indices = columns
+            .iter()
+            .map(|name| {
+                dataset
+                    .columns
+                    .iter()
+                    .position(|column| column == name)
+                    .ok_or_else(|| format!("Column not found: {name}"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        (Arc::clone(&dataset.rows), Arc::clone(&dataset.order), column_indices)
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        correlation_grid(&rows, &order, columns, &column_indices)
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn get_heatmap_grid(
+    dataset_id: String,
+    x_column: String,
+    y_column: String,
+    value_column: String,
+    aggregation: ChartAggregation,
+    state: State<'_, AppState>,
+) -> Result<HeatmapGrid, String> {
+    let handle = dataset(&state, &dataset_id)?;
+    let (rows, order, x_index, y_index, value_index) = {
+        let dataset = lock_dataset(&handle)?;
+        if dataset.order.len() > MAX_CHART_POINTS {
+            return Err(format!(
+                "Chart data has {} rows; the limit is {MAX_CHART_POINTS}",
+                dataset.order.len()
+            ));
+        }
+        let column_index = |name: &str| {
+            dataset
+                .columns
+                .iter()
+                .position(|column| column == name)
+                .ok_or_else(|| format!("Column not found: {name}"))
+        };
+        (
+            Arc::clone(&dataset.rows),
+            Arc::clone(&dataset.order),
+            column_index(&x_column)?,
+            column_index(&y_column)?,
+            column_index(&value_column)?,
+        )
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        aggregated_heatmap_grid(
+            &rows,
+            &order,
+            x_index,
+            y_index,
+            value_index,
+            aggregation,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 async fn save_csv_file_dialog(
     dataset_id: String,
@@ -2951,6 +3225,8 @@ pub fn run() {
             get_distinct_values,
             get_longest_value,
             get_chart_data,
+            get_correlation_matrix,
+            get_heatmap_grid,
             save_csv_file_dialog,
             list_data_files,
             take_opened_files,
@@ -3012,6 +3288,82 @@ mod tests {
             .iter()
             .map(|row| dataset.rows.row_owned(*row as usize))
             .collect()
+    }
+
+    #[test]
+    fn builds_symmetric_correlation_grid_with_pairwise_missing_values() {
+        let rows = packed_rows(&[
+            &["1", "2", "6"],
+            &["2", "4", "4"],
+            &["3", "6", "2"],
+            &["", "", ""],
+        ]);
+        let order = vec![0, 1, 2, 3];
+        let columns = vec!["carat".into(), "depth".into(), "table".into()];
+
+        let grid = correlation_grid(&rows, &order, columns.clone(), &[0, 1, 2]);
+
+        assert_eq!(grid.x_values, columns);
+        assert_eq!(grid.y_values, grid.x_values);
+        assert_eq!(
+            grid.z_values,
+            vec![
+                vec![Some(1.0), Some(1.0), Some(-1.0)],
+                vec![Some(1.0), Some(1.0), Some(-1.0)],
+                vec![Some(-1.0), Some(-1.0), Some(1.0)],
+            ]
+        );
+    }
+
+    #[test]
+    fn leaves_constant_and_insufficient_correlations_empty() {
+        assert_eq!(
+            pearson_correlation(&[2.0, 2.0], &[2.0, 2.0]),
+            None
+        );
+        assert_eq!(
+            pearson_correlation(&[1.0, f64::NAN], &[2.0, 3.0]),
+            None
+        );
+    }
+
+    #[test]
+    fn aggregates_heatmap_values_without_transferring_source_rows() {
+        let rows = packed_rows(&[
+            &["Ideal", "E", "1"],
+            &["Ideal", "E", "3"],
+            &["Fair", "G", "2"],
+            &["Other", "H", ""],
+        ]);
+        let order = vec![0, 1, 2, 3];
+
+        let grid = aggregated_heatmap_grid(&rows, &order, 0, 1, 2, ChartAggregation::Mean);
+
+        assert_eq!(grid.x_values, vec!["Ideal", "Fair", "Other"]);
+        assert_eq!(grid.y_values, vec!["E", "G", "H"]);
+        assert_eq!(
+            grid.z_values,
+            vec![
+                vec![Some(2.0), None, None],
+                vec![None, Some(2.0), None],
+                vec![None, None, None],
+            ]
+        );
+    }
+
+    #[test]
+    fn calculates_median_heatmap_buckets() {
+        let rows = packed_rows(&[
+            &["Ideal", "E", "4"],
+            &["Ideal", "E", "1"],
+            &["Ideal", "E", "3"],
+            &["Ideal", "E", "2"],
+        ]);
+        let order = vec![0, 1, 2, 3];
+
+        let grid = aggregated_heatmap_grid(&rows, &order, 0, 1, 2, ChartAggregation::Median);
+
+        assert_eq!(grid.z_values, vec![vec![Some(2.5)]]);
     }
 
     #[test]

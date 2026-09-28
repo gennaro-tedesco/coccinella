@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ScatterChart,
   ChartColumn,
@@ -286,6 +286,9 @@ function ChartBuilder({ fontSize, expanded }) {
     ? selectablePlotTypes.find((type) => type.id === config.chartType)
     : null;
   const pivotHeatmap = Boolean(sheet?.pivotTable && plotType?.id === "heatmap");
+  const heatmapAggFunc = plotType?.id === "heatmap" && !pivotHeatmap
+    ? config?.aggFunc
+    : null;
   const [chartData, setChartData] = useState(EMPTY_CHART_DATA);
   const [openField, setOpenField] = useState(null);
 
@@ -316,20 +319,30 @@ function ChartBuilder({ fontSize, expanded }) {
     }
     if (!pivotHeatmap && plotType.id === "heatmap" && !correlationHeatmap && !config.valueColumn) return undefined;
     let cancelled = false;
-    invoke("get_chart_data", {
-      datasetId: sheet.datasetId,
-      xColumn: correlationHeatmap ? config.correlationColumns[0] : config.xColumn,
-      yColumns: pivotHeatmap
-        ? config.yColumns
-        : correlationHeatmap
-          ? config.correlationColumns.slice(1)
-          : plotType.id === "heatmap"
-            ? [config.yColumn, config.valueColumn]
-            : plotType.needsY
-              ? (plotType.multipleY ? config.yColumns : [config.yColumn]).filter(Boolean)
-              : [],
-      groupColumn: pivotHeatmap || correlationHeatmap ? null : (config.groupColumn || null),
-    })
+    const request = correlationHeatmap
+      ? invoke("get_correlation_matrix", {
+          datasetId: sheet.datasetId,
+          columns: config.correlationColumns,
+        })
+      : plotType.id === "heatmap" && !pivotHeatmap
+        ? invoke("get_heatmap_grid", {
+            datasetId: sheet.datasetId,
+            xColumn: config.xColumn,
+            yColumn: config.yColumn,
+            valueColumn: config.valueColumn,
+            aggregation: heatmapAggFunc ?? "mean",
+          })
+        : invoke("get_chart_data", {
+            datasetId: sheet.datasetId,
+            xColumn: config.xColumn,
+            yColumns: pivotHeatmap
+              ? config.yColumns
+              : plotType.needsY
+                ? (plotType.multipleY ? config.yColumns : [config.yColumn]).filter(Boolean)
+                : [],
+            groupColumn: pivotHeatmap ? null : (config.groupColumn || null),
+          });
+    request
       .then((result) => {
         if (!cancelled) setChartData(result);
       })
@@ -351,6 +364,7 @@ function ChartBuilder({ fontSize, expanded }) {
     config?.yColumns,
     config?.groupColumn,
     config?.valueColumn,
+    heatmapAggFunc,
     config?.heatmapMode,
     config?.correlationColumns,
     pivotHeatmap,
@@ -387,6 +401,11 @@ function ChartBuilder({ fontSize, expanded }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [sheet, plotType, activeSheetId, selectablePlotTypes, setPlotConfig]);
 
+  const traces = useMemo(
+    () => (plotType ? buildTraces(config, chartData, theme.colors, theme.bg) : []),
+    [plotType, config, chartData, theme.colors, theme.bg],
+  );
+
   if (!sheet) {
     return (
       <div className="chart-builder-placeholder">
@@ -403,7 +422,6 @@ function ChartBuilder({ fontSize, expanded }) {
     setPlotConfig(activeSheetId, defaultConfigFor(sheet, type));
   }
 
-  const traces = plotType ? buildTraces(config, chartData, theme.colors, theme.bg) : [];
   const grouped = Boolean(config?.groupColumn);
   const xOptions = plotType ? columnsOfTypes(sheet, plotType.xTypes) : [];
   const yOptions = plotType?.needsY

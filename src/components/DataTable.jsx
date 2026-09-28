@@ -14,12 +14,11 @@ import { DEFAULT_DATE_FORMAT } from "../utils/columnTypes";
 import { Copy, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import ColumnSettings from "./ColumnSettings";
+import { useScrollPercent } from "../hooks/useScrollPercent";
 import {
   CELL_COPY_FEEDBACK_MS,
   ICON_SIZE_COMPACT,
-  PERCENT_MULTIPLIER,
   ROW_HEIGHT_CHANGE_THRESHOLD_PX,
-  SCROLL_PROGRESS_VISIBLE_MS,
   SOURCE_DATA_LINE_OFFSET,
   SOURCE_HEADER_LINE,
 } from "../constants";
@@ -40,7 +39,6 @@ function DataTable() {
     (state) => state.toggleColumnSelection,
   );
   const setHoveredColumn = useAppStore((state) => state.setHoveredColumn);
-  const setScrollPercent = useAppStore((state) => state.setScrollPercent);
   const activeSearchMatch = useAppStore((state) => state.activeSearchMatch);
   const searchVersion = useAppStore((state) => state.searchVersion);
   const showError = useAppStore((state) => state.showError);
@@ -52,13 +50,14 @@ function DataTable() {
   const [page, setPage] = useState({ offset: 0, rows: [], matches: [] });
   const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT);
   const [copiedCellKey, setCopiedCellKey] = useState(null);
-  const [cellHoverEnabled, setCellHoverEnabled] = useState(true);
   const tableRef = useRef(null);
   const thRefs = useRef({});
   const pivotSuperHeaderRef = useRef(null);
   const copyFeedbackTimeoutRef = useRef(null);
   const pointerPositionRef = useRef(null);
   const [pivotSuperHeaderHeight, setPivotSuperHeaderHeight] = useState(0);
+
+  useScrollPercent(tableRef, null, sheet?.datasetId);
 
   useEffect(() => {
     if (!openColumn) return;
@@ -72,6 +71,7 @@ function DataTable() {
   useEffect(() => {
     setRowRange(EMPTY_ROW_RANGE);
     setPage({ offset: 0, rows: [], matches: [] });
+    tableRef.current?.classList.remove("cell-hover-disabled");
     tableRef.current?.parentElement?.scrollTo({ top: 0 });
   }, [sheet?.datasetId]);
 
@@ -83,21 +83,6 @@ function DataTable() {
   useEffect(() => {
     const scroller = tableRef.current?.parentElement;
     if (!scroller || !sheet) return undefined;
-    let lastScrollTop = scroller.scrollTop;
-    let hideScrollPercentTimeout;
-    function updateScrollPercent() {
-      if (scroller.scrollTop === lastScrollTop) return;
-      lastScrollTop = scroller.scrollTop;
-      const scrollableHeight = scroller.scrollHeight - scroller.clientHeight;
-      setScrollPercent(
-        Math.round((scroller.scrollTop / scrollableHeight) * PERCENT_MULTIPLIER),
-      );
-      window.clearTimeout(hideScrollPercentTimeout);
-      hideScrollPercentTimeout = window.setTimeout(
-        () => setScrollPercent(null),
-        SCROLL_PROGRESS_VISIBLE_MS,
-      );
-    }
     function updateRange() {
       setRowRange((currentRange) =>
         calculateRowRange({
@@ -110,9 +95,8 @@ function DataTable() {
       );
     }
     function handleScroll() {
-      setCellHoverEnabled(false);
+      tableRef.current?.classList.add("cell-hover-disabled");
       updateRange();
-      updateScrollPercent();
     }
     updateRange();
     const observer = new ResizeObserver(updateRange);
@@ -121,10 +105,8 @@ function DataTable() {
     return () => {
       observer.disconnect();
       scroller.removeEventListener("scroll", handleScroll);
-      window.clearTimeout(hideScrollPercentTimeout);
-      setScrollPercent(null);
     };
-  }, [sheet?.datasetId, sheet?.rowCount, rowHeight, setScrollPercent]);
+  }, [sheet?.datasetId, sheet?.rowCount, rowHeight]);
 
   useEffect(() => {
     if (!sheet || rowRange.limit === 0) return undefined;
@@ -371,20 +353,17 @@ function DataTable() {
 
   return (
     <table
-      className={`data-table${sheet.pivotTable ? " pivot-table" : ""}${cellHoverEnabled ? " cell-hover-enabled" : ""}`}
+      className={`data-table${sheet.pivotTable ? " pivot-table" : ""}`}
       ref={tableRef}
       onPointerMove={(event) => {
         const previous = pointerPositionRef.current;
-        pointerPositionRef.current = {
-          x: event.clientX,
-          y: event.clientY,
-        };
+        pointerPositionRef.current = { x: event.clientX, y: event.clientY };
         if (
           !previous ||
           previous.x !== event.clientX ||
           previous.y !== event.clientY
         ) {
-          setCellHoverEnabled(true);
+          tableRef.current?.classList.remove("cell-hover-disabled");
         }
       }}
     >

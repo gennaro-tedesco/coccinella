@@ -33,79 +33,29 @@ function numericValue(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function correlation(left, right) {
-  const pairs = left
-    .map((value, index) => [numericValue(value), numericValue(right[index])])
-    .filter(([leftValue, rightValue]) => leftValue !== null && rightValue !== null);
-  if (pairs.length < TWO) return null;
-  const leftMean = AGG_FUNCS.mean(pairs.map(([value]) => value));
-  const rightMean = AGG_FUNCS.mean(pairs.map(([, value]) => value));
-  let numerator = ZERO;
-  let leftSquared = ZERO;
-  let rightSquared = ZERO;
-  pairs.forEach(([leftValue, rightValue]) => {
-    const leftDifference = leftValue - leftMean;
-    const rightDifference = rightValue - rightMean;
-    numerator += leftDifference * rightDifference;
-    leftSquared += leftDifference ** TWO;
-    rightSquared += rightDifference ** TWO;
-  });
-  const denominator = Math.sqrt(leftSquared * rightSquared);
-  return denominator === ZERO ? null : numerator / denominator;
-}
-
-function buildAggregatedHeatmap(config, xValues, yValues, color, gapColor) {
-  const axisYValues = yValues[ZERO];
-  const valueValues = yValues[ONE];
-  if (!axisYValues || !valueValues) return [];
-  const xCategories = [...new Set(xValues)];
-  const yCategories = [...new Set(axisYValues)];
-  const buckets = new Map();
-  xValues.forEach((xValue, index) => {
-    const number = numericValue(valueValues[index]);
-    if (number === null) return;
-    const key = JSON.stringify([xValue, axisYValues[index]]);
-    const values = buckets.get(key) ?? [];
-    values.push(number);
-    buckets.set(key, values);
-  });
-  const aggregate = AGG_FUNCS[config.aggFunc] ?? AGG_FUNCS.mean;
+function buildHeatmapGrid(config, xValues, yValues, zValues, palette, startIndex, gapColor) {
+  if (!zValues) return [];
+  const correlation = config.heatmapMode === "correlation";
   const xLabel = config.transpose ? config.yColumn : config.xColumn;
   const yLabel = config.transpose ? config.xColumn : config.yColumn;
   return [{
-    x: xCategories,
-    y: yCategories,
-    z: yCategories.map((yValue) =>
-      xCategories.map((xValue) => {
-        const values = buckets.get(JSON.stringify([xValue, yValue]));
-        return values ? aggregate(values) : null;
-      })
-    ),
+    x: xValues,
+    y: yValues,
+    z: zValues,
     type: "heatmap",
-    colorscale: [[ZERO, gapColor], [ONE, color]],
+    zmin: correlation ? -ONE : undefined,
+    zmax: correlation ? ONE : undefined,
+    colorscale: correlation
+      ? [
+          [ZERO, palette[(startIndex + ONE) % palette.length]],
+          [COLOR_SCALE_MIDPOINT, gapColor],
+          [ONE, palette[startIndex % palette.length]],
+        ]
+      : [[ZERO, gapColor], [ONE, palette[startIndex % palette.length]]],
     hoverongaps: false,
-    hovertemplate: `${xLabel}: %{x}<br>${yLabel}: %{y}<br>${config.valueColumn}: %{z}<extra></extra>`,
-  }];
-}
-
-function buildCorrelationHeatmap(config, xValues, yValues, palette, startIndex, gapColor) {
-  const columns = config.correlationColumns ?? [];
-  const values = [xValues, ...yValues];
-  if (columns.length < TWO || values.length !== columns.length) return [];
-  return [{
-    x: columns,
-    y: columns,
-    z: values.map((left) => values.map((right) => correlation(left, right))),
-    type: "heatmap",
-    zmin: -ONE,
-    zmax: ONE,
-    colorscale: [
-      [ZERO, palette[(startIndex + ONE) % palette.length]],
-      [COLOR_SCALE_MIDPOINT, gapColor],
-      [ONE, palette[startIndex % palette.length]],
-    ],
-    hoverongaps: false,
-    hovertemplate: "%{x} × %{y}<br>Correlation: %{z:.3f}<extra></extra>",
+    hovertemplate: correlation
+      ? "%{x} × %{y}<br>Correlation: %{z:.3f}<extra></extra>"
+      : `${xLabel}: %{x}<br>${yLabel}: %{y}<br>${config.valueColumn}: %{z}<extra></extra>`,
   }];
 }
 
@@ -127,7 +77,7 @@ function buildPivotHeatmap(config, xValues, yValues, color, gapColor) {
 }
 
 export function buildTraces(config, chartData, palette, gapColor) {
-  const { xValues, yValues, groupValues } = chartData;
+  const { xValues, yValues, zValues, groupValues } = chartData;
   const primaryYValues = yValues[ZERO];
   const grouped = Boolean(config.groupColumn) && groupValues;
   const groups = groupIndices(xValues.length, grouped ? groupValues : null);
@@ -218,9 +168,7 @@ export function buildTraces(config, chartData, palette, gapColor) {
     case "heatmap": {
       const traces = config.heatmapMode === "pivot"
         ? buildPivotHeatmap(config, xValues, yValues, colorFor(ZERO), gapColor)
-        : config.heatmapMode === "correlation"
-          ? buildCorrelationHeatmap(config, xValues, yValues, palette, startIndex, gapColor)
-          : buildAggregatedHeatmap(config, xValues, yValues, colorFor(ZERO), gapColor);
+        : buildHeatmapGrid(config, xValues, yValues, zValues, palette, startIndex, gapColor);
       if (!config.transpose) return traces;
       return traces.map((trace) => ({
         ...trace,
