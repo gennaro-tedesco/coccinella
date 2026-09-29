@@ -725,7 +725,7 @@ function App() {
 
   function handleGoToLine(line) {
     const content = contentRef.current;
-    const target = content?.querySelector(`[data-source-line="${line}"]`);
+    const target = content?.querySelector(`[data-row-index="${line - 1}"]`);
     if (!content) return;
     if (!target) {
       const rowHeight =
@@ -873,7 +873,7 @@ function App() {
       )}
       {goToLineOpen && csvDataMode && activeSheetId && (
         <GoToLine
-          maxLine={sheets[activeSheetId].rowCount + 1}
+          maxLine={sheets[activeSheetId].rowCount}
           onGoToLine={handleGoToLine}
           onClose={() => setGoToLineOpen(false)}
         />

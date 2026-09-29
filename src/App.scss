@@ -1606,6 +1606,11 @@ body,
   user-select: none;
 }
 
+.data-table:not(.pivot-table) th.row-index-cell {
+  padding: tokens.$padding-46 tokens.$padding-47;
+  text-align: center;
+}
+
 .data-table tbody tr.go-to-line-highlight td,
 .json-node-row.go-to-line-highlight {
   position: relative;

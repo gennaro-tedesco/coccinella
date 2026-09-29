@@ -520,7 +520,7 @@ function DataTable() {
               data-row-index={rowIndex}
               data-source-line={rowIndex + SOURCE_DATA_LINE_OFFSET}
             >
-              {showRowIndex && <td className="row-index-cell">{rowIndex}</td>}
+              {showRowIndex && <td className="row-index-cell">{rowIndex + 1}</td>}
               {row.getVisibleCells().map((cell) => {
                 const isSelected = selectedColumns.includes(cell.column.id);
                 const cellKey = `${rowIndex}:${cell.column.id}`;
