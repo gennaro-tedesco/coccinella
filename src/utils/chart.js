@@ -125,18 +125,23 @@ export function buildTraces(config, chartData, palette, gapColor) {
           const category = xValues[index];
           counts[category] = (counts[category] ?? ZERO) + ONE;
         });
+        const categories = Object.keys(counts);
+        const values = Object.values(counts);
         return {
-          x: Object.keys(counts),
-          y: Object.values(counts),
+          x: config.transpose ? values : categories,
+          y: config.transpose ? categories : values,
           type: "bar",
+          orientation: config.transpose ? "h" : undefined,
           marker: { color: colorFor(groupIndex) },
           name: grouped ? key : undefined,
         };
       });
     case "boxplot":
       return groupKeys.map((key, groupIndex) => ({
-        y: groups[key].map((index) => xValues[index]),
+        x: config.transpose ? groups[key].map((index) => xValues[index]) : undefined,
+        y: config.transpose ? undefined : groups[key].map((index) => xValues[index]),
         type: "box",
+        orientation: config.transpose ? "h" : undefined,
         name: grouped ? key : config.xColumn,
         boxpoints: config.showPoints ? "all" : undefined,
         jitter: config.showPoints ? 0.3 : undefined,

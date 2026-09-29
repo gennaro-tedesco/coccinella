@@ -452,7 +452,9 @@ function ChartBuilder({ fontSize, expanded }) {
     label: column,
   }));
   const correlationHeatmap = plotType?.id === "heatmap" && config.heatmapMode === "correlation";
-  const heatmapTransposed = plotType?.id === "heatmap" && Boolean(config.transpose);
+  const transposable =
+    plotType?.id === "heatmap" || plotType?.id === "countplot" || plotType?.id === "boxplot";
+  const axesTransposed = transposable && Boolean(config.transpose);
   const colorFieldOptions = theme.colors.map((hex, index) => ({
     value: index,
     render: () => (
@@ -477,13 +479,15 @@ function ChartBuilder({ fontSize, expanded }) {
       : correlationHeatmap
         ? ""
         : yAxisTitleFor(plotType, config);
-  const modeBarButtons = plotType?.id === "heatmap"
+  const modeBarButtons = transposable
     ? [[
         ...PLOT_MODE_BAR_BUTTONS[0],
         {
-          name: heatmapTransposed ? "Restore heatmap axes" : "Transpose heatmap axes",
+          name: axesTransposed
+            ? `Restore ${plotType.label.toLowerCase()} axes`
+            : `Transpose ${plotType.label.toLowerCase()} axes`,
           icon: Plotly.Icons["3d_rotate"],
-          click: () => updateConfig({ transpose: !heatmapTransposed }),
+          click: () => updateConfig({ transpose: !axesTransposed }),
         },
       ]]
     : PLOT_MODE_BAR_BUTTONS;
@@ -681,15 +685,18 @@ function ChartBuilder({ fontSize, expanded }) {
                     barmode: plotType.id === "stackedbar" ? (config.barMode ?? "stack") : "group",
                     showlegend: grouped || plotType.multipleY,
                     xaxis: {
-                      title: heatmapTransposed ? yAxisTitle : xAxisTitle,
+                      title: axesTransposed ? yAxisTitle : xAxisTitle,
                       autorange: true,
+                      dtick: plotType.id === "countplot" && axesTransposed ? 1 : undefined,
                       showgrid: false,
                       linecolor: theme.border,
                       zerolinecolor: theme.border,
                     },
                     yaxis: {
-                      title: heatmapTransposed ? xAxisTitle : yAxisTitle,
+                      title: axesTransposed ? xAxisTitle : yAxisTitle,
                       autorange: true,
+                      automargin: true,
+                      dtick: plotType.id === "countplot" && !axesTransposed ? 1 : undefined,
                       showgrid: false,
                       linecolor: theme.border,
                       zerolinecolor: theme.border,

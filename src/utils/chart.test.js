@@ -28,6 +28,25 @@ describe("chart aggregation", () => {
     ]);
   });
 
+  it("transposes count plot values and axes", () => {
+    const [trace] = buildTraces(
+      { chartType: "countplot", transpose: true },
+      {
+        xValues: ["A", "A", "B"],
+        yValues: [],
+        groupValues: null,
+      },
+      ["#111"],
+      "#000",
+    );
+
+    expect(trace).toMatchObject({
+      x: [2, 1],
+      y: ["A", "B"],
+      orientation: "h",
+    });
+  });
+
   it("includes every boxplot point when requested", () => {
     const [trace] = buildTraces(
       { chartType: "boxplot", xColumn: "score", showPoints: true },
@@ -44,6 +63,21 @@ describe("chart aggregation", () => {
       marker: { color: "#222" },
       line: { color: "#111" },
     });
+  });
+
+  it("transposes boxplot values and axes", () => {
+    const [trace] = buildTraces(
+      { chartType: "boxplot", xColumn: "score", transpose: true },
+      { xValues: [1, 2, 3], yValues: [], groupValues: null },
+      ["#111"],
+      "#000",
+    );
+
+    expect(trace).toMatchObject({
+      x: [1, 2, 3],
+      orientation: "h",
+    });
+    expect(trace.y).toBeUndefined();
   });
 
   it("builds ordered traces for each selected line-chart value", () => {
