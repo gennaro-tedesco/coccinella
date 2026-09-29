@@ -2122,6 +2122,8 @@ button:disabled {
   display: flex;
   flex-direction: column;
   width: tokens.$width-20;
+  height: tokens.$height-23;
+  font-size: tokens.$font-size-28;
   max-width: tokens.$max-width-7;
   max-height: tokens.$max-height-2;
   padding: tokens.$padding-90;
