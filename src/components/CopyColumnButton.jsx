@@ -8,6 +8,7 @@ let copyFeedbackTimeout;
 function CopyColumnButton({ sheet, column }) {
   const showError = useAppStore((state) => state.showError);
   const setCopiedColumn = useAppStore((state) => state.setCopiedColumn);
+  const copyWithQuotes = useAppStore((state) => state.copyWithQuotes);
 
   async function copyColumn(event) {
     event.stopPropagation();
@@ -15,6 +16,7 @@ function CopyColumnButton({ sheet, column }) {
       const text = await invoke("get_column_text", {
         datasetId: sheet.datasetId,
         column,
+        withQuotes: copyWithQuotes,
       });
       await navigator.clipboard.writeText(text);
       window.clearTimeout(copyFeedbackTimeout);

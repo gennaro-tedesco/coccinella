@@ -15,6 +15,7 @@ import { Copy, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import ColumnSettings from "./ColumnSettings";
 import CopyColumnButton from "./CopyColumnButton";
+import { formatCopiedValue } from "../utils/copyText";
 import { useScrollPercent } from "../hooks/useScrollPercent";
 import {
   CELL_COPY_FEEDBACK_MS,
@@ -44,6 +45,8 @@ function DataTable() {
   const activeSearchMatch = useAppStore((state) => state.activeSearchMatch);
   const searchVersion = useAppStore((state) => state.searchVersion);
   const showError = useAppStore((state) => state.showError);
+  const copyWithQuotes = useAppStore((state) => state.copyWithQuotes);
+  const showRowIndex = useAppStore((state) => state.showRowIndex);
   const setColumnWidth = useAppStore((state) => state.setColumnWidth);
   const resetColumnWidth = useAppStore((state) => state.resetColumnWidth);
   const [openColumn, setOpenColumn] = useState(null);
@@ -355,7 +358,7 @@ function DataTable() {
 
   return (
     <table
-      className={`data-table${sheet.pivotTable ? " pivot-table" : ""}`}
+      className={`data-table${sheet.pivotTable ? " pivot-table" : ""}${showRowIndex ? " show-row-index" : ""}`}
       ref={tableRef}
       onPointerMove={(event) => {
         const previous = pointerPositionRef.current;
@@ -372,6 +375,11 @@ function DataTable() {
       <thead data-source-line={SOURCE_HEADER_LINE}>
         {sheet.pivotTable && (
           <tr className="pivot-super-header" ref={pivotSuperHeaderRef}>
+            {showRowIndex && (
+              <th className="row-index-cell" rowSpan={2}>
+                #
+              </th>
+            )}
             <th className="th-cell">{sheet.pivotMeasureLabel}</th>
             <th className="th-cell" colSpan={table.getVisibleLeafColumns().length - 1}>
               {sheet.pivotColumnDimension}
@@ -380,6 +388,9 @@ function DataTable() {
         )}
         {table.getHeaderGroups().map((headerGroup) => (
           <tr key={headerGroup.id}>
+            {showRowIndex && !sheet.pivotTable && (
+              <th className="row-index-cell">#</th>
+            )}
             {headerGroup.headers.map((header) => {
               const isSelected = selectedColumns.includes(header.id);
               const isCopied =
@@ -495,7 +506,10 @@ function DataTable() {
       <tbody>
         {topSpacerHeight > 0 && (
           <tr className="virtual-spacer" aria-hidden="true">
-            <td colSpan={sheet.columns.length} style={{ height: topSpacerHeight }} />
+            <td
+              colSpan={table.getVisibleLeafColumns().length + Number(showRowIndex)}
+              style={{ height: topSpacerHeight }}
+            />
           </tr>
         )}
         {table.getRowModel().rows.map((row) => {
@@ -506,6 +520,7 @@ function DataTable() {
               data-row-index={rowIndex}
               data-source-line={rowIndex + SOURCE_DATA_LINE_OFFSET}
             >
+              {showRowIndex && <td className="row-index-cell">{rowIndex}</td>}
               {row.getVisibleCells().map((cell) => {
                 const isSelected = selectedColumns.includes(cell.column.id);
                 const cellKey = `${rowIndex}:${cell.column.id}`;
@@ -545,7 +560,9 @@ function DataTable() {
                         onClick={(event) => {
                           event.stopPropagation();
                           void navigator.clipboard
-                            .writeText(String(cell.getValue() ?? ""))
+                            .writeText(
+                              formatCopiedValue(cell.getValue(), copyWithQuotes),
+                            )
                             .then(() => {
                               window.clearTimeout(
                                 copyFeedbackTimeoutRef.current,
@@ -571,7 +588,7 @@ function DataTable() {
         {bottomSpacerHeight > 0 && (
           <tr className="virtual-spacer" aria-hidden="true">
             <td
-              colSpan={sheet.columns.length}
+              colSpan={table.getVisibleLeafColumns().length + Number(showRowIndex)}
               style={{ height: bottomSpacerHeight }}
             />
           </tr>

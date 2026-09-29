@@ -97,6 +97,7 @@ function App() {
   );
   const errorMessage = useAppStore((state) => state.errorMessage);
   const showError = useAppStore((state) => state.showError);
+  const fuzzyFindItemLimit = useAppStore((state) => state.fuzzyFindItemLimit);
   const clearError = useAppStore((state) => state.clearError);
   const createFilteredSheet = useAppStore(
     (state) => state.createFilteredSheet,
@@ -124,6 +125,11 @@ function App() {
   const fileScanRef = useRef(null);
   const csvFilesRef = useRef(null);
   const lastFileFinderInvocationRef = useRef(null);
+
+  useEffect(() => {
+    csvFilesRef.current = null;
+    lastFileFinderInvocationRef.current = null;
+  }, [fuzzyFindItemLimit]);
 
   useEffect(() => {
     applyThemeVariables(THEMES[theme], document.documentElement);
@@ -326,7 +332,10 @@ function App() {
           discoveredFiles.push(...files);
           if (!hasCachedFiles) setCsvFiles([...discoveredFiles]);
         };
-        const scan = invoke("list_data_files", { onFiles });
+        const scan = invoke("list_data_files", {
+          onFiles,
+          maxItems: fuzzyFindItemLimit,
+        });
         fileScanRef.current = scan;
         try {
           await scan;
@@ -711,6 +720,7 @@ function App() {
     canFilterFromSearch,
     createFilteredSheet,
     showError,
+    fuzzyFindItemLimit,
   ]);
 
   function handleGoToLine(line) {

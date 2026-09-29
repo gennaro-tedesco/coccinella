@@ -18,6 +18,8 @@ const OPERATIONS = [
   { id: "expression", label: "Expression" },
 ];
 
+const FUZZY_FIND_ITEM_LIMITS = [1000, 5000, 10000];
+
 const SHORTCUTS = [
   ["Show shortcuts", "F1"],
   ["Open file finder", "Ctrl+p"],
@@ -53,6 +55,8 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
   const [themeSubmenuOpen, setThemeSubmenuOpen] = useState(false);
   const [shortcutsSubmenuOpen, setShortcutsSubmenuOpen] = useState(false);
   const [aboutSubmenuOpen, setAboutSubmenuOpen] = useState(false);
+  const [settingsSubmenuOpen, setSettingsSubmenuOpen] = useState(false);
+  const [fuzzyLimitSubmenuOpen, setFuzzyLimitSubmenuOpen] = useState(false);
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
   const openSheet = useAppStore((state) => state.openSheet);
@@ -68,6 +72,12 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
   const showError = useAppStore((state) => state.showError);
   const shortcutsMenuOpen = useAppStore((state) => state.shortcutsMenuOpen);
   const closeShortcutsMenu = useAppStore((state) => state.closeShortcutsMenu);
+  const fuzzyFindItemLimit = useAppStore((state) => state.fuzzyFindItemLimit);
+  const setFuzzyFindItemLimit = useAppStore((state) => state.setFuzzyFindItemLimit);
+  const copyWithQuotes = useAppStore((state) => state.copyWithQuotes);
+  const setCopyWithQuotes = useAppStore((state) => state.setCopyWithQuotes);
+  const showRowIndex = useAppStore((state) => state.showRowIndex);
+  const setShowRowIndex = useAppStore((state) => state.setShowRowIndex);
 
   useEffect(() => {
     if (!shortcutsMenuOpen) return;
@@ -75,6 +85,8 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
     setOperationsSubmenuOpen(false);
     setThemeSubmenuOpen(false);
     setAboutSubmenuOpen(false);
+    setSettingsSubmenuOpen(false);
+    setFuzzyLimitSubmenuOpen(false);
     setShortcutsSubmenuOpen(true);
     closeShortcutsMenu();
   }, [shortcutsMenuOpen, closeShortcutsMenu]);
@@ -103,6 +115,8 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
           setThemeSubmenuOpen(false);
           setShortcutsSubmenuOpen(false);
           setAboutSubmenuOpen(false);
+          setSettingsSubmenuOpen(false);
+          setFuzzyLimitSubmenuOpen(false);
         }}
       >
         <button
@@ -115,6 +129,8 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
             setThemeSubmenuOpen(false);
             setShortcutsSubmenuOpen(false);
             setAboutSubmenuOpen(false);
+            setSettingsSubmenuOpen(false);
+            setFuzzyLimitSubmenuOpen(false);
           }}
         >
           <Menu />
@@ -159,6 +175,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
                 setThemeSubmenuOpen(false);
                 setShortcutsSubmenuOpen(false);
                 setAboutSubmenuOpen(false);
+                setSettingsSubmenuOpen(false);
               }}
               onMouseLeave={() => setOperationsSubmenuOpen(false)}
             >
@@ -194,10 +211,93 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
             <li
               className="has-submenu"
               onMouseEnter={() => {
+                setSettingsSubmenuOpen(true);
+                setOperationsSubmenuOpen(false);
+                setThemeSubmenuOpen(false);
+                setShortcutsSubmenuOpen(false);
+                setAboutSubmenuOpen(false);
+              }}
+              onMouseLeave={() => {
+                setSettingsSubmenuOpen(false);
+                setFuzzyLimitSubmenuOpen(false);
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setSettingsSubmenuOpen((open) => !open)}
+              >
+                <span>Settings</span>
+                <ChevronRight size={ICON_SIZE_MENU} />
+              </button>
+              {settingsSubmenuOpen && (
+                <ul className="file-menu-dropdown submenu settings-submenu">
+                  <li
+                    className="has-submenu"
+                    onMouseEnter={() => setFuzzyLimitSubmenuOpen(true)}
+                    onMouseLeave={() => setFuzzyLimitSubmenuOpen(false)}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setFuzzyLimitSubmenuOpen((open) => !open)}
+                    >
+                      <span>Fuzzy file limit</span>
+                      <span className="settings-menu-value">
+                        {fuzzyFindItemLimit}
+                        <ChevronRight size={ICON_SIZE_MENU} />
+                      </span>
+                    </button>
+                    {fuzzyLimitSubmenuOpen && (
+                      <ul className="file-menu-dropdown submenu">
+                        {FUZZY_FIND_ITEM_LIMITS.map((limit) => (
+                          <li key={limit}>
+                            <button
+                              type="button"
+                              className={limit === fuzzyFindItemLimit ? "active" : ""}
+                              onClick={() => {
+                                setFuzzyFindItemLimit(limit);
+                                setMenuOpen(false);
+                                setSettingsSubmenuOpen(false);
+                                setFuzzyLimitSubmenuOpen(false);
+                              }}
+                            >
+                              {limit}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                  <li>
+                    <label className="settings-menu-checkbox">
+                      <span>Copy with quotes</span>
+                      <input
+                        type="checkbox"
+                        checked={copyWithQuotes}
+                        onChange={(event) => setCopyWithQuotes(event.target.checked)}
+                      />
+                    </label>
+                  </li>
+                  <li>
+                    <label className="settings-menu-checkbox">
+                      <span>Show row index</span>
+                      <input
+                        type="checkbox"
+                        checked={showRowIndex}
+                        onChange={(event) => setShowRowIndex(event.target.checked)}
+                      />
+                    </label>
+                  </li>
+                </ul>
+              )}
+            </li>
+            <li
+              className="has-submenu"
+              onMouseEnter={() => {
                 setThemeSubmenuOpen(true);
                 setOperationsSubmenuOpen(false);
                 setShortcutsSubmenuOpen(false);
                 setAboutSubmenuOpen(false);
+                setSettingsSubmenuOpen(false);
               }}
               onMouseLeave={() => setThemeSubmenuOpen(false)}
             >
@@ -239,6 +339,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
                 setOperationsSubmenuOpen(false);
                 setThemeSubmenuOpen(false);
                 setAboutSubmenuOpen(false);
+                setSettingsSubmenuOpen(false);
               }}
               onMouseLeave={() => setShortcutsSubmenuOpen(false)}
             >
@@ -270,6 +371,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
                 setOperationsSubmenuOpen(false);
                 setThemeSubmenuOpen(false);
                 setShortcutsSubmenuOpen(false);
+                setSettingsSubmenuOpen(false);
               }}
               onMouseLeave={() => setAboutSubmenuOpen(false)}
             >

@@ -5,6 +5,7 @@ import { create } from "zustand";
 import {
   BLANK_VALUE_LABEL,
   DEFAULT_COLUMN_PRECISION,
+  DEFAULT_FUZZY_FIND_ITEM_LIMIT,
   EXPRESSION_NO_MATCHES_MESSAGE,
 } from "../constants";
 import { descendantSheetIds } from "../utils/sheets";
@@ -69,6 +70,13 @@ export const useAppStore = create((set, get) => ({
   setTheme: (theme) => set({ theme }),
   previewTheme: null,
   setPreviewTheme: (previewTheme) => set({ previewTheme }),
+
+  fuzzyFindItemLimit: DEFAULT_FUZZY_FIND_ITEM_LIMIT,
+  setFuzzyFindItemLimit: (fuzzyFindItemLimit) => set({ fuzzyFindItemLimit }),
+  copyWithQuotes: false,
+  setCopyWithQuotes: (copyWithQuotes) => set({ copyWithQuotes }),
+  showRowIndex: false,
+  setShowRowIndex: (showRowIndex) => set({ showRowIndex }),
 
   sheetPanelOpen: true,
   toggleSheetPanel: () =>

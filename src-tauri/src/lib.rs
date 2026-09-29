@@ -30,7 +30,6 @@ const MAX_CSV_FIELDS: usize = 10_000_000;
 const MAX_CSV_COLUMNS: usize = 10_000;
 const TYPE_INFERENCE_ROWS: usize = 10_000;
 const MAX_CHART_POINTS: usize = 100_000;
-const MAX_INDEXED_FILES: usize = 1_000;
 const FILE_DISCOVERY_BATCH_SIZE: usize = 50;
 const LOAD_PROGRESS_INTERVAL_BYTES: u64 = 1024 * 1024;
 const ESTIMATED_MEMORY_MULTIPLIER: u64 = 2;
@@ -2403,17 +2402,30 @@ async fn get_rows(
     })
 }
 
-fn column_text(rows: &PackedRows, order: &[RowIndex], column_index: usize) -> String {
+fn copied_value(value: &str, with_quotes: bool) -> String {
+    if with_quotes {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_owned()
+    }
+}
+
+fn column_text(
+    rows: &PackedRows,
+    order: &[RowIndex],
+    column_index: usize,
+    with_quotes: bool,
+) -> String {
     let mut values = order
         .iter()
         .map(|row_index| rows.cell(*row_index as usize, column_index));
     let Some(first) = values.next() else {
         return String::new();
     };
-    let mut text = first.to_owned();
+    let mut text = copied_value(first, with_quotes);
     for value in values {
         text.push(COLUMN_COPY_SEPARATOR);
-        text.push_str(value);
+        text.push_str(&copied_value(value, with_quotes));
     }
     text
 }
@@ -2422,6 +2434,7 @@ fn column_text(rows: &PackedRows, order: &[RowIndex], column_index: usize) -> St
 async fn get_column_text(
     dataset_id: String,
     column: String,
+    with_quotes: bool,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let handle = dataset(&state, &dataset_id)?;
@@ -2438,9 +2451,11 @@ async fn get_column_text(
             column_index,
         )
     };
-    tauri::async_runtime::spawn_blocking(move || column_text(&rows, &order, column_index))
-        .await
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        column_text(&rows, &order, column_index, with_quotes)
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -3043,12 +3058,13 @@ async fn save_csv_file_dialog(
 async fn list_data_files(
     app: AppHandle,
     on_files: Channel<Vec<FileCandidate>>,
+    max_items: usize,
 ) -> Result<(), String> {
     let home = dirs::home_dir().ok_or("Home directory not found")?;
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut next_scan_tokens = HashSet::new();
-        let result = discover_data_files(&home, MAX_INDEXED_FILES, |paths| {
+        let result = discover_data_files(&home, max_items, |paths| {
             let state = app.state::<AppState>();
             let mut indexed_paths = state
                 .indexed_paths
@@ -3336,7 +3352,8 @@ mod tests {
     fn joins_column_values_in_row_order() {
         let rows = packed_rows(&[&["a", "1"], &["b", ""], &["c", "3"]]);
 
-        assert_eq!(column_text(&rows, &[2, 0, 1], 1), "3,1,");
+        assert_eq!(column_text(&rows, &[2, 0, 1], 1, false), "3,1,");
+        assert_eq!(column_text(&rows, &[2, 0, 1], 1, true), "\"3\",\"1\",\"\"");
     }
 
     #[test]
@@ -3844,7 +3861,7 @@ mod tests {
         std::fs::write(hidden.join("hidden.csv"), "id\n5\n").expect("write hidden fixture");
 
         let mut batches = Vec::new();
-        discover_data_files(&root, MAX_INDEXED_FILES, |paths| {
+        discover_data_files(&root, usize::MAX, |paths| {
             batches.push(paths);
             Ok(())
         })
@@ -3900,7 +3917,6 @@ mod tests {
         .expect("discover fixture files");
         std::fs::remove_dir_all(&root).expect("remove fixture directory");
 
-        assert_eq!(MAX_INDEXED_FILES, 1_000);
         assert_eq!(batch_lengths, [FILE_DISCOVERY_BATCH_SIZE, 2]);
     }
 
