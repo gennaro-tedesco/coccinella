@@ -51,6 +51,7 @@ const VARIANCE_POWER: i32 = 2;
 const GENERATION_STEP: u64 = 1;
 const COLUMN_PLACEHOLDER: char = '$';
 const COLUMN_VARIABLE_PREFIX: &str = "column_";
+const COLUMN_COPY_SEPARATOR: char = ',';
 
 type DatasetHandle = Arc<Mutex<Dataset>>;
 type DatasetStore = HashMap<String, DatasetHandle>;
@@ -2402,6 +2403,46 @@ async fn get_rows(
     })
 }
 
+fn column_text(rows: &PackedRows, order: &[RowIndex], column_index: usize) -> String {
+    let mut values = order
+        .iter()
+        .map(|row_index| rows.cell(*row_index as usize, column_index));
+    let Some(first) = values.next() else {
+        return String::new();
+    };
+    let mut text = first.to_owned();
+    for value in values {
+        text.push(COLUMN_COPY_SEPARATOR);
+        text.push_str(value);
+    }
+    text
+}
+
+#[tauri::command]
+async fn get_column_text(
+    dataset_id: String,
+    column: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let handle = dataset(&state, &dataset_id)?;
+    let (rows, order, column_index) = {
+        let dataset = lock_dataset(&handle)?;
+        let column_index = dataset
+            .columns
+            .iter()
+            .position(|name| name == &column)
+            .ok_or("Column not found")?;
+        (
+            Arc::clone(&dataset.rows),
+            Arc::clone(&dataset.order),
+            column_index,
+        )
+    };
+    tauri::async_runtime::spawn_blocking(move || column_text(&rows, &order, column_index))
+        .await
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 async fn sort_dataset(
     dataset_id: String,
@@ -3217,6 +3258,7 @@ pub fn run() {
             create_column_dataset,
             close_dataset,
             get_rows,
+            get_column_text,
             sort_dataset,
             invalidate_search,
             search_dataset,
@@ -3288,6 +3330,13 @@ mod tests {
             .iter()
             .map(|row| dataset.rows.row_owned(*row as usize))
             .collect()
+    }
+
+    #[test]
+    fn joins_column_values_in_row_order() {
+        let rows = packed_rows(&[&["a", "1"], &["b", ""], &["c", "3"]]);
+
+        assert_eq!(column_text(&rows, &[2, 0, 1], 1), "3,1,");
     }
 
     #[test]

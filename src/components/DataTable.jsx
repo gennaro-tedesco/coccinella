@@ -14,6 +14,7 @@ import { DEFAULT_DATE_FORMAT } from "../utils/columnTypes";
 import { Copy, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import ColumnSettings from "./ColumnSettings";
+import CopyColumnButton from "./CopyColumnButton";
 import { useScrollPercent } from "../hooks/useScrollPercent";
 import {
   CELL_COPY_FEEDBACK_MS,
@@ -39,6 +40,7 @@ function DataTable() {
     (state) => state.toggleColumnSelection,
   );
   const setHoveredColumn = useAppStore((state) => state.setHoveredColumn);
+  const copiedColumn = useAppStore((state) => state.copiedColumn);
   const activeSearchMatch = useAppStore((state) => state.activeSearchMatch);
   const searchVersion = useAppStore((state) => state.searchVersion);
   const showError = useAppStore((state) => state.showError);
@@ -380,6 +382,9 @@ function DataTable() {
           <tr key={headerGroup.id}>
             {headerGroup.headers.map((header) => {
               const isSelected = selectedColumns.includes(header.id);
+              const isCopied =
+                copiedColumn?.datasetId === sheet.datasetId &&
+                copiedColumn.column === header.id;
               const sortDirection = header.column.getIsSorted();
               const sortIndex = header.column.getSortIndex();
               const ariaSort =
@@ -396,7 +401,7 @@ function DataTable() {
               return (
                 <th
                   key={header.id}
-                  className={`th-cell${isSelected ? " selected" : ""}${sheet.pivotDimensions?.includes(header.id) ? " pivot-dimension" : ""}${fittedWidth !== undefined ? " fitted" : ""}`}
+                  className={`th-cell${isSelected ? " selected" : ""}${isCopied ? " copied" : ""}${sheet.pivotDimensions?.includes(header.id) ? " pivot-dimension" : ""}${fittedWidth !== undefined ? " fitted" : ""}`}
                   ref={(element) => {
                     thRefs.current[header.id] = element;
                   }}
@@ -436,6 +441,7 @@ function DataTable() {
                         )}
                       </span>
                     </span>
+                    <CopyColumnButton sheet={sheet} column={header.id} />
                     <button
                       type="button"
                       className="th-settings-trigger"
@@ -512,6 +518,9 @@ function DataTable() {
                   isMatch && "search-match",
                   isActiveMatch && "search-match-active",
                   copiedCellKey === cellKey && "copied",
+                  copiedColumn?.datasetId === sheet.datasetId &&
+                    copiedColumn.column === cell.column.id &&
+                    "copied",
                   sheet.columnWidths?.[cell.column.id] !== undefined && "fitted",
                   sheet.pivotDimensions?.includes(cell.column.id) && "pivot-dimension",
                 ]

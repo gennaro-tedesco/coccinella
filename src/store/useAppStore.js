@@ -79,6 +79,8 @@ export const useAppStore = create((set, get) => ({
     set((state) => ({ columnPanelOpen: !state.columnPanelOpen })),
   hoveredColumn: null,
   setHoveredColumn: (column) => set({ hoveredColumn: column }),
+  copiedColumn: null,
+  setCopiedColumn: (copiedColumn) => set({ copiedColumn }),
   scrollPercent: null,
   setScrollPercent: (scrollPercent) => set({ scrollPercent }),
   jsonNavigation: null,

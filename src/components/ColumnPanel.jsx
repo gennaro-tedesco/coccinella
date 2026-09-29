@@ -7,6 +7,7 @@ import { formatBytes } from "../utils/stats";
 import { rescanCsvFile } from "../utils/openFile";
 import ColumnStats from "./ColumnStats";
 import ColumnSettings from "./ColumnSettings";
+import CopyColumnButton from "./CopyColumnButton";
 import ScrollPercent from "./ScrollPercent";
 import {
   COLUMN_DRAG_THRESHOLD_PX,
@@ -320,6 +321,7 @@ function ColumnPanel() {
               >
                 {column}
               </button>
+              <CopyColumnButton sheet={sheet} column={column} />
               <button
                 type="button"
                 className="th-settings-trigger"

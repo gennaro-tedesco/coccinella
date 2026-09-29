@@ -1283,7 +1283,8 @@ body,
   text-overflow: ellipsis;
 }
 
-.th-settings-trigger {
+.th-settings-trigger,
+.column-copy-trigger {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1294,12 +1295,18 @@ body,
   opacity: tokens.$opacity-9;
 }
 
-.th-cell:hover .th-settings-trigger {
+.th-cell:hover .th-settings-trigger,
+.th-cell:hover .column-copy-trigger {
   opacity: tokens.$opacity-10;
 }
 
-.th-settings-trigger:hover {
+.th-settings-trigger:hover,
+.column-copy-trigger:hover {
   opacity: tokens.$opacity-11 !important;
+}
+
+.column-copy-trigger {
+  margin-left: auto;
 }
 
 .column-settings-popover {
@@ -1339,16 +1346,21 @@ body,
   right: tokens.$right-3;
 }
 
+.column-row:has(.column-settings-layer),
+.th-cell:has(.column-settings-layer) {
+  anchor-name: --column-settings-edge;
+}
+
 .column-row:has(.column-settings-layer) .th-settings-trigger,
 .th-cell:has(.column-settings-layer) .th-settings-trigger {
-  anchor-name: --column-settings-anchor;
+  anchor-name: --column-settings-trigger;
 }
 
 .column-settings-layer {
-  position-anchor: --column-settings-anchor;
+  position-anchor: --column-settings-trigger;
   inset: auto;
   top: anchor(bottom);
-  right: anchor(right);
+  right: anchor(--column-settings-edge right);
   margin: tokens.$margin-1;
   padding: tokens.$padding-15;
   border: none;
@@ -1478,7 +1490,8 @@ body,
 }
 
 .data-table td.copied .cell-value,
-.data-table td.copied .cell-copy-trigger {
+.data-table th.copied .th-label,
+.data-table th.copied .column-copy-trigger {
   color: var(--accent);
   animation: cell-copy-feedback tokens.$animation-duration-2 ease-in-out;
 }
@@ -1496,7 +1509,8 @@ body,
 
 @media (prefers-reduced-motion: reduce) {
   .data-table td.copied .cell-value,
-  .data-table td.copied .cell-copy-trigger {
+  .data-table th.copied .th-label,
+  .data-table th.copied .column-copy-trigger {
     animation: none;
   }
 }
@@ -1698,7 +1712,8 @@ body,
   gap: tokens.$gap-20;
 }
 
-.column-row:hover .th-settings-trigger {
+.column-row:hover .th-settings-trigger,
+.column-row:hover .column-copy-trigger {
   opacity: tokens.$opacity-17;
 }
 
