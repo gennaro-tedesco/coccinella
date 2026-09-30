@@ -377,9 +377,11 @@ enum FileKind {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct FileCandidate {
     token: String,
     path: String,
+    source_path: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -598,9 +600,11 @@ fn queue_opened_files(urls: &[tauri::Url], state: &AppState) -> Result<usize, St
             .next_path_token
             .fetch_add(1, AtomicOrdering::Relaxed)
             .to_string();
+        let source_path = path.to_string_lossy().into_owned();
         pending_open_files.push(FileCandidate {
             token: token.clone(),
-            path: path.to_string_lossy().into_owned(),
+            path: source_path.clone(),
+            source_path,
         });
         indexed_paths.insert(token, path);
     }
@@ -1963,13 +1967,9 @@ fn commit_search(
 
 #[tauri::command]
 async fn open_file_dialog(
-    separator: String,
-    operation_id: String,
-    on_progress: Channel<LoadProgress>,
     app: AppHandle,
     state: State<'_, AppState>,
-) -> Result<Option<OpenedFile>, String> {
-    let separator = separator_byte(&separator)?;
+) -> Result<Option<FileCandidate>, String> {
     let file = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
@@ -1982,9 +1982,21 @@ async fn open_file_dialog(
         return Ok(None);
     };
     let path = file.into_path().map_err(|error| error.to_string())?;
-    Ok(Some(
-        open_file_at_path(path, separator, operation_id, on_progress, &state).await?,
-    ))
+    let token = state
+        .next_path_token
+        .fetch_add(1, AtomicOrdering::Relaxed)
+        .to_string();
+    let source_path = path.to_string_lossy().into_owned();
+    state
+        .indexed_paths
+        .lock()
+        .map_err(|error| error.to_string())?
+        .insert(token.clone(), path);
+    Ok(Some(FileCandidate {
+        token,
+        path: source_path.clone(),
+        source_path,
+    }))
 }
 
 #[tauri::command]
@@ -3183,12 +3195,14 @@ async fn list_data_files(
                         .next_path_token
                         .fetch_add(1, AtomicOrdering::Relaxed)
                         .to_string();
+                    let source_path = path.to_string_lossy().into_owned();
                     let display_path = shorten_home_path(&path, &home);
                     indexed_paths.insert(token.clone(), path.clone());
                     next_scan_tokens.insert(token.clone());
                     FileCandidate {
                         token,
                         path: display_path,
+                        source_path,
                     }
                 })
                 .collect();

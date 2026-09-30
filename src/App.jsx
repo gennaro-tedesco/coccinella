@@ -915,6 +915,14 @@ function App() {
             setFinder(null);
             void openFileAtPath(candidate, openSheet, openJson).catch(showError);
           }}
+          onSelectMany={(candidates) => {
+            setFinder(null);
+            void (async () => {
+              for (const candidate of candidates) {
+                await openFileAtPath(candidate, openSheet, openJson);
+              }
+            })().catch(showError);
+          }}
           onClose={() => setFinder(null)}
         />
       )}

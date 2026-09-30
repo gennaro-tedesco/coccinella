@@ -51,11 +51,20 @@ function renderHighlighted(text, offset, indices) {
   return nodes;
 }
 
-function FuzzyFinder({ placeholder, items, getLabel, getGroup, onSelect, onClose }) {
+function FuzzyFinder({
+  placeholder,
+  items,
+  getLabel,
+  getGroup,
+  onSelect,
+  onSelectMany,
+  onClose,
+}) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const [matches, setMatches] = useState(items);
   const [indicesByLabel, setIndicesByLabel] = useState(new Map());
+  const [selectedItems, setSelectedItems] = useState(new Map());
   const inputRef = useRef(null);
   const activeItemRef = useRef(null);
   const keyboardNavigationRef = useRef(false);
@@ -91,6 +100,7 @@ function FuzzyFinder({ placeholder, items, getLabel, getGroup, onSelect, onClose
             nextMatches.push(item);
             nextIndices.set(result.text, result.indices);
           }
+          setActiveIndex(0);
           setMatches(nextMatches);
           setIndicesByLabel(nextIndices);
         })
@@ -155,9 +165,27 @@ function FuzzyFinder({ placeholder, items, getLabel, getGroup, onSelect, onClose
       const nextIndex = Math.max(activeIndex - 1, 0);
       keyboardNavigationRef.current = nextIndex !== activeIndex;
       setActiveIndex(nextIndex);
+    } else if (event.key === "Tab" && onSelectMany) {
+      event.preventDefault();
+      const item = matches[activeIndex];
+      if (!item) return;
+      const label = getLabel(item);
+      setSelectedItems((current) => {
+        const next = new Map(current);
+        if (next.has(label)) next.delete(label);
+        else next.set(label, item);
+        return next;
+      });
+      const nextIndex = Math.min(activeIndex + 1, matches.length - 1);
+      keyboardNavigationRef.current = nextIndex !== activeIndex;
+      setActiveIndex(nextIndex);
     } else if (event.key === "Enter") {
       event.preventDefault();
-      if (matches[activeIndex]) onSelect(matches[activeIndex]);
+      if (onSelectMany && selectedItems.size > 0) {
+        onSelectMany(Array.from(selectedItems.values()));
+      } else if (matches[activeIndex]) {
+        onSelect(matches[activeIndex]);
+      }
     }
   }
 
@@ -171,12 +199,18 @@ function FuzzyFinder({ placeholder, items, getLabel, getGroup, onSelect, onClose
         ref={index === activeIndex ? activeItemRef : null}
         type="button"
         className={"fuzzy-finder-item" + (index === activeIndex ? " active" : "")}
-        onMouseEnter={() => {
+        aria-pressed={onSelectMany ? selectedItems.has(label) : undefined}
+        onPointerMove={() => {
           keyboardNavigationRef.current = false;
           setActiveIndex(index);
         }}
         onClick={() => onSelect(item)}
       >
+        {selectedItems.has(label) && (
+          <span className="fuzzy-finder-selected-marker" aria-hidden="true">
+            ▶
+          </span>
+        )}
         {renderHighlighted(displayText, offset, indices)}
       </button>
     );

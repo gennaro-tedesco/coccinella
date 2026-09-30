@@ -15,13 +15,71 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import { useAppStore } from "../store/useAppStore";
-import { openFileAtPath } from "./openFile";
+import { openFile, openFileAtPath } from "./openFile";
 
 describe("file loading progress", () => {
   beforeEach(() => {
     channels.length = 0;
     invokeMock.mockReset();
-    useAppStore.setState({ fileLoadProgress: null });
+    useAppStore.setState({
+      fileLoadProgress: null,
+      sheets: {},
+      sheetOrder: [],
+      activeSheetId: null,
+      previousSheetId: null,
+    });
+  });
+
+  it("activates a file whose source path is already loaded", async () => {
+    useAppStore.setState({
+      sheets: {
+        dataset: {
+          id: "dataset",
+          path: "/tmp/people.csv",
+        },
+      },
+      sheetOrder: ["dataset"],
+    });
+    const openSheet = vi.fn();
+    const openJson = vi.fn();
+
+    await openFileAtPath(
+      {
+        token: "token",
+        path: "~/people.csv",
+        sourcePath: "/tmp/people.csv",
+      },
+      openSheet,
+      openJson,
+    );
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(openSheet).not.toHaveBeenCalled();
+    expect(openJson).not.toHaveBeenCalled();
+    expect(useAppStore.getState().activeSheetId).toBe("dataset");
+  });
+
+  it("activates a duplicate selected from the file dialog", async () => {
+    useAppStore.setState({
+      sheets: {
+        dataset: {
+          id: "dataset",
+          path: "/tmp/people.csv",
+        },
+      },
+      sheetOrder: ["dataset"],
+    });
+    invokeMock.mockResolvedValueOnce({
+      token: "token",
+      path: "/tmp/people.csv",
+      sourcePath: "/tmp/people.csv",
+    });
+
+    await openFile(vi.fn(), vi.fn());
+
+    expect(invokeMock).toHaveBeenCalledOnce();
+    expect(invokeMock).toHaveBeenCalledWith("open_file_dialog");
+    expect(useAppStore.getState().activeSheetId).toBe("dataset");
   });
 
   it("ignores progress delivered after the load completes", async () => {

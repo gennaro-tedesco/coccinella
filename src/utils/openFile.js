@@ -30,6 +30,15 @@ async function invokeFileOpen(command, args) {
 }
 
 export async function openFileAtPath(candidate, openSheet, openJson, separator) {
+  const sourcePath = candidate.sourcePath ?? candidate.path;
+  const state = useAppStore.getState();
+  const loadedSheet = Object.values(state.sheets).find(
+    (sheet) => sheet.path === sourcePath,
+  );
+  if (loadedSheet) {
+    state.setActiveSheetId(loadedSheet.id);
+    return;
+  }
   const opened = await invokeFileOpen("load_indexed_file", {
     token: candidate.token,
     separator: separator || ",",
@@ -43,8 +52,6 @@ export async function rescanCsvFile(datasetId, separator) {
 }
 
 export async function openFile(openSheet, openJson) {
-  const opened = await invokeFileOpen("open_file_dialog", {
-    separator: ",",
-  });
-  if (opened) addOpenedFile(opened, openSheet, openJson);
+  const candidate = await invoke("open_file_dialog");
+  if (candidate) await openFileAtPath(candidate, openSheet, openJson);
 }

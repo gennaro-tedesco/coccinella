@@ -1977,6 +1977,11 @@ button:disabled {
   background-color: var(--highlight);
 }
 
+.fuzzy-finder-selected-marker {
+  margin-right: tokens.$margin-right-1;
+  color: var(--accent);
+}
+
 .fuzzy-finder-empty {
   padding: tokens.$padding-74 tokens.$padding-75;
   color: var(--fg-dark);
