@@ -8,7 +8,7 @@ import {
 import { useAppStore } from "../store/useAppStore";
 import { openFile } from "../utils/openFile";
 import { THEMES, THEME_ORDER } from "../utils/themes";
-import { ICON_SIZE_MENU } from "../constants";
+import { COPY_QUOTE_OPTIONS, ICON_SIZE_MENU } from "../constants";
 import logo from "../assets/logo.png";
 
 const OPERATIONS = [
@@ -59,6 +59,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
   const [aboutSubmenuOpen, setAboutSubmenuOpen] = useState(false);
   const [settingsSubmenuOpen, setSettingsSubmenuOpen] = useState(false);
   const [fuzzyLimitSubmenuOpen, setFuzzyLimitSubmenuOpen] = useState(false);
+  const [quoteSubmenuOpen, setQuoteSubmenuOpen] = useState(false);
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
   const openSheet = useAppStore((state) => state.openSheet);
@@ -78,6 +79,8 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
   const setFuzzyFindItemLimit = useAppStore((state) => state.setFuzzyFindItemLimit);
   const copyWithQuotes = useAppStore((state) => state.copyWithQuotes);
   const setCopyWithQuotes = useAppStore((state) => state.setCopyWithQuotes);
+  const copyQuote = useAppStore((state) => state.copyQuote);
+  const setCopyQuote = useAppStore((state) => state.setCopyQuote);
   const showRowIndex = useAppStore((state) => state.showRowIndex);
   const setShowRowIndex = useAppStore((state) => state.setShowRowIndex);
 
@@ -89,6 +92,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
     setAboutSubmenuOpen(false);
     setSettingsSubmenuOpen(false);
     setFuzzyLimitSubmenuOpen(false);
+    setQuoteSubmenuOpen(false);
     setShortcutsSubmenuOpen(true);
     closeShortcutsMenu();
   }, [shortcutsMenuOpen, closeShortcutsMenu]);
@@ -119,6 +123,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
           setAboutSubmenuOpen(false);
           setSettingsSubmenuOpen(false);
           setFuzzyLimitSubmenuOpen(false);
+          setQuoteSubmenuOpen(false);
         }}
       >
         <button
@@ -133,6 +138,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
             setAboutSubmenuOpen(false);
             setSettingsSubmenuOpen(false);
             setFuzzyLimitSubmenuOpen(false);
+            setQuoteSubmenuOpen(false);
           }}
         >
           <Menu />
@@ -222,6 +228,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
               onMouseLeave={() => {
                 setSettingsSubmenuOpen(false);
                 setFuzzyLimitSubmenuOpen(false);
+                setQuoteSubmenuOpen(false);
               }}
             >
               <button
@@ -235,7 +242,10 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
                 <ul className="file-menu-dropdown submenu settings-submenu">
                   <li
                     className="has-submenu"
-                    onMouseEnter={() => setFuzzyLimitSubmenuOpen(true)}
+                    onMouseEnter={() => {
+                      setFuzzyLimitSubmenuOpen(true);
+                      setQuoteSubmenuOpen(false);
+                    }}
                     onMouseLeave={() => setFuzzyLimitSubmenuOpen(false)}
                   >
                     <button
@@ -269,15 +279,48 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
                       </ul>
                     )}
                   </li>
-                  <li>
+                  <li
+                    className={copyWithQuotes ? "has-submenu" : undefined}
+                    onMouseEnter={() => {
+                      setFuzzyLimitSubmenuOpen(false);
+                      if (copyWithQuotes) setQuoteSubmenuOpen(true);
+                    }}
+                    onMouseLeave={() => setQuoteSubmenuOpen(false)}
+                  >
                     <label className="settings-menu-checkbox">
                       <span>Copy with quotes</span>
-                      <input
-                        type="checkbox"
-                        checked={copyWithQuotes}
-                        onChange={(event) => setCopyWithQuotes(event.target.checked)}
-                      />
+                      <span className="settings-menu-value">
+                        {copyWithQuotes && <ChevronRight size={ICON_SIZE_MENU} />}
+                        <input
+                          type="checkbox"
+                          checked={copyWithQuotes}
+                          onChange={(event) => {
+                            setCopyWithQuotes(event.target.checked);
+                            setQuoteSubmenuOpen(event.target.checked);
+                          }}
+                        />
+                      </span>
                     </label>
+                    {copyWithQuotes && quoteSubmenuOpen && (
+                      <ul className="file-menu-dropdown submenu">
+                        {COPY_QUOTE_OPTIONS.map(({ value, label }) => (
+                          <li key={value}>
+                            <button
+                              type="button"
+                              className={value === copyQuote ? "active" : ""}
+                              onClick={() => {
+                                setCopyQuote(value);
+                                setMenuOpen(false);
+                                setSettingsSubmenuOpen(false);
+                                setQuoteSubmenuOpen(false);
+                              }}
+                            >
+                              {label}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </li>
                   <li>
                     <label className="settings-menu-checkbox">

@@ -142,6 +142,13 @@ body,
   margin-top: tokens.$margin-top-1;
 }
 
+.file-menu > .file-menu-dropdown li button,
+.file-menu > .file-menu-dropdown .settings-menu-checkbox,
+.file-menu > .file-menu-dropdown .shortcut-item,
+.file-menu > .file-menu-dropdown .about-item {
+  padding-block: tokens.$padding-13;
+}
+
 .file-menu-dropdown li button {
   display: block;
   width: tokens.$width-3;

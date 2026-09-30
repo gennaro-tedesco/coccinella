@@ -50,6 +50,7 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
   const searchVersion = useAppStore((state) => state.searchVersion);
   const showError = useAppStore((state) => state.showError);
   const copyWithQuotes = useAppStore((state) => state.copyWithQuotes);
+  const copyQuote = useAppStore((state) => state.copyQuote);
   const showRowIndex = useAppStore((state) => state.showRowIndex);
   const setColumnWidth = useAppStore((state) => state.setColumnWidth);
   const resetColumnWidth = useAppStore((state) => state.resetColumnWidth);
@@ -707,7 +708,10 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
                           event.stopPropagation();
                           void navigator.clipboard
                             .writeText(
-                              formatCopiedValue(cell.getValue(), copyWithQuotes),
+                              formatCopiedValue(
+                                cell.getValue(),
+                                copyWithQuotes ? copyQuote : null,
+                              ),
                             )
                             .then(() => {
                               window.clearTimeout(

@@ -1,4 +1,4 @@
-export function formatCopiedValue(value, withQuotes) {
+export function formatCopiedValue(value, quote) {
   const text = String(value ?? "");
-  return withQuotes ? `"${text.replaceAll('"', '""')}"` : text;
+  return quote ? `${quote}${text.replaceAll(quote, quote + quote)}${quote}` : text;
 }

@@ -51,6 +51,8 @@ const GENERATION_STEP: u64 = 1;
 const COLUMN_PLACEHOLDER: char = '$';
 const COLUMN_VARIABLE_PREFIX: &str = "column_";
 const COLUMN_COPY_SEPARATOR: char = ',';
+const MAX_COLUMN_COPY_BYTES: usize = 16 * 1024 * 1024;
+const COPY_QUOTES: [char; 2] = ['"', '\''];
 
 type DatasetHandle = Arc<Mutex<Dataset>>;
 type DatasetStore = HashMap<String, DatasetHandle>;
@@ -2287,7 +2289,7 @@ fn create_row_range_dataset(
         column_types,
         separator,
         size_bytes: 0,
-        source_id: Some(source_id),
+        source_id: Some(source_id.clone()),
         filter: Some(Filter::RowRange { start, end }),
         sorting: Vec::new(),
         search: None,
@@ -2297,7 +2299,11 @@ fn create_row_range_dataset(
         source_path: None,
     };
     let result = metadata(&id, &dataset);
-    datasets(&state)?.insert(id, Arc::new(Mutex::new(dataset)));
+    let mut store = datasets(&state)?;
+    if !store.contains_key(&source_id) {
+        return Err("Dataset not found".into());
+    }
+    store.insert(id, Arc::new(Mutex::new(dataset)));
     Ok(result)
 }
 
@@ -2396,13 +2402,11 @@ async fn create_column_dataset(
 
 #[tauri::command]
 fn close_dataset(dataset_id: String, state: State<'_, AppState>) -> Result<(), String> {
-    let candidates = {
-        let store = datasets(&state)?;
-        store
-            .iter()
-            .map(|(id, handle)| (id.clone(), Arc::clone(handle)))
-            .collect::<Vec<_>>()
-    };
+    let mut store = datasets(&state)?;
+    let candidates = store
+        .iter()
+        .map(|(id, handle)| (id.clone(), Arc::clone(handle)))
+        .collect::<Vec<_>>();
     let mut closed_ids = vec![dataset_id];
     let mut index = 0;
     while index < closed_ids.len() {
@@ -2415,7 +2419,6 @@ fn close_dataset(dataset_id: String, state: State<'_, AppState>) -> Result<(), S
         }
         index += 1;
     }
-    let mut store = datasets(&state)?;
     for id in closed_ids {
         store.remove(&id);
     }
@@ -2458,41 +2461,80 @@ async fn get_rows(
     })
 }
 
-fn copied_value(value: &str, with_quotes: bool) -> String {
-    if with_quotes {
-        format!("\"{}\"", value.replace('"', "\"\""))
-    } else {
-        value.to_owned()
+fn copy_quote(quote: Option<&str>) -> Result<Option<char>, String> {
+    let Some(quote) = quote else {
+        return Ok(None);
+    };
+    let mut characters = quote.chars();
+    let quote = characters.next().ok_or("Invalid copy quote")?;
+    if characters.next().is_some() || !COPY_QUOTES.contains(&quote) {
+        return Err("Invalid copy quote".into());
     }
+    Ok(Some(quote))
+}
+
+fn copied_value_len(value: &str, quote: Option<char>) -> Option<usize> {
+    if let Some(quote) = quote {
+        value
+            .len()
+            .checked_add(value.matches(quote).count())?
+            .checked_add(2)
+    } else {
+        Some(value.len())
+    }
+}
+
+fn push_copied_value(text: &mut String, value: &str, quote: Option<char>) {
+    let Some(quote) = quote else {
+        text.push_str(value);
+        return;
+    };
+    text.push(quote);
+    let mut remainder = value;
+    while let Some(index) = remainder.find(quote) {
+        text.push_str(&remainder[..index]);
+        text.push(quote);
+        text.push(quote);
+        remainder = &remainder[index + 1..];
+    }
+    text.push_str(remainder);
+    text.push(quote);
 }
 
 fn column_text(
     rows: &PackedRows,
     order: &[RowIndex],
     column_index: usize,
-    with_quotes: bool,
-) -> String {
-    let mut values = order
-        .iter()
-        .map(|row_index| rows.cell(*row_index as usize, column_index));
-    let Some(first) = values.next() else {
-        return String::new();
-    };
-    let mut text = copied_value(first, with_quotes);
-    for value in values {
-        text.push(COLUMN_COPY_SEPARATOR);
-        text.push_str(&copied_value(value, with_quotes));
+    quote: Option<char>,
+) -> Result<String, String> {
+    let mut text = String::new();
+    for (index, row_index) in order.iter().enumerate() {
+        let value = rows.cell(*row_index as usize, column_index);
+        let separator_len = usize::from(index > 0);
+        let next_len = text
+            .len()
+            .checked_add(separator_len)
+            .and_then(|length| length.checked_add(copied_value_len(value, quote)?))
+            .ok_or("Column is too large to copy")?;
+        if next_len > MAX_COLUMN_COPY_BYTES {
+            return Err("Column is too large to copy (maximum 16 MiB)".into());
+        }
+        if index > 0 {
+            text.push(COLUMN_COPY_SEPARATOR);
+        }
+        push_copied_value(&mut text, value, quote);
     }
-    text
+    Ok(text)
 }
 
 #[tauri::command]
 async fn get_column_text(
     dataset_id: String,
     column: String,
-    with_quotes: bool,
+    quote: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    let quote = copy_quote(quote.as_deref())?;
     let handle = dataset(&state, &dataset_id)?;
     let (rows, order, column_index) = {
         let dataset = lock_dataset(&handle)?;
@@ -2508,10 +2550,10 @@ async fn get_column_text(
         )
     };
     tauri::async_runtime::spawn_blocking(move || {
-        column_text(&rows, &order, column_index, with_quotes)
+        column_text(&rows, &order, column_index, quote)
     })
     .await
-    .map_err(|error| error.to_string())
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -3189,13 +3231,10 @@ fn discover_data_files(
     mut emit: impl FnMut(Vec<PathBuf>) -> Result<(), String>,
 ) -> Result<(), String> {
     let mut directories = VecDeque::from([home.to_path_buf()]);
-    let mut discovered_csv = 0;
-    let mut discovered_json = 0;
+    let mut discovered_files = 0;
     let mut batch = Vec::with_capacity(FILE_DISCOVERY_BATCH_SIZE);
-    let budgets_exhausted =
-        |csv: usize, json: usize| csv == max_files && json == max_files;
 
-    while !directories.is_empty() && !budgets_exhausted(discovered_csv, discovered_json) {
+    while !directories.is_empty() && discovered_files < max_files {
         let directories_at_depth = directories.len();
         for _ in 0..directories_at_depth {
             let directory = directories
@@ -3219,25 +3258,20 @@ fn discover_data_files(
                     directories.push_back(entry.path());
                 } else if file_type.is_file() {
                     let path = entry.path();
-                    let discovered = match file_kind(&path) {
-                        Some(FileKind::Csv) => &mut discovered_csv,
-                        Some(FileKind::Json) => &mut discovered_json,
-                        None => continue,
-                    };
-                    if *discovered == max_files {
+                    if file_kind(&path).is_none() {
                         continue;
                     }
-                    *discovered += 1;
+                    discovered_files += 1;
                     batch.push(path);
                     if batch.len() == FILE_DISCOVERY_BATCH_SIZE {
                         emit(std::mem::take(&mut batch))?;
                     }
-                    if budgets_exhausted(discovered_csv, discovered_json) {
+                    if discovered_files == max_files {
                         break;
                     }
                 }
             }
-            if budgets_exhausted(discovered_csv, discovered_json) {
+            if discovered_files == max_files {
                 break;
             }
         }
@@ -3408,9 +3442,33 @@ mod tests {
     #[test]
     fn joins_column_values_in_row_order() {
         let rows = packed_rows(&[&["a", "1"], &["b", ""], &["c", "3"]]);
+        let quoted_rows = packed_rows(&[&["a\"b"]]);
 
-        assert_eq!(column_text(&rows, &[2, 0, 1], 1, false), "3,1,");
-        assert_eq!(column_text(&rows, &[2, 0, 1], 1, true), "\"3\",\"1\",\"\"");
+        assert_eq!(column_text(&rows, &[2, 0, 1], 1, None).unwrap(), "3,1,");
+        assert_eq!(
+            column_text(&rows, &[2, 0, 1], 1, Some('"')).unwrap(),
+            "\"3\",\"1\",\"\""
+        );
+        assert_eq!(
+            column_text(&quoted_rows, &[0], 0, Some('"')).unwrap(),
+            "\"a\"\"b\""
+        );
+        assert_eq!(
+            column_text(&packed_rows(&[&["a'b"]]), &[0], 0, Some('\'')).unwrap(),
+            "'a''b'"
+        );
+        assert_eq!(copy_quote(Some("`")), Err("Invalid copy quote".into()));
+    }
+
+    #[test]
+    fn rejects_column_text_larger_than_the_clipboard_limit() {
+        let oversized = "x".repeat(MAX_COLUMN_COPY_BYTES + 1);
+        let rows = packed_rows(&[&[&oversized]]);
+
+        assert_eq!(
+            column_text(&rows, &[0], 0, None),
+            Err("Column is too large to copy (maximum 16 MiB)".into())
+        );
     }
 
     #[test]
@@ -3978,7 +4036,7 @@ mod tests {
     }
 
     #[test]
-    fn json_files_do_not_consume_the_csv_discovery_budget() {
+    fn csv_and_json_files_share_the_discovery_budget() {
         let root = std::env::temp_dir().join(format!(
             "coccinella-discovery-budget-{}-{}",
             std::process::id(),
@@ -3999,9 +4057,7 @@ mod tests {
         .expect("discover fixture files");
         std::fs::remove_dir_all(&root).expect("remove fixture directory");
 
-        let kinds: Vec<_> = paths.iter().filter_map(|path| file_kind(path)).collect();
-        assert_eq!(kinds.iter().filter(|kind| **kind == FileKind::Json).count(), 2);
-        assert_eq!(kinds.iter().filter(|kind| **kind == FileKind::Csv).count(), 1);
+        assert_eq!(paths.len(), 2);
     }
 
     #[cfg(target_os = "macos")]

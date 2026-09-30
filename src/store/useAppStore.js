@@ -5,6 +5,7 @@ import { create } from "zustand";
 import {
   BLANK_VALUE_LABEL,
   DEFAULT_COLUMN_PRECISION,
+  DEFAULT_COPY_QUOTE,
   DEFAULT_FUZZY_FIND_ITEM_LIMIT,
   EXPRESSION_NO_MATCHES_MESSAGE,
 } from "../constants";
@@ -75,6 +76,8 @@ export const useAppStore = create((set, get) => ({
   setFuzzyFindItemLimit: (fuzzyFindItemLimit) => set({ fuzzyFindItemLimit }),
   copyWithQuotes: false,
   setCopyWithQuotes: (copyWithQuotes) => set({ copyWithQuotes }),
+  copyQuote: DEFAULT_COPY_QUOTE,
+  setCopyQuote: (copyQuote) => set({ copyQuote }),
   showRowIndex: false,
   setShowRowIndex: (showRowIndex) => set({ showRowIndex }),
 
@@ -376,12 +379,14 @@ export const useAppStore = create((set, get) => ({
         end,
       });
     } catch (error) {
-      get().showError(error);
+      if (get().sheets[sourceId]) get().showError(error);
       return;
     }
+    let attached = false;
     set((state) => {
       const currentSource = state.sheets[sourceId];
       if (!currentSource) return state;
+      attached = true;
       const id = metadata.datasetId;
       const label = `Rows ${start + 1}-${end + 1}`;
       const child = {
@@ -420,6 +425,13 @@ export const useAppStore = create((set, get) => ({
         previousSheetId: state.activeSheetId,
       };
     });
+    if (!attached) {
+      try {
+        await invoke("close_dataset", { datasetId: metadata.datasetId });
+      } catch (error) {
+        get().showError(error);
+      }
+    }
   },
 
   expressionConditionMatches: async (sourceId, column, condition) => {

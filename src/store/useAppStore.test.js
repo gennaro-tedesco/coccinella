@@ -196,6 +196,31 @@ describe("application store dataset lifecycle", () => {
     });
   });
 
+  it("closes a row range dataset when its source closes during creation", async () => {
+    useAppStore
+      .getState()
+      .openSheet("people.csv", rootMetadata, "/tmp/people.csv");
+    let resolveRange;
+    invokeMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRange = resolve;
+        }),
+    );
+
+    const creation = useAppStore.getState().createRowRangeSheet("root", 3, 19);
+    invokeMock.mockResolvedValueOnce(undefined);
+    await useAppStore.getState().closeSheet("root");
+    resolveRange({ ...childMetadata, rowCount: 17 });
+    invokeMock.mockResolvedValueOnce(undefined);
+    await creation;
+
+    expect(invokeMock).toHaveBeenLastCalledWith("close_dataset", {
+      datasetId: "child",
+    });
+    expect(useAppStore.getState().sheets).toEqual({});
+  });
+
   it("ignores obsolete sort results", async () => {
     useAppStore
       .getState()
