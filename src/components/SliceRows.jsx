@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { parseRowSelectionRange } from "../utils/rowRange";
 
-function SliceRows({ maxRow, range, onClose, onSlice }) {
+function SliceRows({ maxRow, range, onSlice }) {
   const [value, setValue] = useState(`${range.start + 1}-${range.end + 1}`);
   const formRef = useRef(null);
   const inputRef = useRef(null);
@@ -26,7 +26,6 @@ function SliceRows({ maxRow, range, onClose, onSlice }) {
         if (parsedRange) onSlice(parsedRange.start, parsedRange.end);
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape") onClose();
         if (event.key === '"') {
           event.preventDefault();
           formRef.current?.requestSubmit();

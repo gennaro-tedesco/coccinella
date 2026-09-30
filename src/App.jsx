@@ -942,7 +942,6 @@ function App() {
           maxRow={sheets[activeSheetId].rowCount}
           range={sliceRange}
           onSlice={handleSlice}
-          onClose={() => setSliceRange(null)}
         />
       )}
       {searchOpen && mode === "data" && activeSheetId && <SearchPanel />}

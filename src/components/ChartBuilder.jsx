@@ -31,6 +31,7 @@ const NUMERIC_TYPES = new Set(["number"]);
 const CATEGORICAL_TYPES = new Set(["string", "category", "boolean", "uuid", "date"]);
 const SEQUENCE_TYPES = new Set(["number", "date"]);
 const MIN_CORRELATION_COLUMNS = 2;
+const MAX_UNIT_COUNT_TICKS = 20;
 
 const PLOT_TYPES = [
   {
@@ -455,6 +456,13 @@ function ChartBuilder({ fontSize, expanded }) {
   const transposable =
     plotType?.id === "heatmap" || plotType?.id === "countplot" || plotType?.id === "boxplot";
   const axesTransposed = transposable && Boolean(config.transpose);
+  const countAxisMax = plotType?.id === "countplot"
+    ? Math.max(
+        0,
+        ...traces.flatMap((trace) => axesTransposed ? trace.x : trace.y),
+      )
+    : 0;
+  const countAxisDtick = countAxisMax <= MAX_UNIT_COUNT_TICKS ? 1 : undefined;
   const colorFieldOptions = theme.colors.map((hex, index) => ({
     value: index,
     render: () => (
@@ -687,7 +695,10 @@ function ChartBuilder({ fontSize, expanded }) {
                     xaxis: {
                       title: axesTransposed ? yAxisTitle : xAxisTitle,
                       autorange: true,
-                      dtick: plotType.id === "countplot" && axesTransposed ? 1 : undefined,
+                      dtick: plotType.id === "countplot" && axesTransposed
+                        ? countAxisDtick
+                        : undefined,
+                      tickformat: plotType.id === "countplot" && axesTransposed ? "d" : undefined,
                       showgrid: false,
                       linecolor: theme.border,
                       zerolinecolor: theme.border,
@@ -696,7 +707,10 @@ function ChartBuilder({ fontSize, expanded }) {
                       title: axesTransposed ? xAxisTitle : yAxisTitle,
                       autorange: true,
                       automargin: true,
-                      dtick: plotType.id === "countplot" && !axesTransposed ? 1 : undefined,
+                      dtick: plotType.id === "countplot" && !axesTransposed
+                        ? countAxisDtick
+                        : undefined,
+                      tickformat: plotType.id === "countplot" && !axesTransposed ? "d" : undefined,
                       showgrid: false,
                       linecolor: theme.border,
                       zerolinecolor: theme.border,

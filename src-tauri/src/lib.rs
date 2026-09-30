@@ -31,6 +31,8 @@ const MAX_CSV_COLUMNS: usize = 10_000;
 const TYPE_INFERENCE_ROWS: usize = 10_000;
 const MAX_CHART_POINTS: usize = 100_000;
 const FILE_DISCOVERY_BATCH_SIZE: usize = 50;
+const MIN_FILE_DISCOVERY_ITEMS: usize = 1;
+const MAX_FILE_DISCOVERY_ITEMS: usize = 10_000;
 const LOAD_PROGRESS_INTERVAL_BYTES: u64 = 1024 * 1024;
 const ESTIMATED_MEMORY_MULTIPLIER: u64 = 2;
 const FILE_LOADING_CANCELLED: &str = "File loading cancelled";
@@ -941,10 +943,16 @@ fn matching_rows(dataset: &Dataset, filter: &Filter) -> Result<Vec<RowIndex>, St
             };
             collect_expression_matches(&dataset.rows, &dataset.view, column_index, condition)
         }
-        Filter::RowRange { start, end } => Ok(dataset
-            .order
-            .get(*start..=*end)
-            .map_or_else(Vec::new, |rows| rows.to_vec())),
+        Filter::RowRange { start, end } => {
+            let Some(last_index) = dataset.order.len().checked_sub(1) else {
+                return Ok(Vec::new());
+            };
+            let end = (*end).min(last_index);
+            Ok(dataset
+                .order
+                .get(*start..=end)
+                .map_or_else(Vec::new, |rows| rows.to_vec()))
+        }
     }
 }
 
@@ -2403,21 +2411,18 @@ async fn create_column_dataset(
 #[tauri::command]
 fn close_dataset(dataset_id: String, state: State<'_, AppState>) -> Result<(), String> {
     let mut store = datasets(&state)?;
-    let candidates = store
+    let sources = store
         .iter()
-        .map(|(id, handle)| (id.clone(), Arc::clone(handle)))
-        .collect::<Vec<_>>();
-    let mut closed_ids = vec![dataset_id];
-    let mut index = 0;
-    while index < closed_ids.len() {
-        for (id, handle) in &candidates {
-            if lock_dataset(handle)?.source_id.as_deref() == Some(&closed_ids[index])
-                && !closed_ids.contains(id)
-            {
-                closed_ids.push(id.clone());
+        .map(|(id, handle)| Ok((id.clone(), lock_dataset(handle)?.source_id.clone())))
+        .collect::<Result<Vec<_>, String>>()?;
+    let mut closed_ids = HashSet::from([dataset_id]);
+    let mut pending = closed_ids.iter().cloned().collect::<VecDeque<_>>();
+    while let Some(parent_id) = pending.pop_front() {
+        for (id, source_id) in &sources {
+            if source_id.as_deref() == Some(&parent_id) && closed_ids.insert(id.clone()) {
+                pending.push_back(id.clone());
             }
         }
-        index += 1;
     }
     for id in closed_ids {
         store.remove(&id);
@@ -2507,18 +2512,20 @@ fn column_text(
     column_index: usize,
     quote: Option<char>,
 ) -> Result<String, String> {
-    let mut text = String::new();
+    let total_len = order
+        .iter()
+        .enumerate()
+        .try_fold(0usize, |length, (index, row_index)| {
+            let value = rows.cell(*row_index as usize, column_index);
+            length
+                .checked_add(usize::from(index > 0))
+                .and_then(|length| length.checked_add(copied_value_len(value, quote)?))
+                .filter(|length| *length <= MAX_COLUMN_COPY_BYTES)
+                .ok_or("Column is too large to copy (maximum 16 MiB)")
+        })?;
+    let mut text = String::with_capacity(total_len);
     for (index, row_index) in order.iter().enumerate() {
         let value = rows.cell(*row_index as usize, column_index);
-        let separator_len = usize::from(index > 0);
-        let next_len = text
-            .len()
-            .checked_add(separator_len)
-            .and_then(|length| length.checked_add(copied_value_len(value, quote)?))
-            .ok_or("Column is too large to copy")?;
-        if next_len > MAX_COLUMN_COPY_BYTES {
-            return Err("Column is too large to copy (maximum 16 MiB)".into());
-        }
         if index > 0 {
             text.push(COLUMN_COPY_SEPARATOR);
         }
@@ -3158,6 +3165,7 @@ async fn list_data_files(
     on_files: Channel<Vec<FileCandidate>>,
     max_items: usize,
 ) -> Result<(), String> {
+    validate_file_discovery_limit(max_items)?;
     let home = dirs::home_dir().ok_or("Home directory not found")?;
 
     tauri::async_runtime::spawn_blocking(move || {
@@ -3217,6 +3225,16 @@ async fn list_data_files(
     .map_err(|error| error.to_string())?
 }
 
+fn validate_file_discovery_limit(max_items: usize) -> Result<(), String> {
+    if (MIN_FILE_DISCOVERY_ITEMS..=MAX_FILE_DISCOVERY_ITEMS).contains(&max_items) {
+        Ok(())
+    } else {
+        Err(format!(
+            "File discovery limit must be between {MIN_FILE_DISCOVERY_ITEMS} and {MAX_FILE_DISCOVERY_ITEMS}"
+        ))
+    }
+}
+
 fn shorten_home_path(path: &Path, home: &Path) -> String {
     match path.strip_prefix(home) {
         Ok(relative) if relative.as_os_str().is_empty() => "~".to_string(),
@@ -3231,10 +3249,12 @@ fn discover_data_files(
     mut emit: impl FnMut(Vec<PathBuf>) -> Result<(), String>,
 ) -> Result<(), String> {
     let mut directories = VecDeque::from([home.to_path_buf()]);
-    let mut discovered_files = 0;
+    let mut discovered_csv = 0;
+    let mut discovered_json = 0;
     let mut batch = Vec::with_capacity(FILE_DISCOVERY_BATCH_SIZE);
+    let budgets_exhausted = |csv: usize, json: usize| csv == max_files && json == max_files;
 
-    while !directories.is_empty() && discovered_files < max_files {
+    while !directories.is_empty() && !budgets_exhausted(discovered_csv, discovered_json) {
         let directories_at_depth = directories.len();
         for _ in 0..directories_at_depth {
             let directory = directories
@@ -3258,20 +3278,25 @@ fn discover_data_files(
                     directories.push_back(entry.path());
                 } else if file_type.is_file() {
                     let path = entry.path();
-                    if file_kind(&path).is_none() {
+                    let discovered = match file_kind(&path) {
+                        Some(FileKind::Csv) => &mut discovered_csv,
+                        Some(FileKind::Json) => &mut discovered_json,
+                        None => continue,
+                    };
+                    if *discovered == max_files {
                         continue;
                     }
-                    discovered_files += 1;
+                    *discovered += 1;
                     batch.push(path);
                     if batch.len() == FILE_DISCOVERY_BATCH_SIZE {
                         emit(std::mem::take(&mut batch))?;
                     }
-                    if discovered_files == max_files {
+                    if budgets_exhausted(discovered_csv, discovered_json) {
                         break;
                     }
                 }
             }
-            if discovered_files == max_files {
+            if budgets_exhausted(discovered_csv, discovered_json) {
                 break;
             }
         }
@@ -4036,7 +4061,7 @@ mod tests {
     }
 
     #[test]
-    fn csv_and_json_files_share_the_discovery_budget() {
+    fn csv_and_json_files_have_separate_discovery_budgets() {
         let root = std::env::temp_dir().join(format!(
             "coccinella-discovery-budget-{}-{}",
             std::process::id(),
@@ -4057,7 +4082,17 @@ mod tests {
         .expect("discover fixture files");
         std::fs::remove_dir_all(&root).expect("remove fixture directory");
 
-        assert_eq!(paths.len(), 2);
+        let kinds: Vec<_> = paths.iter().filter_map(|path| file_kind(path)).collect();
+        assert_eq!(kinds.iter().filter(|kind| **kind == FileKind::Json).count(), 2);
+        assert_eq!(kinds.iter().filter(|kind| **kind == FileKind::Csv).count(), 1);
+    }
+
+    #[test]
+    fn validates_file_discovery_limits() {
+        assert!(validate_file_discovery_limit(MIN_FILE_DISCOVERY_ITEMS).is_ok());
+        assert!(validate_file_discovery_limit(MAX_FILE_DISCOVERY_ITEMS).is_ok());
+        assert!(validate_file_discovery_limit(0).is_err());
+        assert!(validate_file_discovery_limit(MAX_FILE_DISCOVERY_ITEMS + 1).is_err());
     }
 
     #[cfg(target_os = "macos")]
@@ -4280,6 +4315,9 @@ mod tests {
         let range = matching_rows(&dataset, &Filter::RowRange { start: 0, end: 1 })
             .expect("filter row range");
         assert_eq!(range, [2, 0]);
+        let clamped_range = matching_rows(&dataset, &Filter::RowRange { start: 1, end: 9 })
+            .expect("filter clamped row range");
+        assert_eq!(clamped_range, [0, 1]);
 
         let columns = sort_columns(&dataset, &dataset.sorting);
         dataset.order = Arc::new(sort_rows(&dataset.rows, &dataset.view, &columns));

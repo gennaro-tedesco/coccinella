@@ -69,7 +69,12 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
   const rowSelectionPointerRef = useRef(null);
   const rowSelectionFrameRef = useRef(null);
   const rowSelectionFrameTimeRef = useRef(null);
+  const rowSelectionMetricsRef = useRef(null);
   const [pivotSuperHeaderHeight, setPivotSuperHeaderHeight] = useState(0);
+  rowSelectionMetricsRef.current = {
+    rowCount: sheet?.rowCount ?? 0,
+    rowHeight,
+  };
 
   useScrollPercent(tableRef, null, sheet?.datasetId);
 
@@ -370,10 +375,15 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
   function handleRowSelectionStart(event, rowIndex) {
     if (event.button !== 0) return;
     event.preventDefault();
-    tableRef.current?.setPointerCapture(event.pointerId);
+    const table = tableRef.current;
+    const scroller = table?.parentElement;
+    if (!table || !scroller) return;
+    table.setPointerCapture(event.pointerId);
     rowSelectionPointerRef.current = {
       pointerId: event.pointerId,
       clientY: event.clientY,
+      bounds: scroller.getBoundingClientRect(),
+      headerHeight: table.tHead?.getBoundingClientRect().height ?? 0,
     };
     setRowSelection({
       pointerId: event.pointerId,
@@ -389,8 +399,9 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
   function autoScrollRowSelection(timestamp) {
     const pointer = rowSelectionPointerRef.current;
     const scroller = tableRef.current?.parentElement;
-    if (!pointer || !scroller) return;
-    const bounds = scroller.getBoundingClientRect();
+    const metrics = rowSelectionMetricsRef.current;
+    if (!pointer || !scroller || !metrics) return;
+    const { bounds, headerHeight } = pointer;
     const direction =
       pointer.clientY <= bounds.top + ROW_SELECTION_SCROLL_EDGE_PX
         ? -1
@@ -410,18 +421,18 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
         ROW_SELECTION_SCROLL_SPEED_PX_PER_SECOND *
         (elapsed / MILLISECONDS_PER_SECOND);
       if (scroller.scrollTop !== previousScrollTop) {
-        const headerHeight =
-          tableRef.current.tHead?.getBoundingClientRect().height ?? 0;
+        if (metrics.rowCount === 0) return;
         const pointerOffset = Math.min(
           Math.max(pointer.clientY - bounds.top, headerHeight),
           scroller.clientHeight,
         );
         const rowIndex = Math.min(
-          sheet.rowCount - 1,
+          metrics.rowCount - 1,
           Math.max(
             0,
             Math.floor(
-              (scroller.scrollTop + pointerOffset - headerHeight) / rowHeight,
+              (scroller.scrollTop + pointerOffset - headerHeight) /
+                metrics.rowHeight,
             ),
           ),
         );
@@ -438,13 +449,13 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
   }
 
   function handleRowSelectionMove(event) {
-    if (rowSelectionPointerRef.current?.pointerId === event.pointerId) {
-      rowSelectionPointerRef.current.clientY = event.clientY;
-    }
+    if (rowSelectionPointerRef.current?.pointerId !== event.pointerId) return;
+    rowSelectionPointerRef.current.clientY = event.clientY;
+    const rowIndex = rowIndexAtPoint(event.clientX, event.clientY);
+    if (rowIndex === null) return;
     setRowSelection((selection) => {
       if (!selection || selection.pointerId !== event.pointerId) return selection;
-      const rowIndex = rowIndexAtPoint(event.clientX, event.clientY);
-      if (rowIndex === null || rowIndex === selection.end) return selection;
+      if (rowIndex === selection.end) return selection;
       return { ...selection, end: rowIndex };
     });
   }
@@ -473,6 +484,13 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
   const topSpacerHeight = page.offset * rowHeight;
   const bottomSpacerHeight =
     Math.max(0, sheet.rowCount - page.offset - page.rows.length) * rowHeight;
+  const activeRowSelection = rowSelection ?? selectedRowRange;
+  const selectionStart = activeRowSelection
+    ? Math.min(activeRowSelection.start, activeRowSelection.end)
+    : null;
+  const selectionEnd = activeRowSelection
+    ? Math.max(activeRowSelection.start, activeRowSelection.end)
+    : null;
 
   return (
     <table
@@ -639,13 +657,6 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
         )}
         {table.getRowModel().rows.map((row) => {
           const rowIndex = page.offset + row.index;
-          const activeRowSelection = rowSelection ?? selectedRowRange;
-          const selectionStart = activeRowSelection
-            ? Math.min(activeRowSelection.start, activeRowSelection.end)
-            : null;
-          const selectionEnd = activeRowSelection
-            ? Math.max(activeRowSelection.start, activeRowSelection.end)
-            : null;
           const isRowSelected =
             selectionStart !== null &&
             rowIndex >= selectionStart &&

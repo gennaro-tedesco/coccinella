@@ -221,6 +221,32 @@ describe("application store dataset lifecycle", () => {
     expect(useAppStore.getState().sheets).toEqual({});
   });
 
+  it("uses current source settings when row range creation finishes", async () => {
+    useAppStore
+      .getState()
+      .openSheet("people.csv", rootMetadata, "/tmp/people.csv");
+    let resolveRange;
+    invokeMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRange = resolve;
+        }),
+    );
+
+    const creation = useAppStore.getState().createRowRangeSheet("root", 0, 0);
+    useAppStore.getState().setColumnVisibility("root", { name: false });
+    useAppStore.getState().setColumnDateFormat("root", "name", "yyyy-MM-dd");
+    useAppStore.getState().setColumnPrecision("root", "name", 4);
+    resolveRange(childMetadata);
+    await creation;
+
+    expect(useAppStore.getState().sheets.child).toMatchObject({
+      columnVisibility: { name: false },
+      columnDateFormats: { name: "yyyy-MM-dd" },
+      columnPrecision: { name: 4 },
+    });
+  });
+
   it("ignores obsolete sort results", async () => {
     useAppStore
       .getState()
