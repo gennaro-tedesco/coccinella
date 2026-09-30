@@ -21,14 +21,18 @@ import {
   CELL_COPY_FEEDBACK_MS,
   ICON_SIZE_COMPACT,
   ROW_HEIGHT_CHANGE_THRESHOLD_PX,
+  ROW_SELECTION_MAX_FRAME_MS,
+  ROW_SELECTION_SCROLL_EDGE_PX,
+  ROW_SELECTION_SCROLL_SPEED_PX_PER_SECOND,
   SOURCE_DATA_LINE_OFFSET,
   SOURCE_HEADER_LINE,
 } from "../constants";
 
 const DEFAULT_ROW_HEIGHT = 29;
 const EMPTY_ROW_RANGE = { offset: 0, limit: 0 };
+const MILLISECONDS_PER_SECOND = 1000;
 
-function DataTable() {
+function DataTable({ selectedRowRange, onSelectRowRange }) {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
   const sheet = useAppStore((state) =>
     state.activeSheetId ? state.sheets[state.activeSheetId] : null,
@@ -55,11 +59,15 @@ function DataTable() {
   const [page, setPage] = useState({ offset: 0, rows: [], matches: [] });
   const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT);
   const [copiedCellKey, setCopiedCellKey] = useState(null);
+  const [rowSelection, setRowSelection] = useState(null);
   const tableRef = useRef(null);
   const thRefs = useRef({});
   const pivotSuperHeaderRef = useRef(null);
   const copyFeedbackTimeoutRef = useRef(null);
   const pointerPositionRef = useRef(null);
+  const rowSelectionPointerRef = useRef(null);
+  const rowSelectionFrameRef = useRef(null);
+  const rowSelectionFrameTimeRef = useRef(null);
   const [pivotSuperHeaderHeight, setPivotSuperHeaderHeight] = useState(0);
 
   useScrollPercent(tableRef, null, sheet?.datasetId);
@@ -76,12 +84,18 @@ function DataTable() {
   useEffect(() => {
     setRowRange(EMPTY_ROW_RANGE);
     setPage({ offset: 0, rows: [], matches: [] });
+    setRowSelection(null);
+    rowSelectionPointerRef.current = null;
+    window.cancelAnimationFrame(rowSelectionFrameRef.current);
     tableRef.current?.classList.remove("cell-hover-disabled");
     tableRef.current?.parentElement?.scrollTo({ top: 0 });
   }, [sheet?.datasetId]);
 
   useEffect(
-    () => () => window.clearTimeout(copyFeedbackTimeoutRef.current),
+    () => () => {
+      window.clearTimeout(copyFeedbackTimeoutRef.current);
+      window.cancelAnimationFrame(rowSelectionFrameRef.current);
+    },
     [],
   );
 
@@ -344,6 +358,109 @@ function DataTable() {
     }
   }
 
+  function rowIndexAtPoint(clientX, clientY) {
+    const cell = document
+      .elementFromPoint(clientX, clientY)
+      ?.closest("td.row-index-cell[data-row-index]");
+    if (!cell || cell.closest("table") !== tableRef.current) return null;
+    return Number(cell.dataset.rowIndex);
+  }
+
+  function handleRowSelectionStart(event, rowIndex) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    tableRef.current?.setPointerCapture(event.pointerId);
+    rowSelectionPointerRef.current = {
+      pointerId: event.pointerId,
+      clientY: event.clientY,
+    };
+    setRowSelection({
+      pointerId: event.pointerId,
+      start: rowIndex,
+      end: rowIndex,
+    });
+    rowSelectionFrameTimeRef.current = null;
+    rowSelectionFrameRef.current = window.requestAnimationFrame(
+      autoScrollRowSelection,
+    );
+  }
+
+  function autoScrollRowSelection(timestamp) {
+    const pointer = rowSelectionPointerRef.current;
+    const scroller = tableRef.current?.parentElement;
+    if (!pointer || !scroller) return;
+    const bounds = scroller.getBoundingClientRect();
+    const direction =
+      pointer.clientY <= bounds.top + ROW_SELECTION_SCROLL_EDGE_PX
+        ? -1
+        : pointer.clientY >= bounds.bottom - ROW_SELECTION_SCROLL_EDGE_PX
+          ? 1
+          : 0;
+    const previousTime = rowSelectionFrameTimeRef.current;
+    rowSelectionFrameTimeRef.current = timestamp;
+    if (direction && previousTime !== null) {
+      const elapsed = Math.min(
+        timestamp - previousTime,
+        ROW_SELECTION_MAX_FRAME_MS,
+      );
+      const previousScrollTop = scroller.scrollTop;
+      scroller.scrollTop +=
+        direction *
+        ROW_SELECTION_SCROLL_SPEED_PX_PER_SECOND *
+        (elapsed / MILLISECONDS_PER_SECOND);
+      if (scroller.scrollTop !== previousScrollTop) {
+        const headerHeight =
+          tableRef.current.tHead?.getBoundingClientRect().height ?? 0;
+        const pointerOffset = Math.min(
+          Math.max(pointer.clientY - bounds.top, headerHeight),
+          scroller.clientHeight,
+        );
+        const rowIndex = Math.min(
+          sheet.rowCount - 1,
+          Math.max(
+            0,
+            Math.floor(
+              (scroller.scrollTop + pointerOffset - headerHeight) / rowHeight,
+            ),
+          ),
+        );
+        setRowSelection((selection) =>
+          selection?.pointerId === pointer.pointerId
+            ? { ...selection, end: rowIndex }
+            : selection,
+        );
+      }
+    }
+    rowSelectionFrameRef.current = window.requestAnimationFrame(
+      autoScrollRowSelection,
+    );
+  }
+
+  function handleRowSelectionMove(event) {
+    if (rowSelectionPointerRef.current?.pointerId === event.pointerId) {
+      rowSelectionPointerRef.current.clientY = event.clientY;
+    }
+    setRowSelection((selection) => {
+      if (!selection || selection.pointerId !== event.pointerId) return selection;
+      const rowIndex = rowIndexAtPoint(event.clientX, event.clientY);
+      if (rowIndex === null || rowIndex === selection.end) return selection;
+      return { ...selection, end: rowIndex };
+    });
+  }
+
+  function handleRowSelectionEnd(event) {
+    if (!rowSelection || rowSelection.pointerId !== event.pointerId) return;
+    if (tableRef.current?.hasPointerCapture(event.pointerId)) {
+      tableRef.current.releasePointerCapture(event.pointerId);
+    }
+    rowSelectionPointerRef.current = null;
+    window.cancelAnimationFrame(rowSelectionFrameRef.current);
+    const start = Math.min(rowSelection.start, rowSelection.end);
+    const end = Math.max(rowSelection.start, rowSelection.end);
+    onSelectRowRange({ start, end });
+    setRowSelection(null);
+  }
+
   if (!sheet) {
     return (
       <div className="data-table-placeholder">
@@ -370,6 +487,13 @@ function DataTable() {
         ) {
           tableRef.current?.classList.remove("cell-hover-disabled");
         }
+        handleRowSelectionMove(event);
+      }}
+      onPointerUp={handleRowSelectionEnd}
+      onPointerCancel={() => {
+        rowSelectionPointerRef.current = null;
+        window.cancelAnimationFrame(rowSelectionFrameRef.current);
+        setRowSelection(null);
       }}
     >
       <thead data-source-line={SOURCE_HEADER_LINE}>
@@ -514,13 +638,35 @@ function DataTable() {
         )}
         {table.getRowModel().rows.map((row) => {
           const rowIndex = page.offset + row.index;
+          const activeRowSelection = rowSelection ?? selectedRowRange;
+          const selectionStart = activeRowSelection
+            ? Math.min(activeRowSelection.start, activeRowSelection.end)
+            : null;
+          const selectionEnd = activeRowSelection
+            ? Math.max(activeRowSelection.start, activeRowSelection.end)
+            : null;
+          const isRowSelected =
+            selectionStart !== null &&
+            rowIndex >= selectionStart &&
+            rowIndex <= selectionEnd;
           return (
             <tr
               key={rowIndex}
+              className={isRowSelected ? "row-range-selected" : undefined}
               data-row-index={rowIndex}
               data-source-line={rowIndex + SOURCE_DATA_LINE_OFFSET}
             >
-              {showRowIndex && <td className="row-index-cell">{rowIndex + 1}</td>}
+              {showRowIndex && (
+                <td
+                  className="row-index-cell"
+                  data-row-index={rowIndex}
+                  onPointerDown={(event) =>
+                    handleRowSelectionStart(event, rowIndex)
+                  }
+                >
+                  {rowIndex + 1}
+                </td>
+              )}
               {row.getVisibleCells().map((cell) => {
                 const isSelected = selectedColumns.includes(cell.column.id);
                 const cellKey = `${rowIndex}:${cell.column.id}`;

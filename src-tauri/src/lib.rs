@@ -190,6 +190,10 @@ enum Filter {
         column: String,
         condition: ExpressionCondition,
     },
+    RowRange {
+        start: usize,
+        end: usize,
+    },
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -935,6 +939,10 @@ fn matching_rows(dataset: &Dataset, filter: &Filter) -> Result<Vec<RowIndex>, St
             };
             collect_expression_matches(&dataset.rows, &dataset.view, column_index, condition)
         }
+        Filter::RowRange { start, end } => Ok(dataset
+            .order
+            .get(*start..=*end)
+            .map_or_else(Vec::new, |rows| rows.to_vec())),
     }
 }
 
@@ -2246,6 +2254,54 @@ async fn create_expression_filtered_dataset(
 }
 
 #[tauri::command]
+fn create_row_range_dataset(
+    source_id: String,
+    start: usize,
+    end: usize,
+    state: State<'_, AppState>,
+) -> Result<SheetMetadata, String> {
+    let source_handle = dataset(&state, &source_id)?;
+    let (rows, view, columns, column_types, separator) = {
+        let source = lock_dataset(&source_handle)?;
+        if start > end || end >= source.order.len() {
+            return Err("Invalid row range".into());
+        }
+        (
+            Arc::clone(&source.rows),
+            source.order[start..=end].to_vec(),
+            source.columns.clone(),
+            source.column_types.clone(),
+            source.separator,
+        )
+    };
+    let id = state
+        .next_dataset_id
+        .fetch_add(1, AtomicOrdering::Relaxed)
+        .to_string();
+    let view = Arc::new(view);
+    let dataset = Dataset {
+        columns,
+        rows,
+        order: Arc::clone(&view),
+        view,
+        column_types,
+        separator,
+        size_bytes: 0,
+        source_id: Some(source_id),
+        filter: Some(Filter::RowRange { start, end }),
+        sorting: Vec::new(),
+        search: None,
+        search_matches: Vec::new(),
+        sort_generation: 0,
+        search_generation: 0,
+        source_path: None,
+    };
+    let result = metadata(&id, &dataset);
+    datasets(&state)?.insert(id, Arc::new(Mutex::new(dataset)));
+    Ok(result)
+}
+
+#[tauri::command]
 async fn create_joined_dataset(
     left_id: String,
     right_id: String,
@@ -3268,6 +3324,7 @@ pub fn run() {
             create_filtered_dataset,
             expression_condition_matches,
             create_expression_filtered_dataset,
+            create_row_range_dataset,
             create_joined_dataset,
             create_appended_dataset,
             create_aggregated_dataset,
@@ -4162,6 +4219,11 @@ mod tests {
         )
         .expect("filter missing column");
         assert!(missing_column.is_empty());
+
+        dataset.order = Arc::new(vec![2, 0, 1]);
+        let range = matching_rows(&dataset, &Filter::RowRange { start: 0, end: 1 })
+            .expect("filter row range");
+        assert_eq!(range, [2, 0]);
 
         let columns = sort_columns(&dataset, &dataset.sorting);
         dataset.order = Arc::new(sort_rows(&dataset.rows, &dataset.view, &columns));

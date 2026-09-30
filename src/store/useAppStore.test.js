@@ -30,7 +30,7 @@ describe("application store dataset lifecycle", () => {
     useAppStore.setState(initialState, true);
   });
 
-  it("cancels the active file load and ignores stale cleanup", async () => {
+  it("cancels the active file load and dismisses its progress", async () => {
     const progress = {
       operationId: "load-1",
       filename: "large.csv",
@@ -47,12 +47,6 @@ describe("application store dataset lifecycle", () => {
     expect(invokeMock).toHaveBeenCalledWith("cancel_file_load", {
       operationId: "load-1",
     });
-    expect(useAppStore.getState().fileLoadProgress).toEqual({
-      ...progress,
-      cancelling: true,
-    });
-
-    useAppStore.getState().clearFileLoadProgress("load-1");
     expect(useAppStore.getState().fileLoadProgress).toBeNull();
   });
 
@@ -165,6 +159,41 @@ describe("application store dataset lifecycle", () => {
       root: expect.objectContaining({ children: [] }),
     });
     expect(useAppStore.getState().activeSheetId).toBe("root");
+  });
+
+  it("creates a child sheet from an inclusive row range", async () => {
+    useAppStore
+      .getState()
+      .openSheet("people.csv", rootMetadata, "/tmp/people.csv");
+    invokeMock.mockResolvedValueOnce({
+      ...childMetadata,
+      rowCount: 17,
+    });
+
+    await useAppStore.getState().createRowRangeSheet("root", 3, 19);
+
+    expect(invokeMock).toHaveBeenCalledWith("create_row_range_dataset", {
+      sourceId: "root",
+      start: 3,
+      end: 19,
+    });
+    expect(useAppStore.getState()).toMatchObject({
+      activeSheetId: "child",
+      previousSheetId: "root",
+      sheets: {
+        root: { children: ["child"] },
+        child: {
+          filename: "people.csv : Rows 4-20",
+          rowCount: 17,
+          filterOf: {
+            sourceId: "root",
+            pattern: "Rows 4-20",
+            start: 3,
+            end: 19,
+          },
+        },
+      },
+    });
   });
 
   it("ignores obsolete sort results", async () => {

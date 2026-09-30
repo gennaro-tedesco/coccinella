@@ -34,3 +34,12 @@ export function calculateRowRange({
   const end = Math.min(rowCount, visibleEnd + overscanRows);
   return { offset, limit: end - offset };
 }
+
+export function parseRowSelectionRange(value, rowCount) {
+  const match = value.match(/^\s*(\d+)\s*-\s*(\d+)\s*$/);
+  if (!match) return null;
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  if (start < 1 || start > end || end > rowCount) return null;
+  return { start: start - 1, end: end - 1 };
+}

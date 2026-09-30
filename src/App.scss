@@ -1606,6 +1606,15 @@ body,
   user-select: none;
 }
 
+.data-table tbody .row-index-cell {
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.data-table tbody tr.row-range-selected td {
+  background-color: color-mix(in srgb, var(--accent) tokens.$background-color-10, var(--bg));
+}
+
 .data-table:not(.pivot-table) th.row-index-cell {
   padding: tokens.$padding-46 tokens.$padding-47;
   text-align: center;

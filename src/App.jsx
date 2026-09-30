@@ -17,6 +17,7 @@ import JsonKeysPanel from "./components/JsonKeysPanel";
 import EmptyState from "./components/EmptyState";
 import FuzzyFinder from "./components/FuzzyFinder";
 import GoToLine from "./components/GoToLine";
+import SliceRows from "./components/SliceRows";
 import MergePanel from "./components/MergePanel";
 import { openFile, openFileAtPath } from "./utils/openFile";
 import { THEMES, applyThemeVariables } from "./utils/themes";
@@ -98,9 +99,14 @@ function App() {
   const errorMessage = useAppStore((state) => state.errorMessage);
   const showError = useAppStore((state) => state.showError);
   const fuzzyFindItemLimit = useAppStore((state) => state.fuzzyFindItemLimit);
+  const showRowIndex = useAppStore((state) => state.showRowIndex);
+  const setShowRowIndex = useAppStore((state) => state.setShowRowIndex);
   const clearError = useAppStore((state) => state.clearError);
   const createFilteredSheet = useAppStore(
     (state) => state.createFilteredSheet,
+  );
+  const createRowRangeSheet = useAppStore(
+    (state) => state.createRowRangeSheet,
   );
   const searchJson = useJsonSearchWorker();
 
@@ -114,6 +120,7 @@ function App() {
   const [csvFiles, setCsvFiles] = useState(null);
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
   const [goToLineOpen, setGoToLineOpen] = useState(false);
+  const [sliceRange, setSliceRange] = useState(null);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeTab, setMergeTab] = useState(null);
   const [panelsHidden, setPanelsHidden] = useState(false);
@@ -180,6 +187,7 @@ function App() {
   useEffect(() => {
     if (!csvDataMode) setGoToLineOpen(false);
     if (!csvDataMode) setMergeOpen(false);
+    setSliceRange(null);
     pendingGRef.current = false;
     pendingQRef.current = false;
   }, [activeSheetId, csvDataMode]);
@@ -383,6 +391,15 @@ function App() {
       }
 
       if (
+        sliceRange &&
+        event.key === "Escape"
+      ) {
+        event.preventDefault();
+        setSliceRange(null);
+        return;
+      }
+
+      if (
         mode === "data" &&
         !searchOpen &&
         searchQuery &&
@@ -405,6 +422,7 @@ function App() {
         event.preventDefault();
         closeSearch();
         setGoToLineOpen(false);
+        setSliceRange(null);
         setFinder(null);
         setMergeTab(null);
         setMergeOpen(true);
@@ -421,6 +439,7 @@ function App() {
       ) {
         event.preventDefault();
         closeSearch();
+        setSliceRange(null);
         setGoToLineOpen(true);
         return;
       }
@@ -435,6 +454,7 @@ function App() {
       ) {
         event.preventDefault();
         setGoToLineOpen(false);
+        setSliceRange(null);
         openSearch();
         return;
       }
@@ -475,6 +495,20 @@ function App() {
           searchIsCaseSensitive,
         );
         closeSearch();
+        return;
+      }
+
+      if (
+        !isEditing &&
+        csvDataMode &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key === "i"
+      ) {
+        event.preventDefault();
+        setShowRowIndex(!showRowIndex);
         return;
       }
 
@@ -670,6 +704,7 @@ function App() {
       ) {
         event.preventDefault();
         setGoToLineOpen(false);
+        setSliceRange(null);
         openSearch();
         return;
       }
@@ -717,6 +752,9 @@ function App() {
     setSearchQuery,
     setSearchActiveIndex,
     searchMatchCount,
+    sliceRange,
+    showRowIndex,
+    setShowRowIndex,
     canFilterFromSearch,
     createFilteredSheet,
     showError,
@@ -781,6 +819,11 @@ function App() {
     setGoToLineOpen(false);
   }
 
+  function handleSlice(start, end) {
+    setSliceRange(null);
+    void createRowRangeSheet(activeSheetId, start, end);
+  }
+
   const rightWidth =
     mode === "data"
       ? columnPanelOpen
@@ -796,16 +839,19 @@ function App() {
         onOpenSearch={() => {
           setMergeOpen(false);
           setGoToLineOpen(false);
+          setSliceRange(null);
           openSearch();
         }}
         onOpenGoTo={() => {
           setMergeOpen(false);
           closeSearch();
+          setSliceRange(null);
           setGoToLineOpen(true);
         }}
         onOpenMerge={(tab) => {
           closeSearch();
           setGoToLineOpen(false);
+          setSliceRange(null);
           setFinder(null);
           setMergeTab(tab ?? null);
           setMergeOpen(true);
@@ -826,7 +872,20 @@ function App() {
             {!isJson && <FilterTabs />}
             <div className="content" ref={contentRef}>
               {mode === "data" ? (
-                isJson ? <JsonTree /> : <DataTable />
+                isJson ? (
+                  <JsonTree />
+                ) : (
+                  <DataTable
+                    selectedRowRange={sliceRange}
+                    onSelectRowRange={(range) => {
+                      closeSearch();
+                      setGoToLineOpen(false);
+                      setMergeOpen(false);
+                      setFinder(null);
+                      setSliceRange(range);
+                    }}
+                  />
+                )
               ) : (
                 <LazyErrorBoundary>
                   <Suspense fallback={<div className="chart-builder-placeholder">Loading chart tools...</div>}>
@@ -876,6 +935,14 @@ function App() {
           maxLine={sheets[activeSheetId].rowCount}
           onGoToLine={handleGoToLine}
           onClose={() => setGoToLineOpen(false)}
+        />
+      )}
+      {sliceRange && csvDataMode && activeSheetId && (
+        <SliceRows
+          maxRow={sheets[activeSheetId].rowCount}
+          range={sliceRange}
+          onSlice={handleSlice}
+          onClose={() => setSliceRange(null)}
         />
       )}
       {searchOpen && mode === "data" && activeSheetId && <SearchPanel />}

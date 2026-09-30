@@ -14,14 +14,17 @@ function addOpenedFile(opened, openSheet, openJson) {
 async function invokeFileOpen(command, args) {
   const operationId = crypto.randomUUID();
   const onProgress = new Channel();
-  onProgress.onmessage = (progress) =>
-    useAppStore.getState().setFileLoadProgress(progress);
+  let active = true;
+  onProgress.onmessage = (progress) => {
+    if (active) useAppStore.getState().setFileLoadProgress(progress);
+  };
   try {
     return await invoke(command, { ...args, operationId, onProgress });
   } catch (error) {
     if (String(error) === FILE_LOADING_CANCELLED) return null;
     throw error;
   } finally {
+    active = false;
     useAppStore.getState().clearFileLoadProgress(operationId);
   }
 }

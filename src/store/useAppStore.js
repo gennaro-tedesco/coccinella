@@ -119,8 +119,19 @@ export const useAppStore = create((set, get) => ({
     set({ fileLoadProgress: { ...progress, cancelling: true } });
     try {
       await invoke("cancel_file_load", { operationId: progress.operationId });
+      get().clearFileLoadProgress(progress.operationId);
     } catch (error) {
       get().showError(error);
+      set((state) =>
+        state.fileLoadProgress?.operationId === progress.operationId
+          ? {
+              fileLoadProgress: {
+                ...state.fileLoadProgress,
+                cancelling: false,
+              },
+            }
+          : state,
+      );
     }
   },
 
@@ -333,6 +344,63 @@ export const useAppStore = create((set, get) => ({
           isCaseSensitive,
           columns: source.selectedColumns,
         },
+        sizeBytes: metadata.sizeBytes,
+        nullCount: metadata.nullCount,
+        dataVersion: 0,
+        contentVersion: 0,
+      };
+
+      return {
+        sheets: {
+          ...state.sheets,
+          [sourceId]: {
+            ...currentSource,
+            children: [...currentSource.children, id],
+          },
+          [id]: child,
+        },
+        activeSheetId: id,
+        previousSheetId: state.activeSheetId,
+      };
+    });
+  },
+
+  createRowRangeSheet: async (sourceId, start, end) => {
+    const source = get().sheets[sourceId];
+    if (!source) return;
+    let metadata;
+    try {
+      metadata = await invoke("create_row_range_dataset", {
+        sourceId: source.datasetId,
+        start,
+        end,
+      });
+    } catch (error) {
+      get().showError(error);
+      return;
+    }
+    set((state) => {
+      const currentSource = state.sheets[sourceId];
+      if (!currentSource) return state;
+      const id = metadata.datasetId;
+      const label = `Rows ${start + 1}-${end + 1}`;
+      const child = {
+        id,
+        filename: `${source.filename} : ${label}`,
+        path: null,
+        datasetId: metadata.datasetId,
+        separator: metadata.separator,
+        rowCount: metadata.rowCount,
+        columns: metadata.columns,
+        sourceColumns: metadata.columns,
+        columnVisibility: { ...source.columnVisibility },
+        columnTypes: metadata.columnTypes,
+        columnDateFormats: { ...source.columnDateFormats },
+        columnPrecision: { ...source.columnPrecision },
+        selectedColumns: [],
+        sorting: [],
+        children: [],
+        filterOf: { sourceId, pattern: label, start, end },
         sizeBytes: metadata.sizeBytes,
         nullCount: metadata.nullCount,
         dataVersion: 0,
