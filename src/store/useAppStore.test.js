@@ -406,12 +406,47 @@ describe("application store dataset lifecycle", () => {
       aggregations,
       groupBy: ["country"],
       pivotTable: true,
+      dateOnlyGroupBy: [],
     });
     expect(created).toBe(true);
     expect(useAppStore.getState().sheets.aggregated).toMatchObject({
       filename: "Pivot: people.csv",
       pivotTable: true,
       pivotDimensions: ["country"],
+    });
+  });
+
+  it("groups aggregated date columns using their selected granularity", async () => {
+    const metadata = {
+      ...rootMetadata,
+      columns: ["created_on", "score"],
+      columnTypes: { created_on: "date", score: "number" },
+    };
+    useAppStore.getState().openSheet("scores.csv", metadata, "/tmp/scores.csv");
+    useAppStore.getState().setColumnDateFormat("root", "created_on", "ymd");
+    invokeMock.mockResolvedValueOnce({
+      ...metadata,
+      datasetId: "aggregated",
+      columns: ["created_on", "sum of score"],
+      columnTypes: { created_on: "date", "sum of score": "number" },
+    });
+
+    await useAppStore.getState().createAggregatedSheet(
+      "root",
+      [{ column: "score", function: "sum" }],
+      ["created_on"],
+      false,
+    );
+
+    expect(invokeMock).toHaveBeenCalledWith("create_aggregated_dataset", {
+      datasetId: "root",
+      aggregations: [{ column: "score", function: "sum" }],
+      groupBy: ["created_on"],
+      pivotTable: false,
+      dateOnlyGroupBy: ["created_on"],
+    });
+    expect(useAppStore.getState().sheets.aggregated.columnDateFormats).toEqual({
+      created_on: "ymd",
     });
   });
 

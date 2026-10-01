@@ -10,6 +10,7 @@ import {
   EXPRESSION_NO_MATCHES_MESSAGE,
 } from "../constants";
 import { descendantSheetIds } from "../utils/sheets";
+import { isDateOnlyFormat } from "../utils/dateFormats";
 
 function expressionConditionLabel(column, condition, precision) {
   if (condition.kind === "number") return `${column} ${condition.expression}`;
@@ -579,6 +580,10 @@ export const useAppStore = create((set, get) => ({
   createAggregatedSheet: async (sourceId, aggregations, groupBy, pivotTable) => {
     const source = get().sheets[sourceId];
     if (!source) return false;
+    const dateOnlyGroupBy = groupBy.filter(
+      (column) => source.columnTypes[column] === "date"
+        && isDateOnlyFormat(source.columnDateFormats[column]),
+    );
     let metadata;
     try {
       metadata = await invoke("create_aggregated_dataset", {
@@ -586,6 +591,7 @@ export const useAppStore = create((set, get) => ({
         aggregations,
         groupBy,
         pivotTable,
+        dateOnlyGroupBy,
       });
     } catch (error) {
       get().showError(error);
@@ -602,6 +608,11 @@ export const useAppStore = create((set, get) => ({
             ...derivedSheet(
               metadata,
               `${pivotTable ? "Pivot" : "Aggregate"}: ${source.filename}`,
+            ),
+            columnDateFormats: Object.fromEntries(
+              groupBy
+                .filter((column) => source.columnDateFormats[column])
+                .map((column) => [column, source.columnDateFormats[column]]),
             ),
             pivotTable,
             pivotDimensions: pivotTable ? [rowDimension] : [],

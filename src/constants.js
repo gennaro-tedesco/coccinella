@@ -12,6 +12,8 @@ export const GO_TO_LINE_ROW_HEIGHT_PX = 29;
 export const GO_TO_LINE_CONTEXT_ROWS = 2;
 export const GO_TO_LINE_HIGHLIGHT_MS = 2000;
 export const CELL_COPY_FEEDBACK_MS = 650;
+export const ERROR_SNACKBAR_VISIBLE_MS = 5000;
+export const SNACKBAR_EXIT_MS = 180;
 export const COPY_QUOTE_OPTIONS = [
   { value: '"', label: 'Double quote (")' },
   { value: "'", label: "Single quote (')" },

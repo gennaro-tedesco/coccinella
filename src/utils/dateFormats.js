@@ -1,5 +1,18 @@
 const UNIX_SECONDS_DIGITS = 10;
 const MILLISECONDS_PER_SECOND = 1000;
+const MONTH_DAY_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+const DATE_ONLY_FORMATS = new Set(["ymd", "dmy", "month-day"]);
+const PLOTLY_DATE_FORMATS = {
+  unix: "%s",
+  timestamp: "%Y-%m-%d %H:%M:%S.%L",
+  ymd: "%Y-%m-%d",
+  dmy: "%d/%m/%Y",
+  "month-day": "%b %-d",
+};
 
 function parseDateValue(value) {
   const text = String(value).trim();
@@ -23,7 +36,8 @@ function parseDateValue(value) {
       : null;
   }
 
-  const normalized = text.includes("T") ? text : text.replace(" ", "T");
+  const normalized = (text.includes("T") ? text : text.replace(" ", "T"))
+    .replace(/\s+(Z|[+-]\d{2}:?\d{2})$/i, "$1");
   const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized);
   const date = new Date(hasTimezone ? normalized : `${normalized}Z`);
   return Number.isNaN(date.getTime()) ? null : date;
@@ -43,6 +57,7 @@ export function formatDateValue(value, format) {
     return String(Math.floor(date.getTime() / MILLISECONDS_PER_SECOND));
   }
   if (format === "dmy") return `${day}/${month}/${year}`;
+  if (format === "month-day") return MONTH_DAY_FORMATTER.format(date);
 
   const calendarDate = `${year}-${month}-${day}`;
   if (format === "ymd") return calendarDate;
@@ -54,4 +69,25 @@ export function formatDateValue(value, format) {
     return `${calendarDate} ${hours}:${minutes}:${seconds}.${milliseconds}`;
   }
   return value;
+}
+
+export function formatDateValueForPlot(value, format) {
+  const date = parseDateValue(value);
+  if (!date) return value;
+  return DATE_ONLY_FORMATS.has(format)
+    ? date.toISOString().split("T")[0]
+    : date.toISOString();
+}
+
+export function isDateOnlyFormat(format) {
+  return DATE_ONLY_FORMATS.has(format);
+}
+
+export function plotlyDateAxis(format) {
+  const tickformat = PLOTLY_DATE_FORMATS[format];
+  return {
+    type: "date",
+    tickformat,
+    hoverformat: tickformat,
+  };
 }

@@ -2088,6 +2088,9 @@ button:disabled {
   max-width: min(tokens.$max-width-4, calc(tokens.$max-width-5 - tokens.$max-width-6));
   padding: tokens.$padding-76 tokens.$padding-77;
   transform: translateX(tokens.$transform-5);
+  transition:
+    opacity var(--snackbar-exit-duration) ease,
+    transform var(--snackbar-exit-duration) ease;
   background-color: color-mix(
     in srgb,
     var(--snackbar-hue) tokens.$selector-40,
@@ -2098,6 +2101,11 @@ button:disabled {
   border-radius: tokens.$border-radius-32;
   box-shadow: tokens.$box-shadow-28 tokens.$box-shadow-29 tokens.$box-shadow-30 rgba(tokens.$box-shadow-31, tokens.$box-shadow-32, tokens.$box-shadow-33, tokens.$box-shadow-34);
   color: var(--fg);
+}
+
+.snackbar-dismissing {
+  opacity: tokens.$opacity-16;
+  transform: translateX(calc(tokens.$transform-5 - 100vw));
 }
 
 .snackbar-error {

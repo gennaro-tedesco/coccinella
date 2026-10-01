@@ -1,6 +1,6 @@
 // Owns file data and exposes operations to the Tauri frontend.
 // FEATURE: Data workspace
-use chrono::{DateTime, NaiveDate, NaiveDateTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use evalexpr::{
     build_operator_tree, ContextWithMutableVariables, DefaultNumericTypes, HashMapContext, Node,
     Operator, Value,
@@ -23,13 +23,13 @@ use tauri::{ipc::Channel, AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 
-const MAX_CSV_FILE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_CSV_FILE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_JSON_FILE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_CSV_ROWS: usize = 1_000_000;
 const MAX_CSV_FIELDS: usize = 10_000_000;
 const MAX_CSV_COLUMNS: usize = 10_000;
 const TYPE_INFERENCE_ROWS: usize = 10_000;
-const MAX_CHART_POINTS: usize = 100_000;
+const MAX_CHART_POINTS: usize = 500_000;
 const FILE_DISCOVERY_BATCH_SIZE: usize = 50;
 const MIN_FILE_DISCOVERY_ITEMS: usize = 1;
 const MAX_FILE_DISCOVERY_ITEMS: usize = 10_000;
@@ -1612,6 +1612,7 @@ fn aggregate_dataset(
     aggregations: &[AggregationSpec],
     group_by: &[String],
     pivot_table: bool,
+    date_only_group_by: &[String],
 ) -> Result<Dataset, String> {
     if aggregations.is_empty() {
         return Err("Select at least one column to aggregate".into());
@@ -1631,6 +1632,10 @@ fn aggregate_dataset(
         .iter()
         .map(|spec| column_index(&spec.column))
         .collect::<Result<Vec<_>, _>>()?;
+    let date_only_indices = date_only_group_by
+        .iter()
+        .map(|column| column_index(column))
+        .collect::<Result<HashSet<_>, _>>()?;
     if group_indices
         .iter()
         .any(|index| aggregation_indices.contains(index))
@@ -1647,7 +1652,13 @@ fn aggregate_dataset(
         if aggregations.len() != 1 {
             return Err("Pivot tables support exactly one aggregated measure".into());
         }
-        return pivot_aggregate_dataset(&source, &aggregations[0], aggregation_indices[0], &group_indices);
+        return pivot_aggregate_dataset(
+            &source,
+            &aggregations[0],
+            aggregation_indices[0],
+            &group_indices,
+            &date_only_indices,
+        );
     }
     let mut grouped = Vec::<(Vec<String>, Vec<RowIndex>)>::new();
     let mut positions = HashMap::<Vec<String>, usize>::new();
@@ -1658,7 +1669,16 @@ fn aggregate_dataset(
     for row in source.order.iter().copied() {
         let key = group_indices
             .iter()
-            .map(|index| source.rows.cell(row as usize, *index).to_owned())
+            .map(|index| {
+                let value = source.rows.cell(row as usize, *index);
+                if date_only_indices.contains(index) {
+                    parse_date(value)
+                        .map(|date| date.to_string())
+                        .unwrap_or_else(|| value.to_owned())
+                } else {
+                    value.to_owned()
+                }
+            })
             .collect::<Vec<_>>();
         let position = match positions.get(&key) {
             Some(position) => *position,
@@ -1719,6 +1739,7 @@ fn pivot_aggregate_dataset(
     aggregation: &AggregationSpec,
     aggregation_index: usize,
     group_indices: &[usize],
+    date_only_indices: &HashSet<usize>,
 ) -> Result<Dataset, String> {
     let row_index = group_indices[0];
     let col_index = group_indices[1];
@@ -1730,8 +1751,18 @@ fn pivot_aggregate_dataset(
     let mut col_seen = HashSet::<String>::new();
 
     for row in source.order.iter().copied() {
-        let row_key = source.rows.cell(row as usize, row_index).to_owned();
-        let col_key = source.rows.cell(row as usize, col_index).to_owned();
+        let group_value = |index| {
+            let value = source.rows.cell(row as usize, index);
+            if date_only_indices.contains(&index) {
+                parse_date(value)
+                    .map(|date| date.to_string())
+                    .unwrap_or_else(|| value.to_owned())
+            } else {
+                value.to_owned()
+            }
+        };
+        let row_key = group_value(row_index);
+        let col_key = group_value(col_index);
         if row_seen.insert(row_key.clone()) {
             row_keys.push(row_key.clone());
         }
@@ -1818,12 +1849,17 @@ fn parse_date(value: &str) -> Option<NaiveDate> {
         .or_else(|| {
             DateTime::parse_from_rfc3339(value)
                 .ok()
-                .map(|date_time| date_time.date_naive())
+                .map(|date_time| date_time.with_timezone(&Utc).date_naive())
         })
         .or_else(|| {
             DateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f%:z")
                 .ok()
-                .map(|date_time| date_time.date_naive())
+                .map(|date_time| date_time.with_timezone(&Utc).date_naive())
+        })
+        .or_else(|| {
+            DateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f %z")
+                .ok()
+                .map(|date_time| date_time.with_timezone(&Utc).date_naive())
         })
         .or_else(|| {
             ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"]
@@ -2392,11 +2428,18 @@ async fn create_aggregated_dataset(
     aggregations: Vec<AggregationSpec>,
     group_by: Vec<String>,
     pivot_table: bool,
+    date_only_group_by: Vec<String>,
     state: State<'_, AppState>,
 ) -> Result<SheetMetadata, String> {
     let source = operation_source(&state, &dataset_id)?;
     let aggregated = tauri::async_runtime::spawn_blocking(move || {
-        aggregate_dataset(source, &aggregations, &group_by, pivot_table)
+        aggregate_dataset(
+            source,
+            &aggregations,
+            &group_by,
+            pivot_table,
+            &date_only_group_by,
+        )
     })
     .await
     .map_err(|error| error.to_string())??;
@@ -2998,6 +3041,8 @@ fn aggregated_heatmap_grid(
     y_index: usize,
     value_index: usize,
     aggregation: ChartAggregation,
+    x_date_only: bool,
+    y_date_only: bool,
 ) -> HeatmapGrid {
     let mut x_values = Vec::new();
     let mut y_values = Vec::new();
@@ -3006,8 +3051,24 @@ fn aggregated_heatmap_grid(
     let mut buckets = HashMap::<(usize, usize), HeatmapBucket>::new();
     for row_index in order {
         let row_index = *row_index as usize;
-        let x_bucket = category_index(rows.cell(row_index, x_index), &mut x_values, &mut x_indices);
-        let y_bucket = category_index(rows.cell(row_index, y_index), &mut y_values, &mut y_indices);
+        let x_value = rows.cell(row_index, x_index);
+        let x_value = if x_date_only {
+            parse_date(x_value)
+                .map(|date| date.to_string())
+                .unwrap_or_else(|| x_value.to_owned())
+        } else {
+            x_value.to_owned()
+        };
+        let y_value = rows.cell(row_index, y_index);
+        let y_value = if y_date_only {
+            parse_date(y_value)
+                .map(|date| date.to_string())
+                .unwrap_or_else(|| y_value.to_owned())
+        } else {
+            y_value.to_owned()
+        };
+        let x_bucket = category_index(&x_value, &mut x_values, &mut x_indices);
+        let y_bucket = category_index(&y_value, &mut y_values, &mut y_indices);
         let Some(value) = chart_number(rows.cell(row_index, value_index)) else {
             continue;
         };
@@ -3068,6 +3129,8 @@ async fn get_heatmap_grid(
     y_column: String,
     value_column: String,
     aggregation: ChartAggregation,
+    x_date_only: bool,
+    y_date_only: bool,
     state: State<'_, AppState>,
 ) -> Result<HeatmapGrid, String> {
     let handle = dataset(&state, &dataset_id)?;
@@ -3102,6 +3165,8 @@ async fn get_heatmap_grid(
             y_index,
             value_index,
             aggregation,
+            x_date_only,
+            y_date_only,
         )
     })
     .await
@@ -3557,7 +3622,8 @@ mod tests {
         ]);
         let order = vec![0, 1, 2, 3];
 
-        let grid = aggregated_heatmap_grid(&rows, &order, 0, 1, 2, ChartAggregation::Mean);
+        let grid =
+            aggregated_heatmap_grid(&rows, &order, 0, 1, 2, ChartAggregation::Mean, false, false);
 
         assert_eq!(grid.x_values, vec!["Ideal", "Fair", "Other"]);
         assert_eq!(grid.y_values, vec!["E", "G", "H"]);
@@ -3581,9 +3647,31 @@ mod tests {
         ]);
         let order = vec![0, 1, 2, 3];
 
-        let grid = aggregated_heatmap_grid(&rows, &order, 0, 1, 2, ChartAggregation::Median);
+        let grid = aggregated_heatmap_grid(
+            &rows,
+            &order,
+            0,
+            1,
+            2,
+            ChartAggregation::Median,
+            false,
+            false,
+        );
 
         assert_eq!(grid.z_values, vec![vec![Some(2.5)]]);
+    }
+
+    #[test]
+    fn aggregates_heatmap_timestamps_by_selected_date_granularity() {
+        let rows = packed_rows(&[
+            &["2026-09-29 16:48:24.686 +0200", "E", "1"],
+            &["2026-09-29 18:00:00.000 +0200", "E", "3"],
+        ]);
+        let grid =
+            aggregated_heatmap_grid(&rows, &[0, 1], 0, 1, 2, ChartAggregation::Sum, true, false);
+
+        assert_eq!(grid.x_values, ["2026-09-29"]);
+        assert_eq!(grid.z_values, vec![vec![Some(4.0)]]);
     }
 
     #[test]
@@ -3759,6 +3847,7 @@ mod tests {
             &aggregations,
             &["region".into(), "team".into()],
             false,
+            &[],
         )
         .expect("aggregate dataset");
 
@@ -3794,6 +3883,7 @@ mod tests {
             &aggregations,
             &["region".into(), "date".into()],
             true,
+            &[],
         )
         .expect("pivot dataset");
 
@@ -3806,6 +3896,31 @@ mod tests {
                 ["", "1", ""],
             ]
         );
+    }
+
+    #[test]
+    fn aggregates_timestamps_by_selected_date_granularity() {
+        let mut source = join_source(
+            &["created_on", "score"],
+            &[
+                &["2026-09-29 16:48:24.686 +0200", "1"],
+                &["2026-09-29 18:00:00.000 +0200", "3"],
+            ],
+        );
+        source.column_types = vec!["date".into(), "number".into()];
+        let aggregated = aggregate_dataset(
+            source,
+            &[AggregationSpec {
+                column: "score".into(),
+                function: "sum".into(),
+            }],
+            &["created_on".into()],
+            false,
+            &["created_on".into()],
+        )
+        .expect("aggregate timestamps by date");
+
+        assert_eq!(owned_rows(&aggregated), [["2026-09-29", "4"]]);
     }
 
     #[test]

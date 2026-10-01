@@ -22,6 +22,12 @@ import { useAppStore } from "../store/useAppStore";
 import { THEMES } from "../utils/themes";
 import { FULL_SIZE_PERCENT, ICON_SIZE_DEFAULT, PLOT_MODE_BAR_BUTTONS } from "../constants";
 import { buildTraces } from "../utils/chart";
+import { DEFAULT_DATE_FORMAT } from "../utils/columnTypes";
+import {
+  formatDateValueForPlot,
+  isDateOnlyFormat,
+  plotlyDateAxis,
+} from "../utils/dateFormats";
 
 Plotly.register([Bar, Box, Histogram, Scatter, Heatmap]);
 const Plot = createPlotlyComponent(Plotly);
@@ -292,6 +298,16 @@ function ChartBuilder({ fontSize, expanded }) {
     : null;
   const [chartData, setChartData] = useState(EMPTY_CHART_DATA);
   const [openField, setOpenField] = useState(null);
+  const xColumnIsDate = sheet?.columnTypes[config?.xColumn] === "date";
+  const xDateFormat = xColumnIsDate
+    ? (sheet.columnDateFormats?.[config.xColumn] ?? DEFAULT_DATE_FORMAT)
+    : null;
+  const yColumnIsDate = sheet?.columnTypes[config?.yColumn] === "date";
+  const yDateFormat = yColumnIsDate
+    ? (sheet.columnDateFormats?.[config.yColumn] ?? DEFAULT_DATE_FORMAT)
+    : null;
+  const xDateOnly = xColumnIsDate && isDateOnlyFormat(xDateFormat);
+  const yDateOnly = yColumnIsDate && isDateOnlyFormat(yDateFormat);
 
   useEffect(() => {
     if (!sheet?.pivotTable || plotType) return;
@@ -332,6 +348,8 @@ function ChartBuilder({ fontSize, expanded }) {
             yColumn: config.yColumn,
             valueColumn: config.valueColumn,
             aggregation: heatmapAggFunc ?? "mean",
+            xDateOnly,
+            yDateOnly,
           })
         : invoke("get_chart_data", {
             datasetId: sheet.datasetId,
@@ -368,6 +386,8 @@ function ChartBuilder({ fontSize, expanded }) {
     heatmapAggFunc,
     config?.heatmapMode,
     config?.correlationColumns,
+    xDateOnly,
+    yDateOnly,
     pivotHeatmap,
     showError,
   ]);
@@ -402,9 +422,25 @@ function ChartBuilder({ fontSize, expanded }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [sheet, plotType, activeSheetId, selectablePlotTypes, setPlotConfig]);
 
+  const plottedChartData = useMemo(
+    () => ({
+      ...chartData,
+      xValues: xColumnIsDate
+        ? chartData.xValues.map((value) =>
+            formatDateValueForPlot(value, xDateFormat),
+          )
+        : chartData.xValues,
+      yValues: yColumnIsDate && plotType?.id === "heatmap"
+        ? chartData.yValues.map((value) =>
+            formatDateValueForPlot(value, yDateFormat),
+          )
+        : chartData.yValues,
+    }),
+    [chartData, plotType?.id, xColumnIsDate, xDateFormat, yColumnIsDate, yDateFormat],
+  );
   const traces = useMemo(
-    () => (plotType ? buildTraces(config, chartData, theme.colors, theme.bg) : []),
-    [plotType, config, chartData, theme.colors, theme.bg],
+    () => (plotType ? buildTraces(config, plottedChartData, theme.colors, theme.bg) : []),
+    [plotType, config, plottedChartData, theme.colors, theme.bg],
   );
 
   if (!sheet) {
@@ -456,6 +492,10 @@ function ChartBuilder({ fontSize, expanded }) {
   const transposable =
     plotType?.id === "heatmap" || plotType?.id === "countplot" || plotType?.id === "boxplot";
   const axesTransposed = transposable && Boolean(config.transpose);
+  const selectedXDateAxis = xColumnIsDate ? plotlyDateAxis(xDateFormat) : null;
+  const selectedYDateAxis = yColumnIsDate ? plotlyDateAxis(yDateFormat) : null;
+  const xDateAxis = axesTransposed ? selectedYDateAxis : selectedXDateAxis;
+  const yDateAxis = axesTransposed ? selectedXDateAxis : selectedYDateAxis;
   const countAxisMax = plotType?.id === "countplot"
     ? Math.max(
         0,
@@ -679,7 +719,7 @@ function ChartBuilder({ fontSize, expanded }) {
               </div>
               <div className="chart-plot">
                 <Plot
-                  key={`${config.chartType}-${config.xColumn}-${config.yColumn}-${config.yColumns?.join(",")}-${config.groupColumn}-${config.binCount}-${config.histNorm}-${config.cumulative}-${config.showPoints}-${config.colorIndex}-${config.aggFunc}-${config.style}-${config.barMode}-${config.heatmapMode}-${config.transpose}-${config.valueColumn}-${config.correlationColumns?.join(",")}`}
+                  key={`${config.chartType}-${config.xColumn}-${config.yColumn}-${config.yColumns?.join(",")}-${config.groupColumn}-${config.binCount}-${config.histNorm}-${config.cumulative}-${config.showPoints}-${config.colorIndex}-${config.aggFunc}-${config.style}-${config.barMode}-${config.heatmapMode}-${config.transpose}-${config.valueColumn}-${config.correlationColumns?.join(",")}-${xDateFormat}-${yDateFormat}`}
                   data={traces}
                   layout={{
                     autosize: true,
@@ -702,6 +742,7 @@ function ChartBuilder({ fontSize, expanded }) {
                       showgrid: false,
                       linecolor: theme.border,
                       zerolinecolor: theme.border,
+                      ...xDateAxis,
                     },
                     yaxis: {
                       title: axesTransposed ? xAxisTitle : yAxisTitle,
@@ -714,6 +755,7 @@ function ChartBuilder({ fontSize, expanded }) {
                       showgrid: false,
                       linecolor: theme.border,
                       zerolinecolor: theme.border,
+                      ...yDateAxis,
                     },
                   }}
                   config={{
