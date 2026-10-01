@@ -105,8 +105,8 @@ export const THEMES = {
   },
   darkSolar: {
     label: "Sol Dark",
-    bg: "#00141A",
-    bgAlt: "#002D38",
+    bg: "#001e28",
+    bgAlt: "#002932",
     fg: "#9FABAD",
     fgDark: "#586E74",
     border: "#073541",
@@ -168,7 +168,10 @@ export function applyThemeVariables(theme, target) {
     target.style.setProperty(variable, theme[key]);
   });
   theme.colors.forEach((color, index) => {
-    target.style.setProperty(`${PALETTE_CSS_VARIABLE_PREFIX}${index + 1}`, color);
+    target.style.setProperty(
+      `${PALETTE_CSS_VARIABLE_PREFIX}${index + 1}`,
+      color,
+    );
   });
 }
 
