@@ -17,5 +17,5 @@ export const DATE_FORMATS = [
   { value: "timestamp", label: "YYYY-MM-DD HH:mm:ss.SSS" },
   { value: "ymd", label: "YYYY-MM-DD" },
   { value: "dmy", label: "DD/MM/YYYY" },
-  { value: "month-day", label: "Sep 29" },
+  { value: "month-day", label: "MMM D" },
 ];
