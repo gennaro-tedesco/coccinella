@@ -669,6 +669,7 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
         )}
         {table.getRowModel().rows.map((row) => {
           const rowIndex = page.offset + row.index;
+          const isAlternateRow = rowIndex % 2 === 1;
           const isRowSelected =
             selectionStart !== null &&
             rowIndex >= selectionStart &&
@@ -676,7 +677,12 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
           return (
             <tr
               key={rowIndex}
-              className={isRowSelected ? "row-range-selected" : undefined}
+              className={[
+                isAlternateRow && "alternate-row",
+                isRowSelected && "row-range-selected",
+              ]
+                .filter(Boolean)
+                .join(" ")}
               data-row-index={rowIndex}
               data-source-line={rowIndex + SOURCE_DATA_LINE_OFFSET}
             >

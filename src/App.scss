@@ -1533,6 +1533,10 @@ body,
   background-color: var(--bg);
 }
 
+.data-table tbody tr.alternate-row td {
+  background-color: color-mix(in srgb, var(--fg) tokens.$background-color-20, var(--bg));
+}
+
 .cell-content {
   position: relative;
 }
