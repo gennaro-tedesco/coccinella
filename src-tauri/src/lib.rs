@@ -23,6 +23,8 @@ use tauri::{ipc::Channel, AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 
+mod benchmark;
+
 const MAX_CSV_FILE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_JSON_FILE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_CSV_ROWS: usize = 1_000_000;
@@ -579,7 +581,6 @@ fn validate_data_path(path: &str) -> Result<FileKind, String> {
     file_kind(Path::new(path)).ok_or_else(|| "Only .csv, .tsv and .json files are supported".into())
 }
 
-#[cfg(target_os = "macos")]
 fn queue_opened_files(urls: &[tauri::Url], state: &AppState) -> Result<usize, String> {
     let paths = urls
         .iter()
@@ -3451,10 +3452,19 @@ fn fuzzy_filter(query: String, candidates: Vec<String>) -> Result<Vec<FuzzyMatch
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .manage(AppState::default())
+    let state = AppState::default();
+    let benchmark = benchmark::initialize(&state).unwrap_or_else(|error| {
+        eprintln!("benchmark failed: {error}");
+        std::process::exit(1);
+    });
+    let benchmark_exit_code = Arc::clone(&benchmark.exit_code);
+    let exit_code = tauri::Builder::default()
+        .manage(state)
+        .manage(benchmark)
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            benchmark::benchmark_enabled,
+            benchmark::finish_benchmark,
             open_file_dialog,
             load_indexed_file,
             cancel_file_load,
@@ -3487,7 +3497,7 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
+        .run_return(|app, event| {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Opened { urls } = event {
                 use tauri::{Emitter, Manager};
@@ -3503,6 +3513,12 @@ pub fn run() {
                 }
             }
         });
+    let benchmark_exit_code = benchmark_exit_code.load(AtomicOrdering::Relaxed);
+    std::process::exit(if benchmark_exit_code != 0 {
+        benchmark_exit_code
+    } else {
+        exit_code
+    });
 }
 
 #[cfg(test)]

@@ -74,3 +74,16 @@ Open the data manipulation menu with `=`. Merge, append and aggregate into pivot
 For any loaded data set (and derived sheets) plotting is at your fingertips: switch to plotting mode and start exploring (or help yourself with the demo below).
 
 ![plotting](https://github.com/user-attachments/assets/10bfa5c7-50ed-471f-a5e9-e58e9e169384)
+
+## Benchmark
+
+It's _blazingly_ fast, loading and rendering a 2 GiB `csv` file in less than 2s.
+
+```sh
+hyperfine --warmup 2 --runs 5 \
+  'env COCCINELLA_BENCHMARK_FILE="/absolute/path/big.csv" ./src-tauri/target/release/coccinella'
+
+Benchmark 1:
+  Time (mean ± σ):      1.958 s ±  0.077 s    [User: 1.111 s, System: 0.465 s]
+  Range (min … max):    1.826 s …  2.015 s    5 runs
+```

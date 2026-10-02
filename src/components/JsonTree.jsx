@@ -19,6 +19,7 @@ import {
   ROW_HEIGHT_CHANGE_THRESHOLD_PX,
 } from "../constants";
 import { useScrollPercent } from "../hooks/useScrollPercent";
+import { useBenchmarkReady } from "../hooks/useBenchmarkReady";
 
 const NO_OVERRIDES = new Map();
 
@@ -225,6 +226,7 @@ function JsonTree() {
     rows.length,
     firstVisibleRow + viewportRows + JSON_TREE_OVERSCAN_ROWS,
   );
+  useBenchmarkReady(Boolean(sheetId && viewportRows > 0));
 
   useEffect(() => {
     const row = treeRef.current?.querySelector(".json-node");

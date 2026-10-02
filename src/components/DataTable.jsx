@@ -18,6 +18,7 @@ import ColumnSettings from "./ColumnSettings";
 import CopyColumnButton from "./CopyColumnButton";
 import { formatCopiedValue } from "../utils/copyText";
 import { useScrollPercent } from "../hooks/useScrollPercent";
+import { useBenchmarkReady } from "../hooks/useBenchmarkReady";
 import {
   CELL_COPY_FEEDBACK_MS,
   ICON_SIZE_COMPACT,
@@ -82,6 +83,7 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
   };
 
   useScrollPercent(tableRef, null, sheet?.datasetId);
+  useBenchmarkReady(Boolean(sheet && (sheet.rowCount === 0 || page.rows.length > 0)));
 
   useEffect(() => {
     if (!openColumn) return;
