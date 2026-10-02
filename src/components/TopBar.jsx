@@ -8,7 +8,12 @@ import {
 import { useAppStore } from "../store/useAppStore";
 import { openFile } from "../utils/openFile";
 import { THEMES, THEME_ORDER } from "../utils/themes";
-import { COPY_QUOTE_OPTIONS, ICON_SIZE_MENU } from "../constants";
+import { COLUMN_TYPES } from "../utils/columnTypes";
+import {
+  COLUMN_COLOUR_OPTIONS,
+  COPY_QUOTE_OPTIONS,
+  ICON_SIZE_MENU,
+} from "../constants";
 import logo from "../assets/logo.png";
 
 const OPERATIONS = [
@@ -60,6 +65,9 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
   const [settingsSubmenuOpen, setSettingsSubmenuOpen] = useState(false);
   const [fuzzyLimitSubmenuOpen, setFuzzyLimitSubmenuOpen] = useState(false);
   const [quoteSubmenuOpen, setQuoteSubmenuOpen] = useState(false);
+  const [colourSubmenuOpen, setColourSubmenuOpen] = useState(false);
+  const [dataTypeSubmenuOpen, setDataTypeSubmenuOpen] = useState(false);
+  const [colourPickerType, setColourPickerType] = useState(null);
   const mode = useAppStore((state) => state.mode);
   const setMode = useAppStore((state) => state.setMode);
   const openSheet = useAppStore((state) => state.openSheet);
@@ -83,6 +91,17 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
   const setCopyQuote = useAppStore((state) => state.setCopyQuote);
   const showRowIndex = useAppStore((state) => state.showRowIndex);
   const setShowRowIndex = useAppStore((state) => state.setShowRowIndex);
+  const columnColourMode = useAppStore((state) => state.columnColourMode);
+  const setColumnColourMode = useAppStore(
+    (state) => state.setColumnColourMode,
+  );
+  const columnTypeColourIndexes = useAppStore(
+    (state) => state.columnTypeColourIndexes,
+  );
+  const setColumnTypeColour = useAppStore(
+    (state) => state.setColumnTypeColour,
+  );
+  const activeTheme = THEMES[theme] ?? THEMES.darkSolar;
 
   useEffect(() => {
     if (!shortcutsMenuOpen) return;
@@ -93,6 +112,9 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
     setSettingsSubmenuOpen(false);
     setFuzzyLimitSubmenuOpen(false);
     setQuoteSubmenuOpen(false);
+    setColourSubmenuOpen(false);
+    setDataTypeSubmenuOpen(false);
+    setColourPickerType(null);
     setShortcutsSubmenuOpen(true);
     closeShortcutsMenu();
   }, [shortcutsMenuOpen, closeShortcutsMenu]);
@@ -124,6 +146,9 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
           setSettingsSubmenuOpen(false);
           setFuzzyLimitSubmenuOpen(false);
           setQuoteSubmenuOpen(false);
+          setColourSubmenuOpen(false);
+          setDataTypeSubmenuOpen(false);
+          setColourPickerType(null);
         }}
       >
         <button
@@ -139,6 +164,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
             setSettingsSubmenuOpen(false);
             setFuzzyLimitSubmenuOpen(false);
             setQuoteSubmenuOpen(false);
+            setColourSubmenuOpen(false);
           }}
         >
           <Menu />
@@ -184,6 +210,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
                 setShortcutsSubmenuOpen(false);
                 setAboutSubmenuOpen(false);
                 setSettingsSubmenuOpen(false);
+                setColourSubmenuOpen(false);
               }}
               onMouseLeave={() => setOperationsSubmenuOpen(false)}
             >
@@ -229,6 +256,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
                 setSettingsSubmenuOpen(false);
                 setFuzzyLimitSubmenuOpen(false);
                 setQuoteSubmenuOpen(false);
+                setColourSubmenuOpen(false);
               }}
             >
               <button
@@ -243,6 +271,155 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
                   <li
                     className="has-submenu"
                     onMouseEnter={() => {
+                      setColourSubmenuOpen(true);
+                      setDataTypeSubmenuOpen(false);
+                      setColourPickerType(null);
+                      setFuzzyLimitSubmenuOpen(false);
+                      setQuoteSubmenuOpen(false);
+                    }}
+                    onMouseLeave={() => {
+                      setColourSubmenuOpen(false);
+                      setDataTypeSubmenuOpen(false);
+                      setColourPickerType(null);
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setColourSubmenuOpen((open) => !open)}
+                    >
+                      <span>Colour</span>
+                      <span className="settings-menu-value">
+                        {
+                          COLUMN_COLOUR_OPTIONS.find(
+                            ({ value }) => value === columnColourMode,
+                          )?.label
+                        }
+                        <ChevronRight size={ICON_SIZE_MENU} />
+                      </span>
+                    </button>
+                    {colourSubmenuOpen && (
+                      <ul className="file-menu-dropdown submenu">
+                        {COLUMN_COLOUR_OPTIONS.map(({ value, label }) => (
+                          <li
+                            key={value}
+                            className={
+                              value === "data-type" ? "has-submenu" : undefined
+                            }
+                            onMouseEnter={() => {
+                              setDataTypeSubmenuOpen(value === "data-type");
+                              setColourPickerType(null);
+                            }}
+                            onMouseLeave={() => {
+                              if (value === "data-type") {
+                                setDataTypeSubmenuOpen(false);
+                                setColourPickerType(null);
+                              }
+                            }}
+                          >
+                            <button
+                              type="button"
+                              className={
+                                value === columnColourMode ? "active" : ""
+                              }
+                              onClick={() => {
+                                setColumnColourMode(value);
+                                if (value === "data-type") {
+                                  setDataTypeSubmenuOpen(true);
+                                } else {
+                                  setMenuOpen(false);
+                                  setSettingsSubmenuOpen(false);
+                                  setColourSubmenuOpen(false);
+                                }
+                              }}
+                            >
+                              <span>{label}</span>
+                              {value === "data-type" && (
+                                <ChevronRight size={ICON_SIZE_MENU} />
+                              )}
+                            </button>
+                            {value === "data-type" && dataTypeSubmenuOpen && (
+                              <ul className="file-menu-dropdown submenu data-type-colour-submenu">
+                                {COLUMN_TYPES.map((type) => {
+                                  const colourIndex =
+                                    columnTypeColourIndexes[type];
+                                  return (
+                                    <li
+                                      key={type}
+                                      className="has-submenu"
+                                      onMouseLeave={() =>
+                                        setColourPickerType(null)
+                                      }
+                                    >
+                                      <button
+                                        type="button"
+                                        aria-label={`Open ${type} colour picker`}
+                                        onClick={() =>
+                                          setColourPickerType((current) =>
+                                            current === type ? null : type,
+                                          )
+                                        }
+                                      >
+                                        <span>{type}</span>
+                                        <span className="settings-menu-value">
+                                          <span
+                                            className="color-swatch"
+                                            style={{
+                                              backgroundColor:
+                                                activeTheme.colors[colourIndex],
+                                            }}
+                                          />
+                                          <ChevronRight size={ICON_SIZE_MENU} />
+                                        </span>
+                                      </button>
+                                      {colourPickerType === type && (
+                                        <ul className="file-menu-dropdown submenu colour-palette-submenu">
+                                          {activeTheme.colors.map(
+                                            (hex, index) => (
+                                              <li key={hex}>
+                                                <button
+                                                  type="button"
+                                                  className={
+                                                    index === colourIndex
+                                                      ? "active"
+                                                      : ""
+                                                  }
+                                                  aria-label={`${type} colour ${hex}`}
+                                                  onClick={() => {
+                                                    setColumnColourMode(
+                                                      "data-type",
+                                                    );
+                                                    setColumnTypeColour(
+                                                      type,
+                                                      index,
+                                                    );
+                                                  }}
+                                                >
+                                                  <span
+                                                    className="color-swatch"
+                                                    style={{
+                                                      backgroundColor: hex,
+                                                    }}
+                                                  />
+                                                </button>
+                                              </li>
+                                            ),
+                                          )}
+                                        </ul>
+                                      )}
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                  <li
+                    className="has-submenu"
+                    onMouseEnter={() => {
+                      setColourSubmenuOpen(false);
                       setFuzzyLimitSubmenuOpen(true);
                       setQuoteSubmenuOpen(false);
                     }}
@@ -282,6 +459,7 @@ function TopBar({ onOpenSearch, onOpenGoTo, onOpenMerge }) {
                   <li
                     className={copyWithQuotes ? "has-submenu" : undefined}
                     onMouseEnter={() => {
+                      setColourSubmenuOpen(false);
                       setFuzzyLimitSubmenuOpen(false);
                       if (copyWithQuotes) setQuoteSubmenuOpen(true);
                     }}

@@ -11,6 +11,7 @@ import { formatDateValue } from "../utils/dateFormats";
 import { formatNumberValue } from "../utils/numberFormats";
 import { calculateRowRange } from "../utils/rowRange";
 import { DEFAULT_DATE_FORMAT } from "../utils/columnTypes";
+import { paletteCssVariable } from "../utils/themes";
 import { Copy, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import ColumnSettings from "./ColumnSettings";
@@ -52,6 +53,10 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
   const copyWithQuotes = useAppStore((state) => state.copyWithQuotes);
   const copyQuote = useAppStore((state) => state.copyQuote);
   const showRowIndex = useAppStore((state) => state.showRowIndex);
+  const columnColourMode = useAppStore((state) => state.columnColourMode);
+  const columnTypeColourIndexes = useAppStore(
+    (state) => state.columnTypeColourIndexes,
+  );
   const setColumnWidth = useAppStore((state) => state.setColumnWidth);
   const resetColumnWidth = useAppStore((state) => state.resetColumnWidth);
   const [openColumn, setOpenColumn] = useState(null);
@@ -551,6 +556,12 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
                   : undefined;
 
               const fittedWidth = sheet.columnWidths?.[header.id];
+              const typeColour =
+                columnColourMode === "data-type"
+                  ? paletteCssVariable(
+                      columnTypeColourIndexes[sheet.columnTypes[header.id]],
+                    )
+                  : undefined;
 
               return (
                 <th
@@ -560,6 +571,7 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
                     thRefs.current[header.id] = element;
                   }}
                   style={{
+                    color: typeColour,
                     ...(sheet.pivotTable && { top: pivotSuperHeaderHeight }),
                     ...(fittedWidth !== undefined && {
                       width: fittedWidth,
@@ -703,10 +715,19 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
                   cell.column.columnDef.cell,
                   cell.getContext(),
                 );
+                const typeColour =
+                  columnColourMode === "data-type"
+                    ? paletteCssVariable(
+                        columnTypeColourIndexes[
+                          sheet.columnTypes[cell.column.id]
+                        ],
+                      )
+                    : undefined;
                 return (
                   <td
                     key={cell.id}
                     className={className || undefined}
+                    style={{ color: typeColour }}
                     aria-selected={isSelected || undefined}
                   >
                     <div className="cell-content">

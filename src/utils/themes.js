@@ -163,6 +163,10 @@ const THEME_CSS_VARIABLES = {
 
 const PALETTE_CSS_VARIABLE_PREFIX = "--col-";
 
+export function paletteCssVariable(index) {
+  return `var(${PALETTE_CSS_VARIABLE_PREFIX}${index + 1})`;
+}
+
 export function applyThemeVariables(theme, target) {
   Object.entries(THEME_CSS_VARIABLES).forEach(([key, variable]) => {
     target.style.setProperty(variable, theme[key]);

@@ -89,6 +89,24 @@ describe("application store dataset lifecycle", () => {
     });
   });
 
+  it("switches the column colour mode", () => {
+    expect(useAppStore.getState().columnColourMode).toBe("alternate");
+
+    useAppStore.getState().setColumnColourMode("data-type");
+
+    expect(useAppStore.getState().columnColourMode).toBe("data-type");
+  });
+
+  it("changes one data-type colour without touching the others", () => {
+    useAppStore.getState().setColumnTypeColour("number", 7);
+
+    expect(useAppStore.getState().columnTypeColourIndexes).toMatchObject({
+      string: 0,
+      number: 7,
+      boolean: 4,
+    });
+  });
+
   it("uses automatic number precision until the user sets an override", () => {
     const metadata = {
       ...rootMetadata,

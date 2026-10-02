@@ -202,6 +202,20 @@ body,
   color: var(--fg-dark);
 }
 
+.data-type-colour-submenu {
+  min-width: tokens.$min-width-2;
+}
+
+.colour-palette-submenu {
+  min-width: tokens.$min-width-15;
+}
+
+.file-menu-dropdown.colour-palette-submenu li button {
+  display: flex;
+  justify-content: center;
+  padding: tokens.$padding-9;
+}
+
 .settings-menu-checkbox {
   display: flex;
   align-items: center;
@@ -1547,13 +1561,13 @@ body,
 }
 
 .cell-copy-trigger:hover {
-  color: var(--accent);
+  color: inherit;
 }
 
 .data-table td.copied .cell-value,
 .data-table th.copied .th-label,
 .data-table th.copied .column-copy-trigger {
-  color: var(--accent);
+  color: inherit;
   animation: cell-copy-feedback tokens.$animation-duration-2 ease-in-out;
 }
 

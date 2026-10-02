@@ -5,12 +5,14 @@ import { create } from "zustand";
 import {
   BLANK_VALUE_LABEL,
   DEFAULT_COLUMN_PRECISION,
+  DEFAULT_COLUMN_COLOUR_MODE,
   DEFAULT_COPY_QUOTE,
   DEFAULT_FUZZY_FIND_ITEM_LIMIT,
   EXPRESSION_NO_MATCHES_MESSAGE,
 } from "../constants";
 import { descendantSheetIds } from "../utils/sheets";
 import { isDateOnlyFormat } from "../utils/dateFormats";
+import { DEFAULT_COLUMN_TYPE_COLOUR_INDEXES } from "../utils/columnTypes";
 
 function expressionConditionLabel(column, condition, precision) {
   if (condition.kind === "number") return `${column} ${condition.expression}`;
@@ -81,6 +83,16 @@ export const useAppStore = create((set, get) => ({
   setCopyQuote: (copyQuote) => set({ copyQuote }),
   showRowIndex: false,
   setShowRowIndex: (showRowIndex) => set({ showRowIndex }),
+  columnColourMode: DEFAULT_COLUMN_COLOUR_MODE,
+  setColumnColourMode: (columnColourMode) => set({ columnColourMode }),
+  columnTypeColourIndexes: DEFAULT_COLUMN_TYPE_COLOUR_INDEXES,
+  setColumnTypeColour: (type, colourIndex) =>
+    set((state) => ({
+      columnTypeColourIndexes: {
+        ...state.columnTypeColourIndexes,
+        [type]: colourIndex,
+      },
+    })),
 
   sheetPanelOpen: true,
   toggleSheetPanel: () =>

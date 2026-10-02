@@ -19,6 +19,11 @@ export const COPY_QUOTE_OPTIONS = [
   { value: "'", label: "Single quote (')" },
 ];
 export const DEFAULT_COPY_QUOTE = COPY_QUOTE_OPTIONS[0].value;
+export const COLUMN_COLOUR_OPTIONS = [
+  { value: "alternate", label: "Alternate" },
+  { value: "data-type", label: "Type" },
+];
+export const DEFAULT_COLUMN_COLOUR_MODE = COLUMN_COLOUR_OPTIONS[0].value;
 export const COLUMN_DRAG_THRESHOLD_PX = 4;
 export const POST_DRAG_CLICK_DELAY_MS = 100;
 export const BYTES_PER_UNIT = 1024;

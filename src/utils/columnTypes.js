@@ -9,6 +9,10 @@ export const COLUMN_TYPES = [
   "category",
 ];
 
+export const DEFAULT_COLUMN_TYPE_COLOUR_INDEXES = Object.fromEntries(
+  COLUMN_TYPES.map((type, index) => [type, index]),
+);
+
 export const DEFAULT_DATE_FORMAT = "auto";
 
 export const DATE_FORMATS = [
