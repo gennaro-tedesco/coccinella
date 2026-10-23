@@ -50,6 +50,45 @@ describe("application store dataset lifecycle", () => {
     expect(useAppStore.getState().fileLoadProgress).toBeNull();
   });
 
+  it("passes null filtering only when explicitly requested", async () => {
+    const store = useAppStore.getState();
+    store.openSheet("people.csv", rootMetadata, "/tmp/people.csv");
+    store.setSearchQuery("(?s)^.+$", true);
+    invokeMock.mockResolvedValue(childMetadata);
+
+    await useAppStore.getState().createFilteredSheet("root", "(?s)^.+$", true, false);
+    expect(invokeMock).toHaveBeenLastCalledWith("create_filtered_dataset", expect.objectContaining({ nonEmpty: null }));
+    expect(useAppStore.getState().sheets.child.displayName).toBeUndefined();
+    expect(useAppStore.getState().searchQuery).toBe("(?s)^.+$");
+
+    for (const nonEmpty of [false, true]) {
+      store.setSearchQuery(nonEmpty ? "(?s)^.+$" : "^$", nonEmpty);
+      useAppStore.setState({ searchMatchCount: 2, activeSearchMatch: { rowIndex: 0, columnId: "name" } });
+      await useAppStore.getState().createFilteredSheet("root", "(?s)^.+$", true, false, nonEmpty);
+      expect(invokeMock).toHaveBeenLastCalledWith("create_filtered_dataset", expect.objectContaining({ nonEmpty }));
+      const expectedName = nonEmpty ? "non-empty-people.csv" : "empty-people.csv";
+      expect(useAppStore.getState().sheets.child).toMatchObject({
+        filename: expectedName,
+        displayName: expectedName,
+      });
+      expect(useAppStore.getState()).toMatchObject({
+        searchQuery: "",
+        searchNullMode: null,
+        searchMatchCount: 0,
+        activeSearchMatch: null,
+      });
+    }
+  });
+
+  it("clears null filtering when editing or opening a regular search", () => {
+    const store = useAppStore.getState();
+    for (const reset of [() => store.setSearchQuery("(?s)^.+$"), () => store.setSearchIsRegex(false), () => store.openSearch()]) {
+      store.setSearchQuery("(?s)^.+$", true);
+      reset();
+      expect(useAppStore.getState().searchNullMode).toBeNull();
+    }
+  });
+
   it("removes child sheets and plot state when the root closes", async () => {
     const store = useAppStore.getState();
     store.openSheet("people.csv", rootMetadata, "/tmp/people.csv");

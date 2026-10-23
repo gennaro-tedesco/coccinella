@@ -192,6 +192,10 @@ struct FilterSpec {
 #[derive(Clone)]
 enum Filter {
     Pattern(FilterSpec),
+    Nulls {
+        columns: Vec<String>,
+        non_empty: bool,
+    },
     Expression {
         column: String,
         condition: ExpressionCondition,
@@ -926,6 +930,27 @@ fn build_matcher(spec: &FilterSpec) -> Result<Option<Matcher>, String> {
 
 fn matching_rows(dataset: &Dataset, filter: &Filter) -> Result<Vec<RowIndex>, String> {
     match filter {
+        Filter::Nulls { columns, non_empty } => {
+            let indices = if columns.is_empty() {
+                (0..dataset.columns.len()).collect::<Vec<_>>()
+            } else {
+                columns
+                    .iter()
+                    .filter_map(|column| {
+                        dataset
+                            .columns
+                            .iter()
+                            .position(|candidate| candidate == column)
+                    })
+                    .collect()
+            };
+            Ok(collect_null_rows(
+                &dataset.rows,
+                &dataset.view,
+                &indices,
+                *non_empty,
+            ))
+        }
         Filter::Pattern(spec) => {
             let Some(matcher) = build_matcher(spec)? else {
                 return Ok(Vec::new());
@@ -1072,6 +1097,30 @@ fn matching_column_indices(dataset: &Dataset, spec: &FilterSpec) -> Vec<usize> {
         .iter()
         .filter_map(|selected| dataset.columns.iter().position(|column| column == selected))
         .collect()
+}
+
+fn collect_null_rows(
+    rows: &PackedRows,
+    view: &[RowIndex],
+    column_indices: &[usize],
+    non_empty: bool,
+) -> Vec<RowIndex> {
+    view.iter()
+        .copied()
+        .filter(|row_index| matches_null_row(rows, *row_index, column_indices, non_empty))
+        .collect()
+}
+
+fn matches_null_row(
+    rows: &PackedRows,
+    row_index: RowIndex,
+    column_indices: &[usize],
+    non_empty: bool,
+) -> bool {
+    let has_empty = column_indices
+        .iter()
+        .any(|column_index| rows.cell(row_index as usize, *column_index).is_empty());
+    has_empty != non_empty
 }
 
 fn infer_column_types(rows: &PackedRows, column_count: usize) -> Vec<String> {
@@ -1957,9 +2006,15 @@ fn collect_search_matches(
     order: &[RowIndex],
     matcher: &Matcher,
     column_indices: &[usize],
+    non_empty: Option<bool>,
 ) -> Vec<(RowIndex, ColumnIndex)> {
     let mut matches = Vec::new();
     for (row_index, source_row) in order.iter().enumerate() {
+        if non_empty.is_some_and(|non_empty| {
+            !matches_null_row(rows, *source_row, column_indices, non_empty)
+        }) {
+            continue;
+        }
         for column_index in column_indices {
             let value = rows.cell(*source_row as usize, *column_index);
             if matcher.is_match(value) {
@@ -2169,6 +2224,7 @@ async fn create_filtered_dataset(
     is_regex: bool,
     is_case_sensitive: bool,
     columns: Vec<String>,
+    non_empty: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<Option<SheetMetadata>, String> {
     let filter = FilterSpec {
@@ -2177,9 +2233,14 @@ async fn create_filtered_dataset(
         is_case_sensitive,
         columns,
     };
-    let Some(matcher) = build_matcher(&filter)? else {
-        return Ok(None);
+    let matcher = if non_empty.is_none() {
+        build_matcher(&filter)?
+    } else {
+        None
     };
+    if non_empty.is_none() && matcher.is_none() {
+        return Ok(None);
+    }
     let source_handle = dataset(&state, &source_id)?;
     let (rows, source_view, column_indices, source_columns, column_types, separator) = {
         let source = lock_dataset(&source_handle)?;
@@ -2194,7 +2255,13 @@ async fn create_filtered_dataset(
     };
     let rows_for_filter = Arc::clone(&rows);
     let view = tauri::async_runtime::spawn_blocking(move || {
-        collect_matching_rows(&rows_for_filter, &source_view, &matcher, &column_indices)
+        if let Some(non_empty) = non_empty {
+            collect_null_rows(&rows_for_filter, &source_view, &column_indices, non_empty)
+        } else if let Some(matcher) = matcher {
+            collect_matching_rows(&rows_for_filter, &source_view, &matcher, &column_indices)
+        } else {
+            Vec::new()
+        }
     })
     .await
     .map_err(|error| error.to_string())?;
@@ -2215,7 +2282,14 @@ async fn create_filtered_dataset(
         separator,
         size_bytes: 0,
         source_id: Some(source_id),
-        filter: Some(Filter::Pattern(filter)),
+        filter: Some(if let Some(non_empty) = non_empty {
+            Filter::Nulls {
+                columns: filter.columns,
+                non_empty,
+            }
+        } else {
+            Filter::Pattern(filter)
+        }),
         sorting: Vec::new(),
         search: None,
         search_matches: Vec::new(),
@@ -2658,6 +2732,7 @@ async fn search_dataset(
     is_regex: bool,
     is_case_sensitive: bool,
     columns: Vec<String>,
+    non_empty: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<usize, String> {
     let spec = FilterSpec {
@@ -2684,7 +2759,7 @@ async fn search_dataset(
         let rows = Arc::clone(&rows);
         let order = Arc::clone(&order);
         tauri::async_runtime::spawn_blocking(move || {
-            collect_search_matches(&rows, &order, &matcher, &column_indices)
+            collect_search_matches(&rows, &order, &matcher, &column_indices, non_empty)
         })
         .await
         .map_err(|error| error.to_string())?
@@ -4472,7 +4547,7 @@ mod tests {
             .expect("non-empty matcher");
         let column_indices = matching_column_indices(&dataset, search);
         dataset.search_matches =
-            collect_search_matches(&dataset.rows, &dataset.order, &matcher, &column_indices);
+            collect_search_matches(&dataset.rows, &dataset.order, &matcher, &column_indices, None);
         assert_eq!(dataset.order.as_slice(), [1, 2, 0]);
         assert_eq!(dataset.search_matches, [(2, 0)]);
 
@@ -4618,6 +4693,79 @@ mod tests {
             owned_rows(&second),
             [["3", "z", "30", "33"], ["1", "x", "10", "11"]]
         );
+    }
+
+    #[test]
+    fn null_highlights_agree_with_filtered_rows() {
+        let rows = packed_rows(&[
+            &["Alice", ""],
+            &["Bob", ""],
+            &["Carol", "42"],
+            &["", ""],
+            &["multiline\nvalue", "\n"],
+        ]);
+        let order = vec![4, 3, 2, 1, 0];
+        let non_empty_matcher = Matcher::Regex(Regex::new("(?s)^.+$").expect("regex"));
+        let empty_matcher = Matcher::Regex(Regex::new("^$").expect("regex"));
+        assert!(collect_search_matches(
+            &rows, &[0, 1], &non_empty_matcher, &[0, 1], Some(true)
+        ).is_empty());
+        assert_eq!(
+            collect_search_matches(&rows, &order, &non_empty_matcher, &[0, 1], Some(true)),
+            vec![(0, 0), (0, 1), (2, 0), (2, 1)]
+        );
+        assert_eq!(
+            collect_search_matches(&rows, &[0, 1], &non_empty_matcher, &[0, 1], None),
+            vec![(0, 0), (1, 0)]
+        );
+        for columns in [vec![0, 1], vec![0], vec![1]] {
+            for (non_empty, matcher) in [(false, &empty_matcher), (true, &non_empty_matcher)] {
+                let filtered = collect_null_rows(&rows, &order, &columns, non_empty);
+                let highlights = collect_search_matches(&rows, &order, matcher, &columns, Some(non_empty));
+                let highlighted_rows = highlights.iter()
+                    .map(|(position, _)| order[*position as usize])
+                    .collect::<HashSet<_>>();
+                assert_eq!(highlighted_rows, filtered.into_iter().collect());
+            }
+        }
+    }
+
+    #[test]
+    fn non_empty_rows_complement_empty_rows() {
+        let rows = packed_rows(&[
+            &["Alice", ""],
+            &["Bob", "42"],
+            &["", ""],
+            &["", "7"],
+            &["multiline\nvalue", "\n"],
+        ]);
+        let view = full_view(&rows);
+        let matches_for = |pattern: &str, columns: &[usize]| {
+            let matcher = build_matcher(&FilterSpec {
+                pattern: pattern.to_owned(),
+                is_regex: true,
+                is_case_sensitive: false,
+                columns: Vec::new(),
+            })
+            .expect("build matcher")
+            .expect("non-empty pattern");
+            collect_matching_rows(&rows, &view, &matcher, columns)
+        };
+        for columns in [vec![0, 1], vec![0], vec![1], Vec::new()] {
+            let empty = matches_for("^$", &columns);
+            let non_empty = collect_null_rows(&rows, &view, &columns, true);
+            for row in view.iter() {
+                assert_ne!(empty.contains(row), non_empty.contains(row));
+            }
+        }
+        assert_eq!(matches_for("^$", &[0, 1]), vec![0, 2, 3]);
+        assert_eq!(collect_null_rows(&rows, &view, &[0, 1], true), vec![1, 4]);
+        assert_eq!(
+            collect_null_rows(&rows, &view, &[0, 1], false),
+            vec![0, 2, 3]
+        );
+        assert_eq!(matches_for("(?s)^.+$", &[0, 1]), vec![0, 1, 3, 4]);
+        assert_eq!(matches_for("Bob", &[0, 1]), vec![1]);
     }
 
     #[test]

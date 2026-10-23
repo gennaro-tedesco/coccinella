@@ -76,6 +76,7 @@ function App() {
   const closeSearch = useAppStore((state) => state.closeSearch);
   const openShortcutsMenu = useAppStore((state) => state.openShortcutsMenu);
   const searchQuery = useAppStore((state) => state.searchQuery);
+  const searchNullMode = useAppStore((state) => state.searchNullMode);
   const searchIsRegex = useAppStore((state) => state.searchIsRegex);
   const searchIsCaseSensitive = useAppStore(
     (state) => state.searchIsCaseSensitive,
@@ -250,6 +251,7 @@ function App() {
             isRegex: searchIsRegex,
             isCaseSensitive: searchIsCaseSensitive,
             columns: activeSheet.selectedColumns,
+            nonEmpty: searchNullMode,
           })
             .then((count) => {
               if (!cancelled) setSearchMatchCount(count);
@@ -278,6 +280,7 @@ function App() {
     searchQuery,
     searchIsRegex,
     searchIsCaseSensitive,
+    searchNullMode,
     setSearchMatchCount,
     setActiveSearchMatch,
     setSearchError,
@@ -493,6 +496,7 @@ function App() {
           searchQuery,
           searchIsRegex,
           searchIsCaseSensitive,
+          searchNullMode,
         );
         closeSearch();
         return;
@@ -748,6 +752,7 @@ function App() {
     searchQuery,
     searchIsRegex,
     searchIsCaseSensitive,
+    searchNullMode,
     searchActiveIndex,
     setSearchQuery,
     setSearchActiveIndex,

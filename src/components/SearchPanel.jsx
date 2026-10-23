@@ -9,6 +9,7 @@ function SearchPanel() {
       : false,
   );
   const query = useAppStore((state) => state.searchQuery);
+  const searchNullMode = useAppStore((state) => state.searchNullMode);
   const isRegex = useAppStore((state) => state.searchIsRegex);
   const isCaseSensitive = useAppStore((state) => state.searchIsCaseSensitive);
   const activeIndex = useAppStore((state) => state.searchActiveIndex);
@@ -109,7 +110,7 @@ function SearchPanel() {
           disabled={!canFilter}
           title="Filter to matching rows"
           onClick={() => {
-            createFilteredSheet(activeSheetId, query, isRegex, isCaseSensitive);
+            createFilteredSheet(activeSheetId, query, isRegex, isCaseSensitive, searchNullMode);
             closeSearch();
           }}
         >

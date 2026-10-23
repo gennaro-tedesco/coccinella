@@ -1,7 +1,7 @@
 // Renders column controls and statistics for the currently hovered column.
 // FEATURE: CSV data workspace
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, CircleOff, Settings } from "lucide-react";
+import { ChevronLeft, ChevronRight, Circle, CircleOff, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { formatBytes } from "../utils/stats";
 import { rescanCsvFile } from "../utils/openFile";
@@ -26,6 +26,9 @@ const SEPARATORS = [
   { value: "\t", label: "\\t" },
 ];
 
+const EMPTY_CELL_PATTERN = "^$";
+const NON_EMPTY_CELL_PATTERN = "(?s)^.+$";
+
 function ColumnPanel() {
   const activeSheetId = useAppStore((state) => state.activeSheetId);
   const sheet = useAppStore((state) =>
@@ -41,6 +44,7 @@ function ColumnPanel() {
   const hoveredColumn = useAppStore((state) => state.hoveredColumn);
   const setHoveredColumn = useAppStore((state) => state.setHoveredColumn);
   const showError = useAppStore((state) => state.showError);
+  const searchNullMode = useAppStore((state) => state.searchNullMode);
   const setSearchQuery = useAppStore((state) => state.setSearchQuery);
   const setSearchIsRegex = useAppStore((state) => state.setSearchIsRegex);
   const [openSettingsColumn, setOpenSettingsColumn] = useState(null);
@@ -133,8 +137,12 @@ function ColumnPanel() {
 
   function highlightNullValues() {
     if (!sheet.nullCount) return;
+    const highlightingNulls = searchNullMode === false;
     setSearchIsRegex(true);
-    setSearchQuery("^$");
+    setSearchQuery(
+      highlightingNulls ? NON_EMPTY_CELL_PATTERN : EMPTY_CELL_PATTERN,
+      highlightingNulls,
+    );
   }
 
   function toggleVisibility(column) {
@@ -269,12 +277,20 @@ function ColumnPanel() {
             className="null-values-trigger"
             onClick={highlightNullValues}
             disabled={!sheet.nullCount}
-            title="Highlight null values"
+            title={
+              searchNullMode === false
+                ? "Highlight non-empty values"
+                : "Highlight null values"
+            }
           >
             <span className="sheet-summary-value">
               {(sheet.nullCount ?? 0).toLocaleString()}
             </span>
-            <CircleOff size={ICON_SIZE_COMPACT} />
+            {searchNullMode === true ? (
+              <Circle size={ICON_SIZE_COMPACT} />
+            ) : (
+              <CircleOff size={ICON_SIZE_COMPACT} />
+            )}
           </button>
         </div>
       </div>

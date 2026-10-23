@@ -157,6 +157,7 @@ export const useAppStore = create((set, get) => ({
 
   searchOpen: false,
   searchQuery: "",
+  searchNullMode: null,
   searchIsRegex: true,
   searchIsCaseSensitive: false,
   searchActiveIndex: 0,
@@ -169,14 +170,16 @@ export const useAppStore = create((set, get) => ({
     set({
       searchOpen: true,
       searchQuery: "",
+      searchNullMode: null,
       searchActiveIndex: 0,
       searchError: null,
       jsonSearchMatches: [],
     }),
   closeSearch: () => set({ searchOpen: false }),
-  setSearchQuery: (query) =>
+  setSearchQuery: (query, nullMode = null) =>
     set({
       searchQuery: query,
+      searchNullMode: nullMode,
       searchActiveIndex: 0,
       searchMatchCount: 0,
       activeSearchMatch: null,
@@ -186,6 +189,7 @@ export const useAppStore = create((set, get) => ({
   setSearchIsRegex: (isRegex) =>
     set({
       searchIsRegex: isRegex,
+      searchNullMode: null,
       searchActiveIndex: 0,
       searchMatchCount: 0,
       activeSearchMatch: null,
@@ -316,7 +320,7 @@ export const useAppStore = create((set, get) => ({
       };
     }),
 
-  createFilteredSheet: async (sourceId, pattern, isRegex, isCaseSensitive) => {
+  createFilteredSheet: async (sourceId, pattern, isRegex, isCaseSensitive, nonEmpty = null) => {
     const source = get().sheets[sourceId];
     if (!source) return;
     let metadata;
@@ -327,6 +331,7 @@ export const useAppStore = create((set, get) => ({
         isRegex,
         isCaseSensitive,
         columns: source.selectedColumns,
+        nonEmpty,
       });
     } catch (error) {
       get().showError(error);
@@ -337,9 +342,13 @@ export const useAppStore = create((set, get) => ({
       const currentSource = state.sheets[sourceId];
       if (!currentSource) return state;
       const id = metadata.datasetId;
+      const nullFilterName = nonEmpty === null
+        ? undefined
+        : `${nonEmpty ? "non-empty" : "empty"}-${source.filename}`;
       const child = {
         id,
-        filename: `${source.filename} : ${pattern}`,
+        filename: nullFilterName ?? `${source.filename} : ${pattern}`,
+        displayName: nullFilterName,
         path: null,
         datasetId: metadata.datasetId,
         separator: metadata.separator,
@@ -359,6 +368,7 @@ export const useAppStore = create((set, get) => ({
           isRegex,
           isCaseSensitive,
           columns: source.selectedColumns,
+          nonEmpty,
         },
         sizeBytes: metadata.sizeBytes,
         nullCount: metadata.nullCount,
@@ -379,6 +389,9 @@ export const useAppStore = create((set, get) => ({
         previousSheetId: state.activeSheetId,
       };
     });
+    if (nonEmpty !== null && get().activeSheetId === metadata.datasetId) {
+      get().setSearchQuery("");
+    }
   },
 
   createRowRangeSheet: async (sourceId, start, end) => {
