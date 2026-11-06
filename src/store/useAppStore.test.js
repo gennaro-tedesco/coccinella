@@ -128,6 +128,47 @@ describe("application store dataset lifecycle", () => {
     });
   });
 
+  it("renames a column and its view references", async () => {
+    const metadata = {
+      ...rootMetadata,
+      columns: ["name", "score"],
+      columnTypes: { name: "category", score: "number" },
+    };
+    useAppStore
+      .getState()
+      .openSheet("people.csv", metadata, "/tmp/people.csv");
+    useAppStore.getState().setColumnVisibility("root", {
+      name: false,
+      score: true,
+    });
+    useAppStore.getState().setColumnWidth("root", "name", 120);
+    invokeMock.mockResolvedValueOnce([
+      {
+        ...metadata,
+        columns: ["full_name", "score"],
+      },
+    ]);
+
+    const renamed = await useAppStore
+      .getState()
+      .renameColumn("root", "name", " full_name ");
+
+    expect(renamed).toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith("rename_column", {
+      datasetId: "root",
+      currentName: "name",
+      newName: "full_name",
+    });
+    expect(useAppStore.getState().sheets.root).toMatchObject({
+      columns: ["full_name", "score"],
+      sourceColumns: ["full_name", "score"],
+      columnVisibility: { full_name: false, score: true },
+      columnWidths: { full_name: 120 },
+      columnTypes: { full_name: "category", score: "number" },
+      headersModified: true,
+    });
+  });
+
   it("switches the column colour mode", () => {
     expect(useAppStore.getState().columnColourMode).toBe("alternate");
 
@@ -190,6 +231,40 @@ describe("application store dataset lifecycle", () => {
 
     expect(invokeMock).not.toHaveBeenCalled();
     expect(useAppStore.getState().sheets).toEqual({});
+  });
+
+  it("replaces a reloaded file with fresh state and removes derived views", async () => {
+    const store = useAppStore.getState();
+    store.openSheet("people.csv", rootMetadata, "/tmp/people.csv", "path-token");
+    invokeMock.mockResolvedValueOnce(childMetadata);
+    await useAppStore
+      .getState()
+      .createFilteredSheet("root", "Ada", false, false);
+    useAppStore.getState().setColumnVisibility("root", { name: false });
+    useAppStore.getState().setPlotConfig("root", { chartType: "barchart" });
+
+    useAppStore.getState().reloadSheet("root", {
+      kind: "csv",
+      filename: "people.csv",
+      path: "/tmp/people.csv",
+      metadata: { ...rootMetadata, rowCount: 2 },
+    });
+
+    expect(useAppStore.getState()).toMatchObject({
+      activeSheetId: "root",
+      sheets: {
+        root: {
+          token: "path-token",
+          rowCount: 2,
+          columnVisibility: { name: true },
+          children: [],
+          sorting: [],
+          selectedColumns: [],
+        },
+      },
+      plotConfig: {},
+    });
+    expect(useAppStore.getState().sheets.child).toBeUndefined();
   });
 
   it("creates and recursively closes filtered descendants", async () => {

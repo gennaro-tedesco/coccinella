@@ -15,7 +15,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 import { useAppStore } from "../store/useAppStore";
-import { openFile, openFileAtPath } from "./openFile";
+import { openFile, openFileAtPath, reloadFileFromDisk } from "./openFile";
 
 describe("file loading progress", () => {
   beforeEach(() => {
@@ -117,5 +117,24 @@ describe("file loading progress", () => {
     channels[0].onmessage(progress);
     expect(useAppStore.getState().fileLoadProgress).toBeNull();
     expect(openSheet).toHaveBeenCalledOnce();
+  });
+
+  it("reloads an opened file through its indexed path token", async () => {
+    invokeMock.mockResolvedValueOnce({ kind: "json", id: "json-1" });
+
+    await reloadFileFromDisk({
+      id: "json-1",
+      kind: "json",
+      token: "path-token",
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      "reload_indexed_file",
+      expect.objectContaining({
+        token: "path-token",
+        datasetId: "json-1",
+        separator: ",",
+      }),
+    );
   });
 });

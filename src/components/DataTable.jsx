@@ -12,7 +12,7 @@ import { formatNumberValue } from "../utils/numberFormats";
 import { calculateRowRange } from "../utils/rowRange";
 import { DEFAULT_DATE_FORMAT } from "../utils/columnTypes";
 import { paletteCssVariable } from "../utils/themes";
-import { Copy, Settings } from "lucide-react";
+import { Copy, Pencil, Settings } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import ColumnSettings from "./ColumnSettings";
 import CopyColumnButton from "./CopyColumnButton";
@@ -60,8 +60,12 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
   );
   const setColumnWidth = useAppStore((state) => state.setColumnWidth);
   const resetColumnWidth = useAppStore((state) => state.resetColumnWidth);
+  const renameColumn = useAppStore((state) => state.renameColumn);
   const [openColumn, setOpenColumn] = useState(null);
   const [openColumnWidth, setOpenColumnWidth] = useState(null);
+  const [headerMenu, setHeaderMenu] = useState(null);
+  const [renamingColumn, setRenamingColumn] = useState(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const [rowRange, setRowRange] = useState(EMPTY_ROW_RANGE);
   const [page, setPage] = useState({ offset: 0, rows: [], matches: [] });
   const [rowHeight, setRowHeight] = useState(DEFAULT_ROW_HEIGHT);
@@ -95,9 +99,29 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
   }, [openColumn]);
 
   useEffect(() => {
+    if (!headerMenu) return;
+    const closeMenu = () => setHeaderMenu(null);
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") closeMenu();
+    };
+    window.addEventListener("pointerdown", closeMenu);
+    window.addEventListener("blur", closeMenu);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeMenu);
+      window.removeEventListener("blur", closeMenu);
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [headerMenu]);
+
+  useEffect(() => {
     setRowRange(EMPTY_ROW_RANGE);
     setPage({ offset: 0, rows: [], matches: [] });
     setRowSelection(null);
+    setHeaderMenu(null);
+    setRenamingColumn(null);
     rowSelectionPointerRef.current = null;
     window.cancelAnimationFrame(rowSelectionFrameRef.current);
     tableRef.current?.classList.remove("cell-hover-disabled");
@@ -320,6 +344,16 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
     }
 
     void setSorting(activeSheetId, next);
+  }
+
+  async function commitHeaderRename() {
+    if (!activeSheetId || !renamingColumn) return;
+    const renamed = await renameColumn(
+      activeSheetId,
+      renamingColumn,
+      renameDraft,
+    );
+    if (renamed) setRenamingColumn(null);
   }
 
   async function fittedDisplayTexts(columnId) {
@@ -592,14 +626,43 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
                     className="th-content"
                     onClick={(event) => handleHeaderClick(event, header)}
                     onContextMenu={(event) => {
-                      if (event.ctrlKey) event.preventDefault();
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setHeaderMenu({
+                        column: header.id,
+                        x: event.clientX,
+                        y: event.clientY,
+                      });
                     }}
                   >
                     <span className="th-heading">
                       <span className="th-label">
-                        {flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
+                        {renamingColumn === header.id ? (
+                          <input
+                            type="text"
+                            className="th-rename-input"
+                            autoFocus
+                            value={renameDraft}
+                            onChange={(event) =>
+                              setRenameDraft(event.target.value)
+                            }
+                            onClick={(event) => event.stopPropagation()}
+                            onBlur={() => setRenamingColumn(null)}
+                            onKeyDown={(event) => {
+                              event.stopPropagation();
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                void commitHeaderRename();
+                              } else if (event.key === "Escape") {
+                                setRenamingColumn(null);
+                              }
+                            }}
+                          />
+                        ) : (
+                          flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )
                         )}
                       </span>
                       <span className="sort-indicator" aria-hidden="true">
@@ -648,6 +711,28 @@ function DataTable({ selectedRowRange, onSelectRowRange }) {
                         }
                       />
                     </div>
+                  )}
+                  {headerMenu?.column === header.id && (
+                    <ul
+                      className="file-menu-dropdown header-context-menu"
+                      style={{ left: headerMenu.x, top: headerMenu.y }}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
+                      <li>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setRenameDraft(header.id);
+                            setRenamingColumn(header.id);
+                            setHeaderMenu(null);
+                          }}
+                        >
+                          <Pencil size={ICON_SIZE_COMPACT} />
+                          Rename header
+                        </button>
+                      </li>
+                    </ul>
                   )}
                   <div
                     className="th-resize-handle"

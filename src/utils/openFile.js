@@ -3,12 +3,12 @@ import { useAppStore } from "../store/useAppStore";
 
 const FILE_LOADING_CANCELLED = "File loading cancelled";
 
-function addOpenedFile(opened, openSheet, openJson) {
+function addOpenedFile(opened, openSheet, openJson, token) {
   if (opened.kind === "json") {
-    openJson(opened.filename, opened.id, opened.data, opened.sizeBytes, opened.path);
+    openJson(opened.filename, opened.id, opened.data, opened.sizeBytes, opened.path, token);
     return;
   }
-  openSheet(opened.filename, opened.metadata, opened.path);
+  openSheet(opened.filename, opened.metadata, opened.path, token);
 }
 
 async function invokeFileOpen(command, args) {
@@ -44,11 +44,19 @@ export async function openFileAtPath(candidate, openSheet, openJson, separator) 
     separator: separator || ",",
   });
   if (!opened) return;
-  addOpenedFile(opened, openSheet, openJson);
+  addOpenedFile(opened, openSheet, openJson, candidate.token);
 }
 
 export async function rescanCsvFile(datasetId, separator) {
   return invoke("rescan_csv_file", { datasetId, separator });
+}
+
+export function reloadFileFromDisk(sheet) {
+  return invokeFileOpen("reload_indexed_file", {
+    token: sheet.token,
+    datasetId: sheet.datasetId ?? sheet.id,
+    separator: sheet.separator ?? ",",
+  });
 }
 
 export async function openFile(openSheet, openJson) {

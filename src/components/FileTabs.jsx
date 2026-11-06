@@ -1,9 +1,11 @@
-import { X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { RotateCcw, X } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { useDragReorder } from "../hooks/useDragReorder";
 import { useRenameLabel } from "../hooks/useRenameLabel";
 import { ICON_SIZE_SMALL } from "../constants";
 import { rootSheetId } from "../utils/sheets";
+import { reloadFileFromDisk } from "../utils/openFile";
 
 function FileTabs() {
   const sheetOrder = useAppStore((state) => state.sheetOrder);
@@ -13,6 +15,9 @@ function FileTabs() {
   const closeSheet = useAppStore((state) => state.closeSheet);
   const moveSheet = useAppStore((state) => state.moveSheet);
   const renameSheet = useAppStore((state) => state.renameSheet);
+  const reloadSheet = useAppStore((state) => state.reloadSheet);
+  const showError = useAppStore((state) => state.showError);
+  const [contextMenu, setContextMenu] = useState(null);
 
   const { editingId, draft, setDraft, startEditing, commitEditing } =
     useRenameLabel(renameSheet);
@@ -34,6 +39,37 @@ function FileTabs() {
     onMove: moveSheet,
   });
 
+  useEffect(() => {
+    if (!contextMenu) return;
+    const closeMenu = () => setContextMenu(null);
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") closeMenu();
+    };
+    window.addEventListener("pointerdown", closeMenu);
+    window.addEventListener("blur", closeMenu);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeMenu);
+      window.removeEventListener("blur", closeMenu);
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [contextMenu]);
+
+  async function reloadFromDisk() {
+    const id = contextMenu?.id;
+    setContextMenu(null);
+    const sheet = sheets[id];
+    if (!sheet?.token) return;
+    try {
+      const opened = await reloadFileFromDisk(sheet);
+      if (opened) reloadSheet(id, opened);
+    } catch (error) {
+      showError(error);
+    }
+  }
+
   return (
     <div className="file-tabs">
       {sheetOrder.map((id) => (
@@ -47,6 +83,11 @@ function FileTabs() {
             (draggedSheetId === id ? " dragging" : "") +
             (dropTarget?.item === id ? ` drag-over-${dropTarget.position}` : "")
           }
+          onContextMenu={(event) => {
+            if (!sheets[id].token) return;
+            event.preventDefault();
+            setContextMenu({ id, x: event.clientX, y: event.clientY });
+          }}
         >
           {editingId === id ? (
             <input
@@ -94,6 +135,20 @@ function FileTabs() {
           </button>
         </div>
       ))}
+      {contextMenu && (
+        <ul
+          className="file-menu-dropdown file-tab-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <li>
+            <button type="button" onClick={() => void reloadFromDisk()}>
+              <RotateCcw size={ICON_SIZE_SMALL} />
+              Reload from disk
+            </button>
+          </li>
+        </ul>
+      )}
     </div>
   );
 }

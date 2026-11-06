@@ -8,7 +8,8 @@ function isViewModified(sheet) {
   if (sheet.kind === "json") return false;
   return (
     sheet.sorting.length > 0 ||
-    sheet.columns.some((column) => sheet.columnVisibility[column] === false)
+    sheet.columns.some((column) => sheet.columnVisibility[column] === false) ||
+    sheet.headersModified
   );
 }
 

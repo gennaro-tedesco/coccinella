@@ -2127,6 +2127,80 @@ async fn load_indexed_file(
 }
 
 #[tauri::command]
+async fn reload_indexed_file(
+    token: String,
+    dataset_id: String,
+    separator: String,
+    operation_id: String,
+    on_progress: Channel<LoadProgress>,
+    state: State<'_, AppState>,
+) -> Result<OpenedFile, String> {
+    let path = state
+        .indexed_paths
+        .lock()
+        .map_err(|error| error.to_string())?
+        .get(&token)
+        .cloned()
+        .ok_or("File selection expired")?;
+    let kind = validate_data_path(&path.to_string_lossy())?;
+    let path_string = path.to_string_lossy().into_owned();
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("Selected file has no valid filename")?
+        .to_owned();
+    match kind {
+        FileKind::Csv => {
+            let source_path = lock_dataset(&dataset(&state, &dataset_id)?)?
+                .source_path
+                .clone()
+                .ok_or("Dataset has no source path")?;
+            let indexed_path = std::fs::canonicalize(&path).map_err(|error| error.to_string())?;
+            if source_path != indexed_path {
+                return Err("Reload path does not match the dataset source".into());
+            }
+            let separator = separator_byte(&separator)?;
+            let replacement = read_opened_dataset_blocking(
+                path_string.clone(),
+                separator,
+                operation_id,
+                on_progress,
+                &state,
+            )
+            .await?;
+            let metadata = metadata(&dataset_id, &replacement);
+            let mut store = datasets(&state)?;
+            let closed_ids = dataset_ids_with_descendants(&store, &dataset_id)?;
+            for id in closed_ids {
+                if id != dataset_id {
+                    store.remove(&id);
+                }
+            }
+            store.insert(dataset_id, Arc::new(Mutex::new(replacement)));
+            Ok(OpenedFile::Csv {
+                filename,
+                path: path_string,
+                metadata,
+            })
+        }
+        FileKind::Json => {
+            let read_path = path_string.clone();
+            let (data, size_bytes) =
+                tauri::async_runtime::spawn_blocking(move || read_json(&read_path))
+                    .await
+                    .map_err(|error| error.to_string())??;
+            Ok(OpenedFile::Json {
+                filename,
+                path: path_string,
+                id: dataset_id,
+                data,
+                size_bytes,
+            })
+        }
+    }
+}
+
+#[tauri::command]
 fn cancel_file_load(operation_id: String, state: State<'_, AppState>) -> Result<(), String> {
     if let Some(cancelled) = state
         .active_loads
@@ -2554,14 +2628,129 @@ async fn create_column_dataset(
     insert_dataset(dataset, &state)
 }
 
+fn rename_filter_column(filter: &mut Filter, current_name: &str, new_name: &str) {
+    match filter {
+        Filter::Pattern(spec) => {
+            for column in &mut spec.columns {
+                if column == current_name {
+                    *column = new_name.to_owned();
+                }
+            }
+        }
+        Filter::Nulls { columns, .. } => {
+            for column in columns {
+                if column == current_name {
+                    *column = new_name.to_owned();
+                }
+            }
+        }
+        Filter::Expression { column, .. } => {
+            if column == current_name {
+                *column = new_name.to_owned();
+            }
+        }
+        Filter::RowRange { .. } => {}
+    }
+}
+
+fn rename_dataset_column(dataset: &mut Dataset, current_name: &str, new_name: &str) -> bool {
+    let Some(index) = dataset
+        .columns
+        .iter()
+        .position(|column| column == current_name)
+    else {
+        return false;
+    };
+    dataset.columns[index] = new_name.to_owned();
+    for sort in &mut dataset.sorting {
+        if sort.id == current_name {
+            sort.id = new_name.to_owned();
+        }
+    }
+    if let Some(search) = &mut dataset.search {
+        for column in &mut search.columns {
+            if column == current_name {
+                *column = new_name.to_owned();
+            }
+        }
+    }
+    if let Some(filter) = &mut dataset.filter {
+        rename_filter_column(filter, current_name, new_name);
+    }
+    dataset.search_matches.clear();
+    dataset.search_generation += GENERATION_STEP;
+    true
+}
+
+#[tauri::command]
+fn rename_column(
+    dataset_id: String,
+    current_name: String,
+    new_name: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<SheetMetadata>, String> {
+    let new_name = new_name.trim();
+    if new_name.is_empty() {
+        return Err("Column name cannot be empty".into());
+    }
+    let store = datasets(&state)?;
+    let root_id = root_dataset_id(&store, &dataset_id)?;
+    let related_ids = dataset_ids_with_descendants(&store, &root_id)?;
+    let selected = store
+        .get(&dataset_id)
+        .cloned()
+        .ok_or_else(|| format!("Dataset not found: {dataset_id}"))?;
+    if !lock_dataset(&selected)?
+        .columns
+        .iter()
+        .any(|column| column == &current_name)
+    {
+        return Err(format!("Column not found: {current_name}"));
+    }
+    let mut renamed = Vec::new();
+    for id in related_ids {
+        let Some(handle) = store.get(&id) else {
+            continue;
+        };
+        let dataset = lock_dataset(handle)?;
+        if current_name != new_name
+            && dataset.columns.iter().any(|column| column == &current_name)
+            && dataset.columns.iter().any(|column| column == new_name)
+        {
+            return Err(format!("Column already exists: {new_name}"));
+        }
+        if dataset.columns.iter().any(|column| column == &current_name) {
+            renamed.push((id, Arc::clone(handle)));
+        }
+    }
+    let mut result = Vec::with_capacity(renamed.len());
+    for (id, handle) in renamed {
+        let mut dataset = lock_dataset(&handle)?;
+        rename_dataset_column(&mut dataset, &current_name, new_name);
+        result.push(metadata(&id, &dataset));
+    }
+    Ok(result)
+}
+
 #[tauri::command]
 fn close_dataset(dataset_id: String, state: State<'_, AppState>) -> Result<(), String> {
     let mut store = datasets(&state)?;
+    let closed_ids = dataset_ids_with_descendants(&store, &dataset_id)?;
+    for id in closed_ids {
+        store.remove(&id);
+    }
+    Ok(())
+}
+
+fn dataset_ids_with_descendants(
+    store: &DatasetStore,
+    dataset_id: &str,
+) -> Result<HashSet<String>, String> {
     let sources = store
         .iter()
         .map(|(id, handle)| Ok((id.clone(), lock_dataset(handle)?.source_id.clone())))
         .collect::<Result<Vec<_>, String>>()?;
-    let mut closed_ids = HashSet::from([dataset_id]);
+    let mut closed_ids = HashSet::from([dataset_id.to_owned()]);
     let mut pending = closed_ids.iter().cloned().collect::<VecDeque<_>>();
     while let Some(parent_id) = pending.pop_front() {
         for (id, source_id) in &sources {
@@ -2570,10 +2759,25 @@ fn close_dataset(dataset_id: String, state: State<'_, AppState>) -> Result<(), S
             }
         }
     }
-    for id in closed_ids {
-        store.remove(&id);
+    Ok(closed_ids)
+}
+
+fn root_dataset_id(store: &DatasetStore, dataset_id: &str) -> Result<String, String> {
+    let mut current_id = dataset_id.to_owned();
+    let mut visited = HashSet::new();
+    loop {
+        if !visited.insert(current_id.clone()) {
+            return Err("Dataset hierarchy contains a cycle".into());
+        }
+        let handle = store
+            .get(&current_id)
+            .ok_or_else(|| format!("Dataset not found: {current_id}"))?;
+        let source_id = lock_dataset(handle)?.source_id.clone();
+        let Some(source_id) = source_id else {
+            return Ok(current_id);
+        };
+        current_id = source_id;
     }
-    Ok(())
 }
 
 #[tauri::command]
@@ -3558,6 +3762,7 @@ pub fn run() {
             benchmark::finish_benchmark,
             open_file_dialog,
             load_indexed_file,
+            reload_indexed_file,
             cancel_file_load,
             rescan_csv_file,
             create_filtered_dataset,
@@ -3568,6 +3773,7 @@ pub fn run() {
             create_appended_dataset,
             create_aggregated_dataset,
             create_column_dataset,
+            rename_column,
             close_dataset,
             get_rows,
             get_column_text,
@@ -4171,6 +4377,43 @@ mod tests {
         std::fs::remove_file(path).expect("remove fixture");
 
         assert!(error.contains("duplicated"));
+    }
+
+    #[test]
+    fn renames_dataset_column_references() {
+        let path = std::env::temp_dir().join(format!(
+            "coccinella-rename-column-{}.csv",
+            std::process::id()
+        ));
+        std::fs::write(&path, "name,score\nAda,10\n").expect("write fixture");
+        let mut dataset =
+            read_dataset(path.to_str().expect("UTF-8 path"), b',').expect("read fixture");
+        std::fs::remove_file(path).expect("remove fixture");
+        dataset.sorting = vec![SortSpec {
+            id: "name".into(),
+            desc: false,
+            column_type: "string".into(),
+        }];
+        dataset.search = Some(FilterSpec {
+            pattern: "Ada".into(),
+            is_regex: false,
+            is_case_sensitive: false,
+            columns: vec!["name".into()],
+        });
+        dataset.filter = Some(Filter::Nulls {
+            columns: vec!["name".into()],
+            non_empty: true,
+        });
+
+        assert!(rename_dataset_column(&mut dataset, "name", "full_name"));
+
+        assert_eq!(dataset.columns, ["full_name", "score"]);
+        assert_eq!(dataset.sorting[0].id, "full_name");
+        assert_eq!(dataset.search.as_ref().unwrap().columns, ["full_name"]);
+        let Filter::Nulls { columns, .. } = dataset.filter.as_ref().unwrap() else {
+            panic!("expected null filter");
+        };
+        assert_eq!(columns, &["full_name"]);
     }
 
     #[test]
