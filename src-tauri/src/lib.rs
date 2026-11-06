@@ -576,13 +576,13 @@ fn is_tsv_path(path: &str) -> bool {
 fn file_kind(path: &Path) -> Option<FileKind> {
     match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
         "csv" | "tsv" => Some(FileKind::Csv),
-        "json" => Some(FileKind::Json),
+        "json" | "jsonl" => Some(FileKind::Json),
         _ => None,
     }
 }
 
 fn validate_data_path(path: &str) -> Result<FileKind, String> {
-    file_kind(Path::new(path)).ok_or_else(|| "Only .csv, .tsv and .json files are supported".into())
+    file_kind(Path::new(path)).ok_or_else(|| "Only .csv, .tsv, .json and .jsonl files are supported".into())
 }
 
 fn queue_opened_files(urls: &[tauri::Url], state: &AppState) -> Result<usize, String> {
@@ -820,7 +820,23 @@ fn read_json(path: &str) -> Result<(Box<RawValue>, u64), String> {
     }
     let mut text = String::with_capacity(size_bytes as usize);
     file.read_to_string(&mut text).map_err(|error| error.to_string())?;
-    let data = RawValue::from_string(text).map_err(|error| error.to_string())?;
+    let is_jsonl = Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("jsonl"));
+    let data = if is_jsonl {
+        let records = text
+            .lines()
+            .enumerate()
+            .map(|(index, line)| {
+                serde_json::from_str::<&RawValue>(line)
+                    .map_err(|error| format!("Invalid JSONL at line {}: {error}", index + 1))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        serde_json::value::to_raw_value(&records).map_err(|error| error.to_string())?
+    } else {
+        RawValue::from_string(text).map_err(|error| error.to_string())?
+    };
     Ok((data, size_bytes))
 }
 
@@ -2065,7 +2081,7 @@ async fn open_file_dialog(
     let file = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
-            .add_filter("Data", &["csv", "tsv", "json"])
+            .add_filter("Data", &["csv", "tsv", "json", "jsonl"])
             .blocking_pick_file()
     })
     .await
@@ -4237,6 +4253,32 @@ mod tests {
         root_names.sort();
         assert_eq!(root_names, ["data.json", "root.csv", "table.tsv"]);
         assert_eq!(&names[3..], ["nested.CSV", "deep.csv"]);
+    }
+
+    #[test]
+    fn reads_jsonl_and_reports_invalid_lines() {
+        let path = std::env::temp_dir().join(format!(
+            "coccinella-jsonl-{}.JSONL",
+            std::process::id()
+        ));
+        assert!(file_kind(&path) == Some(FileKind::Json));
+        let text = "{\"name\":\"Ada\"}\r\nnull\r\n[1,2]\r\ntrue\r\n\"hello\\nworld\"\r\n42\r\n";
+        std::fs::write(&path, text).expect("write JSONL fixture");
+        let (value, size_bytes) = read_json(&path.to_string_lossy()).expect("read JSONL fixture");
+        let value = serde_json::from_str::<serde_json::Value>(value.get()).expect("parse JSONL array");
+        assert_eq!(value, serde_json::json!([{"name": "Ada"}, null, [1, 2], true, "hello\nworld", 42]));
+        assert_eq!(size_bytes, text.len() as u64);
+
+        for text in ["{}\n{", "{}\n\nnull", "{}\n{} {}"] {
+            std::fs::write(&path, text).expect("write invalid JSONL fixture");
+            let error = read_json(&path.to_string_lossy()).expect_err("reject invalid JSONL");
+            assert!(error.contains("line 2"), "{error}");
+        }
+        std::fs::write(&path, "{}").expect("write JSONL without trailing newline");
+        assert_eq!(read_json(&path.to_string_lossy()).unwrap().0.get(), "[{}]");
+        std::fs::write(&path, "").expect("write empty JSONL");
+        assert_eq!(read_json(&path.to_string_lossy()).unwrap().0.get(), "[]");
+        std::fs::remove_file(path).expect("remove JSONL fixture");
     }
 
     #[test]

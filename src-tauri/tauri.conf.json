@@ -48,6 +48,10 @@
       {
         "ext": ["json"],
         "mimeType": "application/json"
+      },
+      {
+        "ext": ["jsonl"],
+        "mimeType": "application/jsonl"
       }
     ],
     "icon": [
