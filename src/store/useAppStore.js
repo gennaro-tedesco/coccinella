@@ -35,6 +35,16 @@ function closeDatasets(sheets, id) {
   );
 }
 
+function renameRecordKey(record, currentName, newName) {
+  if (!record || !Object.hasOwn(record, currentName)) return record;
+  return Object.fromEntries(
+    Object.entries(record).map(([key, value]) => [
+      key === currentName ? newName : key,
+      value,
+    ]),
+  );
+}
+
 function derivedSheet(metadata, filename) {
   const columnVisibility = {};
   for (const column of metadata.columns) {
@@ -63,6 +73,7 @@ function derivedSheet(metadata, filename) {
     nullCount: metadata.nullCount,
     dataVersion: 0,
     contentVersion: 0,
+    headersModified: false,
   };
 }
 
@@ -213,7 +224,7 @@ export const useAppStore = create((set, get) => ({
   setJsonSearchMatches: (jsonSearchMatches) => set({ jsonSearchMatches }),
   setSearchError: (searchError) => set({ searchError }),
 
-  openSheet: (filename, metadata, path) =>
+  openSheet: (filename, metadata, path, token) =>
     set((state) => {
       const id = metadata.datasetId;
       const columnVisibility = {};
@@ -228,6 +239,7 @@ export const useAppStore = create((set, get) => ({
             kind: "csv",
             filename,
             path: path ?? null,
+            token: token ?? null,
             datasetId: metadata.datasetId,
             separator: metadata.separator,
             rowCount: metadata.rowCount,
@@ -245,6 +257,7 @@ export const useAppStore = create((set, get) => ({
             nullCount: metadata.nullCount,
             dataVersion: 0,
             contentVersion: 0,
+            headersModified: false,
           },
         },
         sheetOrder: [...state.sheetOrder, id],
@@ -253,7 +266,7 @@ export const useAppStore = create((set, get) => ({
       };
     }),
 
-  openJson: (filename, id, data, sizeBytes, path) =>
+  openJson: (filename, id, data, sizeBytes, path, token) =>
     set((state) => ({
       sheets: {
         ...state.sheets,
@@ -262,6 +275,7 @@ export const useAppStore = create((set, get) => ({
           kind: "json",
           filename,
           path: path ?? null,
+          token: token ?? null,
           data,
           sizeBytes,
           children: [],
@@ -272,6 +286,84 @@ export const useAppStore = create((set, get) => ({
       previousSheetId: state.activeSheetId,
       mode: "data",
     })),
+
+  reloadSheet: (id, opened) =>
+    set((state) => {
+      const current = state.sheets[id];
+      if (!current) return state;
+      const closedIds = [id, ...descendantSheetIds(state.sheets, id)];
+      const sheets = { ...state.sheets };
+      for (const closedId of closedIds) delete sheets[closedId];
+      if (opened.kind === "json") {
+        sheets[id] = {
+          id,
+          kind: "json",
+          filename: opened.filename,
+          path: opened.path,
+          token: current.token,
+          data: opened.data,
+          sizeBytes: opened.sizeBytes,
+          children: [],
+        };
+      } else {
+        const metadata = opened.metadata;
+        sheets[id] = {
+          id,
+          kind: "csv",
+          filename: opened.filename,
+          path: opened.path,
+          token: current.token,
+          datasetId: metadata.datasetId,
+          separator: metadata.separator,
+          rowCount: metadata.rowCount,
+          columns: metadata.columns,
+          sourceColumns: metadata.columns,
+          columnVisibility: Object.fromEntries(
+            metadata.columns.map((column) => [column, true]),
+          ),
+          columnTypes: metadata.columnTypes,
+          columnDateFormats: {},
+          columnPrecision: {},
+          selectedColumns: [],
+          sorting: [],
+          children: [],
+          filterOf: null,
+          sizeBytes: metadata.sizeBytes,
+          nullCount: metadata.nullCount,
+          dataVersion: 0,
+          contentVersion: 0,
+          headersModified: false,
+        };
+      }
+      const plotConfig = { ...state.plotConfig };
+      for (const closedId of closedIds) delete plotConfig[closedId];
+      const wasActive = closedIds.includes(state.activeSheetId);
+      return {
+        sheets,
+        plotConfig,
+        activeSheetId: wasActive ? id : state.activeSheetId,
+        previousSheetId: closedIds.includes(state.previousSheetId)
+          ? null
+          : state.previousSheetId,
+        ...(wasActive
+          ? {
+              mode: "data",
+              hoveredColumn: null,
+              copiedColumn: null,
+              scrollPercent: null,
+              jsonNavigation: null,
+              searchOpen: false,
+              searchQuery: "",
+              searchNullMode: null,
+              searchActiveIndex: 0,
+              searchMatchCount: 0,
+              activeSearchMatch: null,
+              jsonSearchMatches: [],
+              searchError: null,
+            }
+          : {}),
+      };
+    }),
 
   rescanSheet: (sheetId, separator, metadataList) =>
     set((state) => {
@@ -844,6 +936,102 @@ export const useAppStore = create((set, get) => ({
         },
       };
     }),
+
+  renameColumn: async (sheetId, currentName, newName) => {
+    const trimmedName = newName.trim();
+    if (!trimmedName || trimmedName === currentName) return false;
+    let metadataList;
+    try {
+      metadataList = await invoke("rename_column", {
+        datasetId: get().sheets[sheetId]?.datasetId,
+        currentName,
+        newName: trimmedName,
+      });
+    } catch (error) {
+      get().showError(error);
+      return false;
+    }
+    set((state) => {
+      const sheets = { ...state.sheets };
+      const plotConfig = { ...state.plotConfig };
+      for (const metadata of metadataList) {
+        const sheet = sheets[metadata.datasetId];
+        if (!sheet) continue;
+        sheets[metadata.datasetId] = {
+          ...sheet,
+          columns: sheet.columns.map((column) =>
+            column === currentName ? trimmedName : column,
+          ),
+          sourceColumns: sheet.sourceColumns.map((column) =>
+            column === currentName ? trimmedName : column,
+          ),
+          columnVisibility: renameRecordKey(
+            sheet.columnVisibility,
+            currentName,
+            trimmedName,
+          ),
+          columnTypes: renameRecordKey(
+            sheet.columnTypes,
+            currentName,
+            trimmedName,
+          ),
+          columnDateFormats: renameRecordKey(
+            sheet.columnDateFormats,
+            currentName,
+            trimmedName,
+          ),
+          columnPrecision: renameRecordKey(
+            sheet.columnPrecision,
+            currentName,
+            trimmedName,
+          ),
+          columnWidths: renameRecordKey(
+            sheet.columnWidths,
+            currentName,
+            trimmedName,
+          ),
+          selectedColumns: sheet.selectedColumns.map((column) =>
+            column === currentName ? trimmedName : column,
+          ),
+          sorting: sheet.sorting.map((sort) => ({
+            ...sort,
+            id: sort.id === currentName ? trimmedName : sort.id,
+          })),
+          pivotDimensions: sheet.pivotDimensions?.map((column) =>
+            column === currentName ? trimmedName : column,
+          ),
+          pivotRowDimension:
+            sheet.pivotRowDimension === currentName
+              ? trimmedName
+              : sheet.pivotRowDimension,
+          pivotColumnDimension:
+            sheet.pivotColumnDimension === currentName
+              ? trimmedName
+              : sheet.pivotColumnDimension,
+          dataVersion: sheet.dataVersion + 1,
+          contentVersion: sheet.contentVersion + 1,
+          headersModified: true,
+        };
+        delete plotConfig[metadata.datasetId];
+      }
+      return {
+        sheets,
+        plotConfig,
+        hoveredColumn:
+          state.hoveredColumn === currentName
+            ? trimmedName
+            : state.hoveredColumn,
+        copiedColumn:
+          state.copiedColumn?.column === currentName
+            ? { ...state.copiedColumn, column: trimmedName }
+            : state.copiedColumn,
+        activeSearchMatch: null,
+        searchMatchCount: 0,
+        searchVersion: state.searchVersion + 1,
+      };
+    });
+    return true;
+  },
 
   moveColumn: (sheetId, sourceColumn, targetColumn, position) =>
     set((state) => {

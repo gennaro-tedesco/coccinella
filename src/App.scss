@@ -725,6 +725,11 @@ body,
   padding: tokens.$padding-30;
 }
 
+button.file-tab-label {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .file-tab-close {
   display: flex;
   align-items: center;
@@ -746,6 +751,26 @@ body,
 .file-tab-close:hover {
   opacity: tokens.$opacity-6 !important;
   background-color: rgba(tokens.$background-color-1, tokens.$background-color-2, tokens.$background-color-3, tokens.$background-color-4) !important;
+}
+
+.file-tab-context-menu,
+.header-context-menu {
+  position: fixed;
+  margin: 0;
+}
+
+.file-tab-context-menu li button,
+.header-context-menu li button {
+  display: flex;
+  align-items: center;
+  gap: tokens.$gap-1;
+}
+
+.th-rename-input {
+  min-width: 0;
+  width: 100%;
+  color: inherit;
+  font: inherit;
 }
 
 .center {
