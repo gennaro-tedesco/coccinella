@@ -25,8 +25,6 @@ use uuid::Uuid;
 
 mod benchmark;
 
-const MAX_CSV_FILE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
-const MAX_JSON_FILE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_CSV_ROWS: usize = 1_000_000;
 const MAX_CSV_FIELDS: usize = 10_000_000;
 const MAX_CSV_COLUMNS: usize = 10_000;
@@ -36,6 +34,7 @@ const FILE_DISCOVERY_BATCH_SIZE: usize = 50;
 const MIN_FILE_DISCOVERY_ITEMS: usize = 1;
 const MAX_FILE_DISCOVERY_ITEMS: usize = 10_000;
 const LOAD_PROGRESS_INTERVAL_BYTES: u64 = 1024 * 1024;
+const JSON_READ_BUFFER_BYTES: usize = 64 * 1024;
 const ESTIMATED_MEMORY_MULTIPLIER: u64 = 2;
 const FILE_LOADING_CANCELLED: &str = "File loading cancelled";
 const EXCLUDED_SEARCH_DIRECTORIES: [&str; 5] = [
@@ -57,6 +56,36 @@ const COLUMN_VARIABLE_PREFIX: &str = "column_";
 const COLUMN_COPY_SEPARATOR: char = ',';
 const MAX_COLUMN_COPY_BYTES: usize = 16 * 1024 * 1024;
 const COPY_QUOTES: [char; 2] = ['"', '\''];
+
+#[derive(Deserialize)]
+struct FileSizeLimits {
+    csv: u64,
+    json: u64,
+    jsonl: u64,
+}
+
+static FILE_SIZE_LIMITS: OnceLock<FileSizeLimits> = OnceLock::new();
+
+fn file_size_limits() -> &'static FileSizeLimits {
+    FILE_SIZE_LIMITS.get_or_init(|| {
+        serde_json::from_str(include_str!("../file-size-limits.json"))
+            .expect("file size limits configuration must be valid")
+    })
+}
+
+fn configured_file_size_limit(path: &str) -> u64 {
+    let limits = file_size_limits();
+    match Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("json") => limits.json,
+        Some("jsonl") => limits.jsonl,
+        _ => limits.csv,
+    }
+}
 
 type DatasetHandle = Arc<Mutex<Dataset>>;
 type DatasetStore = HashMap<String, DatasetHandle>;
@@ -666,11 +695,12 @@ fn read_dataset_controlled(
     validate_delimited_path(path)?;
     let file = File::open(path).map_err(|error| error.to_string())?;
     let size_bytes = file.metadata().map_err(|error| error.to_string())?.len();
-    if size_bytes > MAX_CSV_FILE_BYTES {
+    let file_size_limit = configured_file_size_limit(path);
+    if size_bytes > file_size_limit {
         return Err(format!(
             "Delimited file is too large: {} exceeds the {} limit",
             format_binary_bytes(size_bytes),
-            format_binary_bytes(MAX_CSV_FILE_BYTES)
+            format_binary_bytes(file_size_limit)
         ));
     }
     if let Some(control) = control.as_deref_mut() {
@@ -808,18 +838,36 @@ async fn read_opened_dataset_blocking(
     result
 }
 
-fn read_json(path: &str) -> Result<(Box<RawValue>, u64), String> {
+fn read_json_controlled(
+    path: &str,
+    mut control: Option<&mut LoadControl>,
+) -> Result<(Box<RawValue>, u64), String> {
     let mut file = File::open(path).map_err(|error| error.to_string())?;
     let size_bytes = file.metadata().map_err(|error| error.to_string())?.len();
-    if size_bytes > MAX_JSON_FILE_BYTES {
+    let file_size_limit = configured_file_size_limit(path);
+    if size_bytes > file_size_limit {
         return Err(format!(
             "JSON is too large: {} exceeds the {} limit",
             format_binary_bytes(size_bytes),
-            format_binary_bytes(MAX_JSON_FILE_BYTES)
+            format_binary_bytes(file_size_limit)
         ));
     }
-    let mut text = String::with_capacity(size_bytes as usize);
-    file.read_to_string(&mut text).map_err(|error| error.to_string())?;
+    if let Some(control) = control.as_deref_mut() {
+        control.report(0, size_bytes, true)?;
+    }
+    let mut bytes = Vec::with_capacity(size_bytes as usize);
+    let mut buffer = vec![0; JSON_READ_BUFFER_BYTES];
+    loop {
+        let bytes_read = file.read(&mut buffer).map_err(|error| error.to_string())?;
+        if bytes_read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..bytes_read]);
+        if let Some(control) = control.as_deref_mut() {
+            control.report(bytes.len() as u64, size_bytes, false)?;
+        }
+    }
+    let text = String::from_utf8(bytes).map_err(|error| error.to_string())?;
     let is_jsonl = Path::new(path)
         .extension()
         .and_then(|extension| extension.to_str())
@@ -829,15 +877,67 @@ fn read_json(path: &str) -> Result<(Box<RawValue>, u64), String> {
             .lines()
             .enumerate()
             .map(|(index, line)| {
+                if let Some(control) = control.as_deref_mut() {
+                    control.report(size_bytes, size_bytes, false)?;
+                }
                 serde_json::from_str::<&RawValue>(line)
                     .map_err(|error| format!("Invalid JSONL at line {}: {error}", index + 1))
             })
             .collect::<Result<Vec<_>, _>>()?;
         serde_json::value::to_raw_value(&records).map_err(|error| error.to_string())?
     } else {
+        if let Some(control) = control.as_deref_mut() {
+            control.report(size_bytes, size_bytes, false)?;
+        }
         RawValue::from_string(text).map_err(|error| error.to_string())?
     };
+    if let Some(control) = control.as_deref_mut() {
+        control.report(size_bytes, size_bytes, true)?;
+    }
     Ok((data, size_bytes))
+}
+
+#[cfg(test)]
+fn read_json(path: &str) -> Result<(Box<RawValue>, u64), String> {
+    read_json_controlled(path, None)
+}
+
+async fn read_opened_json_blocking(
+    path: String,
+    operation_id: String,
+    on_progress: Channel<LoadProgress>,
+    state: &State<'_, AppState>,
+) -> Result<(Box<RawValue>, u64), String> {
+    let cancelled = Arc::new(AtomicBool::new(false));
+    state
+        .active_loads
+        .lock()
+        .map_err(|error| error.to_string())?
+        .insert(operation_id.clone(), Arc::clone(&cancelled));
+    let cleanup_id = operation_id.clone();
+    let filename = Path::new(&path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(&path)
+        .to_owned();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut control = LoadControl {
+            operation_id,
+            filename,
+            cancelled,
+            on_progress,
+            last_reported_bytes: 0,
+        };
+        read_json_controlled(&path, Some(&mut control))
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    state
+        .active_loads
+        .lock()
+        .map_err(|error| error.to_string())?
+        .remove(&cleanup_id);
+    result
 }
 
 async fn open_file_at_path(
@@ -872,11 +972,13 @@ async fn open_file_at_path(
             })
         }
         FileKind::Json => {
-            let read_path = path_string.clone();
-            let (data, size_bytes) =
-                tauri::async_runtime::spawn_blocking(move || read_json(&read_path))
-                    .await
-                    .map_err(|error| error.to_string())??;
+            let (data, size_bytes) = read_opened_json_blocking(
+                path_string.clone(),
+                operation_id,
+                on_progress,
+                state,
+            )
+            .await?;
             let id = state
                 .next_dataset_id
                 .fetch_add(1, AtomicOrdering::Relaxed)
@@ -2184,11 +2286,13 @@ async fn reload_indexed_file(
             })
         }
         FileKind::Json => {
-            let read_path = path_string.clone();
-            let (data, size_bytes) =
-                tauri::async_runtime::spawn_blocking(move || read_json(&read_path))
-                    .await
-                    .map_err(|error| error.to_string())??;
+            let (data, size_bytes) = read_opened_json_blocking(
+                path_string.clone(),
+                operation_id,
+                on_progress,
+                &state,
+            )
+            .await?;
             Ok(OpenedFile::Json {
                 filename,
                 path: path_string,
@@ -4324,7 +4428,7 @@ mod tests {
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(256)
-            .min(MAX_CSV_FILE_BYTES / (1024 * 1024));
+            .min(file_size_limits().csv / (1024 * 1024));
         let target_bytes = target_mib * 1024 * 1024;
         let path = std::env::temp_dir().join(format!(
             "coccinella-benchmark-{}-{target_mib}.csv",
@@ -4540,6 +4644,73 @@ mod tests {
         std::fs::write(&path, "{").expect("write invalid JSON fixture");
         assert!(read_json(&path.to_string_lossy()).is_err());
         std::fs::remove_file(path).expect("remove JSON fixture");
+    }
+
+    #[test]
+    fn reports_json_progress_and_honours_cancellation() {
+        let path = std::env::temp_dir().join(format!(
+            "coccinella-json-progress-{}.json",
+            std::process::id()
+        ));
+        let text = format!(
+            "{{\"payload\":\"{}\"}}",
+            "x".repeat(LOAD_PROGRESS_INTERVAL_BYTES as usize)
+        );
+        std::fs::write(&path, &text).expect("write JSON progress fixture");
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        let received_messages = Arc::clone(&messages);
+        let on_progress = Channel::new(move |body| {
+            let tauri::ipc::InvokeResponseBody::Json(message) = body else {
+                panic!("expected JSON progress message");
+            };
+            received_messages
+                .lock()
+                .unwrap()
+                .push(serde_json::from_str::<serde_json::Value>(&message).unwrap());
+            Ok(())
+        });
+        let mut control = LoadControl {
+            operation_id: "json-progress".into(),
+            filename: "progress.json".into(),
+            cancelled: Arc::new(AtomicBool::new(false)),
+            on_progress,
+            last_reported_bytes: 0,
+        };
+
+        read_json_controlled(&path.to_string_lossy(), Some(&mut control))
+            .expect("read JSON with progress");
+        let messages = messages.lock().unwrap();
+        assert!(messages.len() >= 3);
+        assert_eq!(messages.first().unwrap()["bytesRead"], 0);
+        assert_eq!(
+            messages.last().unwrap()["bytesRead"],
+            text.len() as u64
+        );
+        drop(messages);
+
+        let mut cancelled_control = LoadControl {
+            operation_id: "json-cancelled".into(),
+            filename: "progress.json".into(),
+            cancelled: Arc::new(AtomicBool::new(true)),
+            on_progress: Channel::new(|_| Ok(())),
+            last_reported_bytes: 0,
+        };
+        assert_eq!(
+            read_json_controlled(&path.to_string_lossy(), Some(&mut cancelled_control))
+                .expect_err("cancel JSON read"),
+            FILE_LOADING_CANCELLED
+        );
+        std::fs::remove_file(path).expect("remove JSON progress fixture");
+    }
+
+    #[test]
+    fn loads_file_size_limits_from_configuration() {
+        let expected_limit = 2 * 1024 * 1024 * 1024;
+
+        assert_eq!(configured_file_size_limit("data.csv"), expected_limit);
+        assert_eq!(configured_file_size_limit("data.tsv"), expected_limit);
+        assert_eq!(configured_file_size_limit("data.json"), expected_limit);
+        assert_eq!(configured_file_size_limit("data.JSONL"), expected_limit);
     }
 
     #[test]
